@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>資產負債看板 App</title>
+    <!-- 引入 Tailwind CSS 用於美化介面 -->
+    <script src="https://jsdelivr.net"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        /* 隱藏滾動條但保留滾動功能 */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen pb-32">
+
+    <!-- 主內容容器 -->
+    <div class="max-w-md mx-auto p-4" id="app">
+        
+        <!-- ==================== 1. 總覽分頁 ==================== -->
+        <div id="tab-overview" class="tab-content block">
+            <!-- 頂部三大核心區塊並排 -->
+            <div class="grid grid-cols-3 gap-2 mb-4">
+                <div class="bg-white p-3 rounded-2xl shadow-sm text-center">
+                    <p class="text-xs text-gray-500 font-medium">總資產</p>
+                    <p class="text-sm font-bold text-gray-800 mt-1" id="ov-total-assets">0</p>
+                </div>
+                <div class="bg-white p-3 rounded-2xl shadow-sm text-center">
+                    <p class="text-xs text-gray-500 font-medium">總負債</p>
+                    <p class="text-sm font-bold text-red-500 mt-1" id="ov-total-liabilities">0</p>
+                </div>
+                <div class="bg-white p-3 rounded-2xl shadow-sm text-center">
+                    <p class="text-xs text-gray-500 font-medium">淨資產</p>
+                    <p class="text-sm font-bold text-green-600 mt-1" id="ov-net-assets">0</p>
+                </div>
+            </div>
+
+            <!-- 資產主項目與子項目比例區塊 -->
+            <div class="bg-white p-5 rounded-3xl shadow-sm mb-4">
+                <h3 class="text-base font-bold text-gray-800 mb-3 flex items-center">📊 資產配置分佈</h3>
+                <div id="asset-summary-list" class="space-y-4">
+                    <!-- 動態渲染資產大類與佔比 -->
+                </div>
+            </div>
+
+            <!-- 負債佔比區塊 -->
+            <div class="bg-white p-5 rounded-3xl shadow-sm">
+                <h3 class="text-base font-bold text-gray-800 mb-2">⚠️ 負債狀況</h3>
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-sm text-gray-600">負債比率 (總負債/總資產)</span>
+                    <span class="text-sm font-bold text-red-500" id="ov-debt-ratio">0%</span>
+                </div>
+                <div class="w-full bg-gray-100 rounded-full h-2">
+                    <div id="ov-debt-bar" class="bg-red-400 h-2 rounded-full" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 2. 再平衡分頁 ==================== -->
+        <div id="tab-rebalance" class="tab-content hidden">
+            <div class="bg-white p-5 rounded-3xl shadow-sm space-y-4">
+                <h3 class="text-lg font-bold text-gray-800 border-b pb-2">🔄 槓桿與智慧再平衡</h3>
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <p class="text-xs text-gray-500">可動用總金額</p>
+                        <p class="text-base font-bold text-gray-800" id="reb-avail-amount">0</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-gray-500">當前總曝險金額</p>
+                        <p class="text-base font-bold text-gray-800" id="reb-exposure-amount">0</p>
+                    </div>
+                </div>
+
+                <div class="bg-gray-50 p-3 rounded-2xl">
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="text-xs text-gray-500">當前實際曝險比</span>
+                        <span class="text-sm font-bold text-blue-600" id="reb-current-ratio">0%</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2">
+                        <div id="reb-current-bar" class="bg-blue-500 h-2 rounded-full" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <!-- 預定再平衡率滑桿控制 -->
+                <div class="space-y-1">
+                    <div class="flex justify-between items-center">
+                        <label class="text-sm font-medium text-gray-700">預定再平衡目標比率</label>
+                        <span class="text-sm font-bold text-blue-600" id="target-ratio-val">120%</span>
+                    </div>
+                    <input type="range" id="target-ratio-slider" min="0" max="200" step="5" value="120" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                    <div class="flex justify-between text-xs text-gray-400">
+                        <span>0%</span>
+                        <span>100%</span>
+                        <span>200%</span>
+                    </div>
+                </div>
+
+                <!-- 再平衡交易建議卡片 -->
+                <div id="rebalance-action-card" class="p-4 rounded-2xl text-center font-bold text-sm">
+                    <!-- 動態顯示買入/賣出建議 -->
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 3. 明細分頁 (含資料輸入) ==================== -->
+        <div id="tab-details" class="tab-content hidden space-y-4">
+            <!-- 上半部：新增資料表單 -->
+            <div class="bg-white p-5 rounded-3xl shadow-sm">
+                <h3 class="text-base font-bold text-gray-800 mb-3">➕ 新增帳目明細</h3>
+                <form id="data-form" class="space-y-3 text-sm">
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">來源類型</label>
+                            <select id="f-type" class="w-full p-2 border rounded-xl bg-gray-50" onchange="toggleInvestmentFields()">
+                                <option value="流動資產">流動資產</option>
+                                <option value="投資">投資</option>
+                                <option value="固定資產">固定資產</option>
+                                <option value="應收款">應收款</option>
+                                <option value="負債">負債</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">帳戶/項目名稱</label>
+                            <input type="text" id="f-account" placeholder="例如：台積電 或 中信銀行" class="w-full p-2 border rounded-xl bg-gray-50" required>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">日期</label>
+                            <input type="date" id="f-date" class="w-full p-2 border rounded-xl bg-gray-50" required>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">幣別 (自動即時匯率)</label>
+                            <select id="f-currency" class="w-full p-2 border rounded-xl bg-gray-50">
+                                <option value="TWD" data-rate="1">TWD (1.0)</option>
+                                <option value="USD" data-rate="32.15">USD (32.15)</option>
+                                <option value="JPY" data-rate="0.21">JPY (0.21)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-2">
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">單位數</label>
+                            <input type="number" id="f-units" value="1" step="any" class="w-full p-2 border rounded-xl bg-gray-50" oninput="calculateRowAmount()">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">單價</label>
+                            <div class="relative">
+                                <input type="number" id="f-price" value="0" step="any" class="w-full p-2 border rounded-xl bg-gray-50" oninput="calculateRowAmount()">
+                                <button type="button" id="btn-fetch-stock" class="hidden absolute right-1 top-1 bg-blue-500 text-white text-[10px] px-1.5 py-1 rounded" onclick="fetchMockStockPrice()">獲取報價</button>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">槓桿倍率 (如融資)</label>
+                            <input type="number" id="f-leverage" value="1" step="any" class="w-full p-2 border rounded-xl bg-gray-50" oninput="calculateRowAmount()">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2 bg-blue-50 p-2 rounded-xl">
+                        <div>
+                            <span class="text-xs text-gray-500">試算金額 (原幣):</span>
+                            <span id="f-calc-amount" class="block font-bold text-gray-700">0</span>
+                        </div>
+                        <div>
+                            <span class="text-xs text-gray-500">槓桿曝險額 (原幣):</span>
+                            <span id="f-calc-exp" class="block font-bold text-blue-600">0</span>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">備註</label>
+                        <input type="text" id="f-remark" class="w-full p-2 border rounded-xl bg-gray-50">
+                    </div>
+
+                    <button type="submit" class="w-full bg-blue-600 text-white font-bold py-2 rounded-xl shadow-sm hover:bg-blue-700">儲存帳目</button>
+                </form>
+            </div>
+
+            <!-- 中半部：資產明細清單 -->
