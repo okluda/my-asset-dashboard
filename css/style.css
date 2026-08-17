@@ -1,0 +1,328 @@
+:root {
+  --bg: #0f1020;
+  --card-bg: #1c1d33;
+  --card-bg-2: #242642;
+  --text-main: #f2f2f7;
+  --text-sub: #9a9ab0;
+  --accent: #5b8cff;
+  --accent-2: #35c98f;
+  --danger: #ff6b6b;
+  --warn: #ffb454;
+  --border: #33344f;
+  --tabbar-bg: #1a1b2e;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: env(safe-area-inset-top, 0px);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text-main);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang TC", "Helvetica Neue", Arial, sans-serif;
+  -webkit-text-size-adjust: 100%;
+  /* iOS 慣性捲動 */
+  -webkit-overflow-scrolling: touch;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.page-header {
+  padding: calc(14px + var(--safe-top)) 16px 10px;
+  font-size: 20px;
+  font-weight: 700;
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 5;
+}
+
+.page-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 16px calc(96px + var(--safe-bottom));
+}
+
+/* ---------- 卡片通用 ---------- */
+.card {
+  background: var(--card-bg);
+  border-radius: 16px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  border: 1px solid var(--border);
+}
+
+.card-title {
+  font-size: 13px;
+  color: var(--text-sub);
+  margin-bottom: 6px;
+}
+
+.card-value {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+/* ---------- 總覽：KPI 三欄 ---------- */
+.kpi-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.kpi-card {
+  flex: 1;
+  background: var(--card-bg);
+  border-radius: 16px;
+  padding: 12px 10px;
+  border: 1px solid var(--border);
+  text-align: center;
+}
+
+.kpi-label {
+  font-size: 12px;
+  color: var(--text-sub);
+}
+
+.kpi-value {
+  font-size: 17px;
+  font-weight: 700;
+  margin-top: 4px;
+  word-break: break-all;
+}
+
+.kpi-sub {
+  font-size: 11px;
+  color: var(--text-sub);
+  margin-top: 2px;
+}
+
+.kpi-value.positive { color: var(--accent-2); }
+.kpi-value.negative { color: var(--danger); }
+
+/* ---------- 資產子項目 ---------- */
+.asset-item {
+  margin-bottom: 12px;
+}
+
+.asset-item-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+.asset-item-name {
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+.asset-item-amt {
+  color: var(--text-sub);
+}
+
+.progress-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--accent);
+}
+
+/* ---------- 再平衡 ---------- */
+.rebalance-result {
+  text-align: center;
+  padding: 18px 10px;
+}
+
+.rebalance-action {
+  font-size: 26px;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
+.rebalance-action.buy { color: var(--accent-2); }
+.rebalance-action.sell { color: var(--danger); }
+.rebalance-action.hold { color: var(--text-sub); }
+
+.rebalance-amount {
+  font-size: 18px;
+  color: var(--text-main);
+}
+
+select, input, button {
+  font-family: inherit;
+  font-size: 15px;
+}
+
+.form-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  gap: 10px;
+}
+
+.form-row label {
+  color: var(--text-sub);
+  font-size: 14px;
+}
+
+select, input[type="text"], input[type="number"], input[type="date"] {
+  background: var(--card-bg-2);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+/* ---------- 明細表格 ---------- */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+
+table.detail-table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 920px;
+  font-size: 13px;
+}
+
+table.detail-table th, table.detail-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  text-align: left;
+}
+
+table.detail-table th {
+  background: var(--card-bg-2);
+  color: var(--text-sub);
+  position: sticky;
+  top: 0;
+}
+
+table.detail-table input, table.detail-table select {
+  width: 100%;
+  min-width: 70px;
+  font-size: 13px;
+  padding: 4px 6px;
+}
+
+.row-actions button {
+  margin-right: 4px;
+}
+
+.btn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-weight: 600;
+}
+
+.btn.secondary {
+  background: var(--card-bg-2);
+  color: var(--text-main);
+  border: 1px solid var(--border);
+}
+
+.btn.danger {
+  background: var(--danger);
+  color: #fff;
+}
+
+.btn.small {
+  padding: 5px 9px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+.toolbar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.summary-group {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--border);
+}
+
+.summary-group:last-child { border-bottom: none; }
+
+/* ---------- 底部分頁列（圓角長方 bar） ---------- */
+.tab-bar {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: calc(14px + var(--safe-bottom));
+  background: var(--tabbar-bg);
+  border-radius: 24px;
+  display: flex;
+  padding: 6px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--border);
+  z-index: 20;
+}
+
+.tab-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-sub);
+  padding: 10px 4px;
+  border-radius: 18px;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.tab-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.tab-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.empty-hint {
+  color: var(--text-sub);
+  text-align: center;
+  padding: 20px 0;
+  font-size: 13px;
+}
+
+.section-title {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 6px 0 10px;
+}
