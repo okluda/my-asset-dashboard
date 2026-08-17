@@ -516,8 +516,32 @@ table.detail-table input, table.detail-table select {
 
 .rec-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
   margin-top: 10px;
+}
+
+.rec-exclude {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-sub);
+  cursor: pointer;
+}
+
+.rec-exclude input {
+  width: 16px;
+  height: 16px;
+}
+
+/* 不計入的明細卡片：淡化並加刪除線提示 */
+.rec-card.rec-excluded {
+  opacity: 0.55;
+}
+
+.rec-card.rec-excluded .rec-field label {
+  text-decoration: line-through;
 }
 
 /* 窄螢幕（手機直向）欄位改 2 欄，備註仍滿版 */

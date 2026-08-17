@@ -79,17 +79,17 @@
       </div>
 
       <div class="card">
-        <div class="section-title">資金再平衡率</div>
+        <div class="section-title">再平衡率</div>
         <div class="form-row">
-          <label>投資目標佔比（流動:投資）</label>
+          <label>投資佔比</label>
           <select v-model.number="settings.rebalanceRatio" @change="onRatioChange">
             <option v-for="r in ratioOptions" :key="r" :value="r">
-              {{ 100 - r }}% : {{ r }}%
+              {{ r }}%
             </option>
           </select>
         </div>
-        <div class="summary-group"><span>目前流動資產</span><span>{{ fmt(liquidTWD) }}（{{ pct(liquidRatio) }}）</span></div>
-        <div class="summary-group"><span>目前投資</span><span>{{ fmt(investTWD) }}（{{ pct(investRatio) }}）</span></div>
+        <div class="summary-group"><span>流動資產</span><span>{{ fmt(liquidTWD) }}（{{ pct(liquidRatio) }}）</span></div>
+        <div class="summary-group"><span>投資</span><span>{{ fmt(investTWD) }}（{{ pct(investRatio) }}）</span></div>
       </div>
 
       <div class="card rebalance-result">
@@ -174,7 +174,7 @@
 
         <div v-if="visibleRecords.length === 0" class="empty-hint">此類別尚無明細，點「＋新增一筆」開始</div>
 
-        <div v-for="rec in visibleRecords" :key="rec.id" class="rec-card">
+        <div v-for="rec in visibleRecords" :key="rec.id" class="rec-card" :class="{ 'rec-excluded': rec.excluded }">
           <div class="rec-grid">
             <div class="rec-field">
               <label>類別</label>
@@ -192,10 +192,6 @@
             </div>
 
             <div class="rec-field">
-              <label>幣別</label>
-              <input type="text" v-model="rec.currency" @change="recalc(rec)" />
-            </div>
-            <div class="rec-field">
               <label>價格</label>
               <input
                 type="number"
@@ -205,17 +201,21 @@
               />
             </div>
             <div class="rec-field">
+              <label>幣別</label>
+              <input type="text" v-model="rec.currency" @change="recalc(rec)" />
+            </div>
+            <div class="rec-field">
               <label>匯率</label>
               <input type="number" v-model.number="rec.fxRate" @change="recalc(rec)" />
             </div>
             <div class="rec-field">
-              <label>單位/額數</label>
+              <label>單位</label>
               <input type="number" v-model.number="rec.units" @change="recalc(rec)" />
             </div>
 
             <div class="rec-field">
               <label>金額</label>
-              <input type="number" :value="money(rec)" readonly />
+              <input type="text" :value="num(money(rec))" readonly />
             </div>
             <div class="rec-field" v-if="rec.type === '投資'">
               <label>槓桿倍數</label>
@@ -232,6 +232,10 @@
             </div>
           </div>
           <div class="rec-actions">
+            <label class="rec-exclude">
+              <input type="checkbox" v-model="rec.excluded" />
+              <span>不計入</span>
+            </label>
             <button class="btn small danger" @click="removeRow(rec.id)">刪除</button>
           </div>
         </div>
