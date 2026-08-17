@@ -212,23 +212,6 @@ const TabDetail = {
       }
     }
 
-    function exportCsv() {
-      ALD.exportCSV(records);
-    }
-
-    async function importCsv(evt) {
-      const file = evt.target.files[0];
-      if (!file) return;
-      try {
-        const imported = await ALD.parseCSV(file);
-        records.push(...imported);
-      } catch (e) {
-        alert("CSV 匯入失敗：" + e.message);
-      } finally {
-        evt.target.value = "";
-      }
-    }
-
     return {
       records,
       settings,
@@ -240,8 +223,7 @@ const TabDetail = {
       exposure,
       updateFx,
       updateStock,
-      exportCsv,
-      importCsv,
+      fmt: (v) => ALD.formatAmount(v, store.settings),
     };
   },
 };
@@ -252,6 +234,35 @@ const TabSettings = {
   setup() {
     const settings = store.settings;
 
+    function exportCsv() {
+      ALD.exportCSV(store.records);
+    }
+
+    async function importCsv(evt) {
+      const file = evt.target.files[0];
+      if (!file) return;
+      try {
+        const imported = await ALD.parseCSV(file);
+        store.records.push(...imported);
+        alert("已匯入 " + imported.length + " 筆資料");
+      } catch (e) {
+        alert("CSV 匯入失敗：" + e.message);
+      } finally {
+        evt.target.value = "";
+      }
+    }
+
+    function loadSample() {
+      if (
+        store.records.length > 0 &&
+        !confirm("載入模擬資料會「附加」在現有資料之後，確定要載入嗎？")
+      ) {
+        return;
+      }
+      store.records.push(...ALD.seedRecords());
+      alert("已載入模擬資料");
+    }
+
     function resetData() {
       if (!confirm("確定要清除所有本地資料嗎？此動作無法復原，建議先匯出 CSV 備份。")) return;
       store.records.splice(0, store.records.length);
@@ -259,7 +270,7 @@ const TabSettings = {
       alert("已清除本地資料");
     }
 
-    return { settings, resetData };
+    return { settings, exportCsv, importCsv, loadSample, resetData };
   },
 };
 
@@ -300,4 +311,12 @@ const App = {
   },
 };
 
-createApp(App).mount("#app");
+const app = createApp(App);
+// Vue 元件渲染/setup 過程中的例外，預設只會出現在 console，這裡額外顯示在畫面上
+app.config.errorHandler = (err, instance, info) => {
+  console.error("Vue error:", err, info);
+  if (window.__showAppError) {
+    window.__showAppError((err && err.message ? err.message : String(err)) + "\n(" + info + ")");
+  }
+};
+app.mount("#app");

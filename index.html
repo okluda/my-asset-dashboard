@@ -12,6 +12,25 @@
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
+  <!-- 錯誤顯示橫幅：手機上沒有開發者工具可看 console，發生例外時直接顯示在畫面上 -->
+  <div id="error-banner" style="display:none; position:fixed; top:0; left:0; right:0; z-index:9999; background:#b00020; color:#fff; padding:10px 14px; font-size:13px; white-space:pre-wrap; max-height:40vh; overflow:auto;"></div>
+  <script>
+    (function () {
+      var banner = document.getElementById("error-banner");
+      function showError(msg) {
+        banner.style.display = "block";
+        banner.textContent = "⚠ 發生錯誤，請截圖回報：\n" + msg;
+      }
+      window.addEventListener("error", function (e) {
+        showError((e.message || "未知錯誤") + "\n" + (e.filename || "") + ":" + (e.lineno || ""));
+      });
+      window.addEventListener("unhandledrejection", function (e) {
+        showError("Promise 錯誤：" + (e.reason && e.reason.message ? e.reason.message : e.reason));
+      });
+      window.__showAppError = showError;
+    })();
+  </script>
+
   <div id="app"></div>
 
   <!-- ============ 分頁模板（text/x-template，不需 build step） ============ -->
@@ -142,11 +161,7 @@
 
       <div class="card">
         <div class="section-title">資料匯入 / 匯出</div>
-        <div class="toolbar">
-          <button class="btn secondary" @click="exportCsv">匯出 CSV</button>
-          <button class="btn secondary" @click="$refs.fileInput.click()">匯入 CSV</button>
-          <input type="file" ref="fileInput" accept=".csv" style="display:none" @change="importCsv" />
-        </div>
+        <div class="empty-hint" style="text-align:left">CSV 匯入/匯出與模擬資料已移至「設定」頁的「資料管理」區。</div>
       </div>
     </div>
   </script>
@@ -183,9 +198,13 @@
       <div class="card">
         <div class="section-title">資料管理</div>
         <div class="toolbar">
+          <button class="btn secondary" @click="exportCsv">匯出 CSV</button>
+          <button class="btn secondary" @click="$refs.fileInput.click()">匯入 CSV</button>
+          <input type="file" ref="fileInput" accept=".csv" style="display:none" @change="importCsv" />
+          <button class="btn secondary" @click="loadSample">載入模擬資料</button>
           <button class="btn danger" @click="resetData">清除所有本地資料</button>
         </div>
-        <div class="empty-hint" style="text-align:left">所有資料僅儲存在本機瀏覽器 localStorage，清除瀏覽器資料或更換裝置/瀏覽器將會遺失，請定期使用「明細」頁的匯出 CSV 備份。</div>
+        <div class="empty-hint" style="text-align:left">所有資料僅儲存在本機瀏覽器 localStorage，清除瀏覽器資料或更換裝置/瀏覽器將會遺失，請定期使用「匯出 CSV」備份。匯入 CSV 與載入模擬資料皆為「附加」至現有資料。</div>
       </div>
     </div>
   </script>

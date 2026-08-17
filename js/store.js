@@ -207,5 +207,6 @@ const ALD = (() => {
     formatPercent,
     exportCSV,
     parseCSV,
+    seedRecords,
   };
 })();
