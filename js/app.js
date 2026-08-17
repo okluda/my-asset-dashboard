@@ -4,6 +4,17 @@
  * 4 個分頁元件（總覽/再平衡/明細/設定），以及底部分頁列。
  */
 
+// 內部網路可能無法連到 unpkg.com，導致 Vue CDN 載入失敗。
+// 此時整個 App 無法運作（按鈕全部失效），先給出明確提示而非讓程式拋出難懂錯誤。
+if (typeof Vue === "undefined") {
+  var __msg =
+    "無法載入 Vue 函式庫（CDN：unpkg.com）。\n" +
+    "常見原因：內部網路無法連外。\n" +
+    "解法：改用可連外的網路開啟，或將 vue.global.prod.js 與 papaparse.min.js 下載到本機（例如 libs/ 目錄）後，改為本地路徑引用。";
+  if (window.__showAppError) window.__showAppError(__msg);
+  throw new Error(__msg);
+}
+
 const { createApp, reactive, computed, watch, ref } = Vue;
 
 // ---------- 共用 reactive store ----------
@@ -339,8 +350,20 @@ const TabSettings = {
   setup() {
     const settings = store.settings;
 
+    // 將例外完整資訊（含 stack）顯示到畫面錯誤橫幅，方便截圖回報
+    function reportError(prefix, e) {
+      const detail =
+        (e && e.stack ? e.stack : e && e.message ? e.message : String(e)) || "未知錯誤";
+      if (window.__showAppError) window.__showAppError(prefix + "\n" + detail);
+      console.error(prefix, e);
+    }
+
     function exportCsv() {
-      ALD.exportCSV(store.records);
+      try {
+        ALD.exportCSV(store.records);
+      } catch (e) {
+        reportError("匯出 CSV 失敗：", e);
+      }
     }
 
     async function importCsv(evt) {
@@ -351,31 +374,58 @@ const TabSettings = {
         store.records.push(...imported);
         alert("已匯入 " + imported.length + " 筆資料");
       } catch (e) {
-        alert("CSV 匯入失敗：" + e.message);
+        reportError("CSV 匯入失敗：", e);
+        alert("CSV 匯入失敗：" + (e && e.message ? e.message : e));
       } finally {
         evt.target.value = "";
       }
     }
 
     function loadSample() {
-      if (
-        store.records.length > 0 &&
-        !confirm("載入模擬資料會「附加」在現有資料之後，確定要載入嗎？")
-      ) {
-        return;
+      try {
+        if (
+          store.records.length > 0 &&
+          !confirm("載入模擬資料會「附加」在現有資料之後，確定要載入嗎？")
+        ) {
+          return;
+        }
+        const sample = ALD.seedRecords();
+        store.records.push(...sample);
+        alert("已載入模擬資料 " + sample.length + " 筆");
+      } catch (e) {
+        reportError("載入模擬資料失敗：", e);
+        alert("載入模擬資料失敗：" + (e && e.message ? e.message : e));
       }
-      store.records.push(...ALD.seedRecords());
-      alert("已載入模擬資料");
     }
 
     function resetData() {
-      if (!confirm("確定要清除所有本地資料嗎？此動作無法復原，建議先匯出 CSV 備份。")) return;
-      store.records.splice(0, store.records.length);
-      localStorage.removeItem("ald_records_v1");
-      alert("已清除本地資料");
+      try {
+        if (!confirm("確定要清除所有本地資料嗎？此動作無法復原，建議先匯出 CSV 備份。")) return;
+        store.records.splice(0, store.records.length);
+        // 明確寫入空陣列，避免 deep watch 之後又蓋回，且下次載入不會重新種入模擬資料
+        ALD.saveRecords([]);
+        alert("已清除本地資料");
+      } catch (e) {
+        reportError("清除資料失敗：", e);
+        alert("清除資料失敗：" + (e && e.message ? e.message : e));
+      }
     }
 
-    return { settings, exportCsv, importCsv, loadSample, resetData };
+    // 強制清除：直接移除 localStorage 所有本 App 的鍵並重新整理，
+    // 用於資料損毀導致一般清除失效時
+    function forceReset() {
+      if (!confirm("強制清除會移除所有本地資料與設定並重新載入頁面，確定嗎？")) return;
+      try {
+        localStorage.removeItem("ald_records_v1");
+        localStorage.removeItem("ald_settings_v1");
+      } catch (e) {
+        // 即使個別 removeItem 失敗，仍嘗試整體清空
+        try { localStorage.clear(); } catch (_) {}
+      }
+      location.reload();
+    }
+
+    return { settings, exportCsv, importCsv, loadSample, resetData, forceReset };
   },
 };
 
@@ -421,7 +471,8 @@ const app = createApp(App);
 app.config.errorHandler = (err, instance, info) => {
   console.error("Vue error:", err, info);
   if (window.__showAppError) {
-    window.__showAppError((err && err.message ? err.message : String(err)) + "\n(" + info + ")");
+    const detail = err && err.stack ? err.stack : err && err.message ? err.message : String(err);
+    window.__showAppError("Vue 元件錯誤（" + info + "）：\n" + detail);
   }
 };
 app.mount("#app");
