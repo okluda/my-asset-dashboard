@@ -47,7 +47,7 @@ const ALD = (() => {
       units: 0,
       amount: 0,
       leverage: isInvest ? 1 : 0, // 非投資固定為 0
-      excluded: false, // 勾選後不計入所有計算
+      excluded: 0, // 1=不計入所有計算，0=計入
     };
   }
 
@@ -58,7 +58,7 @@ const ALD = (() => {
     rec.units = Number(rec.units) || 0;
     rec.fxRate = Number(rec.fxRate) || 1;
     rec.leverage = Number(rec.leverage) || 1;
-    rec.excluded = !!rec.excluded;
+    rec.excluded = rec.excluded ? 1 : 0;
     if (rec.type !== "投資") {
       // 舊資料遷移：非投資若無單位/額數但有金額，把金額搬到單位/額數
       if (!rec.units && Number(rec.amount)) rec.units = Number(rec.amount) || 0;
@@ -72,9 +72,11 @@ const ALD = (() => {
   function loadRecords() {
     try {
       const raw = localStorage.getItem(RECORDS_KEY);
-      if (!raw) return seedRecords();
+      // 只有「從未初始化」（null）時才載入模擬資料；
+      // 已明確清空（[]）時應維持空白，避免清除後又被重新種入資料
+      if (raw === null) return seedRecords();
       const arr = JSON.parse(raw);
-      if (!Array.isArray(arr) || arr.length === 0) return seedRecords();
+      if (!Array.isArray(arr)) return seedRecords();
       return arr.map(normalizeRec);
     } catch (e) {
       console.error("讀取本地資料失敗", e);
@@ -174,12 +176,15 @@ const ALD = (() => {
   const CSV_IGNORE_ON_IMPORT = ["amount", "exposure"];
 
   function exportCSV(records) {
+    if (typeof Papa === "undefined") {
+      throw new Error("PapaParse 函式庫未載入（CDN 連線失敗），無法匯出 CSV。");
+    }
     const rows = records.map((r) => {
       const o = {};
       CSV_COLUMNS.forEach((c) => {
         if (c.key === "amount") o[c.label] = amountTWD(r);
         else if (c.key === "exposure") o[c.label] = exposureTWD(r);
-        else if (c.key === "excluded") o[c.label] = r.excluded ? "是" : "";
+        else if (c.key === "excluded") o[c.label] = r.excluded ? 1 : 0;
         else o[c.label] = r[c.key];
       });
       return o;
@@ -199,6 +204,10 @@ const ALD = (() => {
 
   function parseCSV(file) {
     return new Promise((resolve, reject) => {
+      if (typeof Papa === "undefined") {
+        reject(new Error("PapaParse 函式庫未載入（CDN 連線失敗），無法匯入 CSV。"));
+        return;
+      }
       Papa.parse(file, {
         header: true,
         skipEmptyLines: true,
@@ -220,7 +229,7 @@ const ALD = (() => {
                 if (CSV_IGNORE_ON_IMPORT.includes(key)) return;
                 if (key === "excluded") {
                   const v = String(row[label] || "").trim();
-                  rec.excluded = ["是", "Y", "y", "true", "1"].includes(v);
+                  rec.excluded = ["1", "是", "Y", "y", "true"].includes(v) ? 1 : 0;
                 } else if (["unitPrice", "fxRate", "units", "leverage"].includes(key)) {
                   rec[key] = Number(row[label]) || 0;
                 } else {
