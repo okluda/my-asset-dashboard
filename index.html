@@ -117,24 +117,42 @@
 
       <!-- 匯總區 -->
       <div class="card">
+        <!-- 第一層標題：非投資為「總計」；投資為「市價」，並多一行「曝險金額」 -->
         <div class="sum-total-row">
-          <span class="sum-total-name">{{ activeType }}</span>
+          <span class="sum-total-name">{{ isInvest ? '市價' : '總計' }}</span>
           <span class="sum-total-amt">{{ num(summary.totalTWD) }}</span>
         </div>
+        <div v-if="isInvest" class="sum-total-row sum-total-sub">
+          <span class="sum-total-name">曝險金額</span>
+          <span class="sum-total-amt">{{ num(summary.exposureTotal) }}</span>
+        </div>
+
         <div v-if="summary.groups.length === 0" class="empty-hint">此類別尚無資料</div>
         <div v-for="g in summary.groups" :key="g.key" class="sum-group">
+          <!-- 第二層：幣別合計，右側一律用金額加總 -->
           <div class="sum-group-head">
             <span>{{ g.label }}</span>
-            <span>{{ num(g.subtotalTWD) }}</span>
+            <span>
+              {{ num(g.subtotalTWD) }}<span v-if="g.isForeign" class="sum-orig"> ({{ num(g.subtotalOrig) }})</span>
+            </span>
           </div>
-          <div v-for="a in g.accounts" :key="a.key" class="sum-acc-card">
+          <!-- 第三層：帳戶/項目，可點選作為下方明細的篩選條件 -->
+          <div
+            v-for="a in g.accounts"
+            :key="a.key"
+            class="sum-acc-card"
+            :class="{ selected: isSelected(a.account) }"
+            @click="toggleSelect(a.account)"
+          >
             <div class="sum-acc-row1">
               <span class="sum-acc-name">{{ a.account }}</span>
-              <span class="sum-acc-cur">{{ isInvest ? (a.units.toLocaleString() + ' 單位') : a.currency }}</span>
+              <span class="sum-acc-cur">{{ isInvest ? (num(a.units) + ' 單位') : a.currency }}</span>
             </div>
             <div class="sum-acc-row2">
-              <span>{{ isInvest ? '' : num(a.amountOrig) }}</span>
-              <span>{{ num(a.amountTWD) }}</span>
+              <span></span>
+              <span>
+                {{ num(a.amountTWD) }}<span v-if="a.isForeign" class="sum-orig"> ({{ num(a.amountOrig) }})</span>
+              </span>
             </div>
           </div>
         </div>
@@ -149,13 +167,18 @@
           </button>
         </div>
 
+        <div v-if="selectedAccounts.length > 0" class="filter-hint">
+          篩選中：{{ selectedAccounts.join('、') }}
+          <button class="btn small" @click="selectedAccounts = []">清除篩選</button>
+        </div>
+
         <div v-if="visibleRecords.length === 0" class="empty-hint">此類別尚無明細，點「＋新增一筆」開始</div>
 
         <div v-for="rec in visibleRecords" :key="rec.id" class="rec-card">
           <div class="rec-grid">
             <div class="rec-field">
               <label>類別</label>
-              <select v-model="rec.type">
+              <select v-model="rec.type" @change="onTypeChange(rec)">
                 <option v-for="t in types" :key="t" :value="t">{{ t }}</option>
               </select>
             </div>
@@ -169,31 +192,36 @@
             </div>
 
             <div class="rec-field">
-              <label>單價</label>
-              <input type="number" v-model.number="rec.unitPrice" @change="recalc(rec)" />
+              <label>幣別</label>
+              <input type="text" v-model="rec.currency" @change="recalc(rec)" />
             </div>
             <div class="rec-field">
-              <label>幣別</label>
-              <input type="text" v-model="rec.currency" />
+              <label>價格</label>
+              <input
+                type="number"
+                v-model.number="rec.unitPrice"
+                @change="recalc(rec)"
+                :readonly="rec.type !== '投資'"
+              />
             </div>
             <div class="rec-field">
               <label>匯率</label>
-              <input type="number" v-model.number="rec.fxRate" />
+              <input type="number" v-model.number="rec.fxRate" @change="recalc(rec)" />
             </div>
             <div class="rec-field">
-              <label>單位數</label>
+              <label>單位/額數</label>
               <input type="number" v-model.number="rec.units" @change="recalc(rec)" />
             </div>
 
             <div class="rec-field">
               <label>金額</label>
-              <input type="number" v-model.number="rec.amount" />
+              <input type="number" :value="money(rec)" readonly />
             </div>
-            <div class="rec-field">
-              <label>槓桿率</label>
+            <div class="rec-field" v-if="rec.type === '投資'">
+              <label>槓桿倍數</label>
               <input type="number" step="0.1" v-model.number="rec.leverage" />
             </div>
-            <div class="rec-field">
+            <div class="rec-field" v-if="rec.type === '投資'">
               <label>曝險金額</label>
               <input type="text" :value="exposure(rec).toLocaleString()" readonly />
             </div>

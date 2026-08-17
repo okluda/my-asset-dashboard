@@ -371,6 +371,37 @@ table.detail-table input, table.detail-table select {
   color: var(--accent-2);
 }
 
+.sum-total-sub {
+  font-size: 14px;
+  border-bottom: none;
+  padding-bottom: 2px;
+  margin-bottom: 0;
+}
+
+/* 匯總第三層可點選作為篩選，選取時高亮 */
+.sum-acc-card.selected {
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 1px var(--accent-2) inset;
+}
+
+/* 原幣金額括號（台幣(美元)） */
+.sum-orig {
+  color: var(--text-sub);
+  font-weight: 400;
+  font-size: 12px;
+}
+
+/* 篩選提示列 */
+.filter-hint {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-sub);
+  margin-bottom: 12px;
+}
+
 .sum-group {
   margin-top: 12px;
 }
@@ -390,6 +421,7 @@ table.detail-table input, table.detail-table select {
   border-radius: 12px;
   padding: 10px 12px;
   margin-bottom: 8px;
+  cursor: pointer;
 }
 
 .sum-acc-row1 {
@@ -465,6 +497,16 @@ table.detail-table input, table.detail-table select {
   width: 100%;
   font-size: 13px;
   padding: 6px 8px;
+  box-sizing: border-box;
+}
+
+/* 日期欄位：靠左對齊、避免內容溢出壓到相鄰欄位 */
+.rec-field input[type="date"] {
+  text-align: left;
+  min-width: 0;
+  max-width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .rec-field input[readonly] {

@@ -33,19 +33,38 @@ const ALD = (() => {
   }
 
   function emptyRecord(type) {
+    const t = type || "流動資產";
+    const isInvest = t === "投資";
     return {
       id: uid(),
-      type: type || "流動資產",
+      type: t,
       account: "",
       date: todayStr(),
       note: "",
-      unitPrice: 0,
+      unitPrice: 1, // 非投資固定為 1；投資可由市價帶入
       currency: "TWD",
       fxRate: 1,
       units: 0,
       amount: 0,
-      leverage: 1,
+      leverage: 1, // 非投資固定為 1
     };
+  }
+
+  // 正規化單筆資料：確保數值型別、非投資鎖定 單價=1/槓桿=1，並重算金額。
+  // 同時提供舊資料遷移：舊版非投資把金額存在 amount，這裡改用 單位/額數 承載。
+  function normalizeRec(rec) {
+    rec.unitPrice = Number(rec.unitPrice) || 0;
+    rec.units = Number(rec.units) || 0;
+    rec.fxRate = Number(rec.fxRate) || 1;
+    rec.leverage = Number(rec.leverage) || 1;
+    if (rec.type !== "投資") {
+      // 舊資料遷移：非投資若無單位/額數但有金額，把金額搬到單位/額數
+      if (!rec.units && Number(rec.amount)) rec.units = Number(rec.amount) || 0;
+      rec.unitPrice = 1;
+      rec.leverage = 1;
+    }
+    rec.amount = round2(rec.unitPrice * rec.units * rec.fxRate);
+    return rec;
   }
 
   function loadRecords() {
@@ -54,7 +73,7 @@ const ALD = (() => {
       if (!raw) return seedRecords();
       const arr = JSON.parse(raw);
       if (!Array.isArray(arr) || arr.length === 0) return seedRecords();
-      return arr;
+      return arr.map(normalizeRec);
     } catch (e) {
       console.error("讀取本地資料失敗", e);
       return seedRecords();
@@ -79,30 +98,41 @@ const ALD = (() => {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   }
 
-  // 首次使用提供的範例資料，方便使用者了解畫面呈現方式
+  // 首次使用提供的範例資料，方便使用者了解畫面呈現方式。
+  // 金額為計算欄位（單價 × 單位/額數 × 匯率），這裡透過 normalizeRec 重算。
   function seedRecords() {
     const today = todayStr();
-    return [
-      { id: uid(), type: "流動資產", account: "銀行活存-台幣", date: today, note: "", unitPrice: 0, currency: "TWD", fxRate: 1, units: 0, amount: 300000, leverage: 1 },
-      { id: uid(), type: "流動資產", account: "銀行活存-美金", date: today, note: "", unitPrice: 0, currency: "USD", fxRate: 32.5, units: 0, amount: 5000, leverage: 1 },
-      { id: uid(), type: "投資", account: "0050 元大台灣50", date: today, note: "", unitPrice: 140, currency: "TWD", fxRate: 1, units: 2000, amount: 280000, leverage: 1 },
-      { id: uid(), type: "投資", account: "VOO", date: today, note: "美股ETF", unitPrice: 480, currency: "USD", fxRate: 32.5, units: 30, amount: 14400, leverage: 1.5 },
-      { id: uid(), type: "固定資產", account: "自住房產", date: today, note: "", unitPrice: 0, currency: "TWD", fxRate: 1, units: 0, amount: 8000000, leverage: 1 },
-      { id: uid(), type: "應收款", account: "親友借款", date: today, note: "", unitPrice: 0, currency: "TWD", fxRate: 1, units: 0, amount: 100000, leverage: 1 },
-      { id: uid(), type: "負債", account: "房屋貸款", date: today, note: "", unitPrice: 0, currency: "TWD", fxRate: 1, units: 0, amount: 5000000, leverage: 1 },
+    const raw = [
+      { type: "流動資產", account: "銀行活存-台幣", currency: "TWD", fxRate: 1, unitPrice: 1, units: 300000, leverage: 1 },
+      { type: "流動資產", account: "銀行活存-美金", currency: "USD", fxRate: 32.5, unitPrice: 1, units: 5000, leverage: 1 },
+      { type: "投資", account: "0050 元大台灣50", currency: "TWD", fxRate: 1, unitPrice: 140, units: 2000, leverage: 1 },
+      { type: "投資", account: "VOO", currency: "USD", fxRate: 32.5, unitPrice: 480, units: 30, leverage: 1.5, note: "美股ETF" },
+      { type: "固定資產", account: "自住房產", currency: "TWD", fxRate: 1, unitPrice: 1, units: 8000000, leverage: 1 },
+      { type: "應收款", account: "親友借款", currency: "TWD", fxRate: 1, unitPrice: 1, units: 100000, leverage: 1 },
+      { type: "負債", account: "房屋貸款", currency: "TWD", fxRate: 1, unitPrice: 1, units: 5000000, leverage: 1 },
     ];
+    return raw.map((r) =>
+      normalizeRec({ id: uid(), date: today, note: r.note || "", amount: 0, ...r })
+    );
   }
 
   function round2(n) {
     return Math.round((Number(n) || 0) * 100) / 100;
   }
 
-  // 換算為台幣（金額 * 匯率）
-  function amountTWD(rec) {
-    return round2((Number(rec.amount) || 0) * (Number(rec.fxRate) || 1));
+  // 原幣金額（未換算台幣）＝ 單價 × 單位/額數
+  function origAmount(rec) {
+    return round2((Number(rec.unitPrice) || 0) * (Number(rec.units) || 0));
   }
 
-  // 曝險金額 = 台幣金額 * 槓桿率
+  // 金額（台幣）＝ 單價 × 單位/額數 × 匯率
+  function amountTWD(rec) {
+    return round2(
+      (Number(rec.unitPrice) || 0) * (Number(rec.units) || 0) * (Number(rec.fxRate) || 1)
+    );
+  }
+
+  // 曝險金額 = 台幣金額 * 槓桿倍數
   function exposureTWD(rec) {
     return round2(amountTWD(rec) * (Number(rec.leverage) || 1));
   }
@@ -177,6 +207,15 @@ const ALD = (() => {
               });
               rec.id = uid();
               if (!TYPES.includes(rec.type)) rec.type = "流動資產";
+              // 匯入時日期沒資料則留空，不填入預設值
+              if (!rec.date) rec.date = "";
+              // 非投資：無論匯入檔有無數值，單價與槓桿倍數一律以預設值 1 寫入
+              if (rec.type !== "投資") {
+                rec.unitPrice = 1;
+                rec.leverage = 1;
+              }
+              // 金額為計算欄位，依 單價 × 單位/額數 × 匯率 重算
+              rec.amount = amountTWD(rec);
               return rec;
             });
             resolve(records);
@@ -201,8 +240,10 @@ const ALD = (() => {
     uid,
     todayStr,
     round2,
+    origAmount,
     amountTWD,
     exposureTWD,
+    normalizeRec,
     formatAmount,
     formatPercent,
     exportCSV,
