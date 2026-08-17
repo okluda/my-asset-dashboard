@@ -147,39 +147,74 @@ const TabRebalance = {
 const TabDetail = {
   template: "#tpl-detail",
   setup() {
-    const records = store.records;
     const settings = store.settings;
     const types = ALD.TYPES;
+    const activeType = ref(types[0]);
+    const refreshing = ref(false);
 
-    const groupedSummary = computed(() => {
-      const groups = {};
-      records.forEach((r) => {
-        if (!["流動資產", "負債", "投資"].includes(r.type)) return;
-        const key = `${r.type}|${r.account}|${r.currency}`;
-        if (!groups[key]) {
-          groups[key] = {
-            type: r.type,
-            account: r.account || "(未命名)",
-            currency: r.currency || "TWD",
-            amountSum: 0,
-            amountTWDSum: 0,
-            unitsSum: 0,
+    const isInvest = computed(() => activeType.value === "投資");
+
+    // 僅顯示目前子分頁類別的明細
+    const visibleRecords = computed(() =>
+      store.records.filter((r) => r.type === activeType.value)
+    );
+
+    // 幣別分組標籤：投資用「台股/美股」，其餘用「類別(台幣/美元)」
+    function groupLabel(type, currency) {
+      if (type === "投資") {
+        const m = { TWD: "台股", USD: "美股" };
+        return m[currency] || currency;
+      }
+      const m = { TWD: "台幣", USD: "美元" };
+      const cur = m[currency] || currency;
+      return `${type}(${cur})`;
+    }
+
+    // 依幣別 -> 帳戶/項目 兩層分組彙總
+    const summary = computed(() => {
+      const recs = visibleRecords.value;
+      const groupsMap = {};
+      recs.forEach((r) => {
+        const cur = r.currency || "TWD";
+        if (!groupsMap[cur]) {
+          groupsMap[cur] = { key: cur, currency: cur, subtotalTWD: 0, accounts: {} };
+        }
+        const g = groupsMap[cur];
+        g.subtotalTWD = ALD.round2(g.subtotalTWD + ALD.amountTWD(r));
+        const acctKey = r.account || "(未命名)";
+        if (!g.accounts[acctKey]) {
+          g.accounts[acctKey] = {
+            key: acctKey,
+            account: acctKey,
+            currency: cur,
+            amountOrig: 0,
+            amountTWD: 0,
+            units: 0,
           };
         }
-        groups[key].amountSum = ALD.round2(groups[key].amountSum + (Number(r.amount) || 0));
-        groups[key].amountTWDSum = ALD.round2(groups[key].amountTWDSum + ALD.amountTWD(r));
-        groups[key].unitsSum = ALD.round2(groups[key].unitsSum + (Number(r.units) || 0));
+        const a = g.accounts[acctKey];
+        a.amountOrig = ALD.round2(a.amountOrig + (Number(r.amount) || 0));
+        a.amountTWD = ALD.round2(a.amountTWD + ALD.amountTWD(r));
+        a.units = ALD.round2(a.units + (Number(r.units) || 0));
       });
-      return Object.values(groups);
+      const groups = Object.values(groupsMap).map((g) => ({
+        key: g.key,
+        label: groupLabel(activeType.value, g.currency),
+        subtotalTWD: g.subtotalTWD,
+        accounts: Object.values(g.accounts),
+      }));
+      const totalTWD = ALD.round2(groups.reduce((s, g) => s + g.subtotalTWD, 0));
+      return { groups, totalTWD };
     });
 
+    // 新增時預設帶入目前子分頁的類別
     function addRow() {
-      records.push(ALD.emptyRecord());
+      store.records.push(ALD.emptyRecord(activeType.value));
     }
 
     function removeRow(id) {
-      const idx = records.findIndex((r) => r.id === id);
-      if (idx !== -1) records.splice(idx, 1);
+      const idx = store.records.findIndex((r) => r.id === id);
+      if (idx !== -1) store.records.splice(idx, 1);
     }
 
     // 投資類別：單價 * 單位數 自動帶入金額
@@ -193,37 +228,49 @@ const TabDetail = {
       return ALD.exposureTWD(rec);
     }
 
-    async function updateFx(rec) {
-      try {
-        rec.fxRate = ALD.round2(
-          await ALD_SERVICE.fetchFxRate(rec.currency, settings.baseCurrency)
-        );
-      } catch (e) {
-        alert("匯率查詢失敗，請改用手動輸入：" + e.message);
+    // 一次更新所有資料的匯率與（投資的）市價
+    async function refreshAll() {
+      if (refreshing.value) return;
+      refreshing.value = true;
+      let ok = 0;
+      let fail = 0;
+      for (const rec of store.records) {
+        try {
+          if (rec.currency && rec.currency !== settings.baseCurrency) {
+            rec.fxRate = ALD.round2(
+              await ALD_SERVICE.fetchFxRate(rec.currency, settings.baseCurrency)
+            );
+          }
+          if (rec.type === "投資" && rec.account) {
+            rec.unitPrice = ALD.round2(await ALD_SERVICE.fetchStockPrice(rec.account));
+            recalc(rec);
+          }
+          ok++;
+        } catch (e) {
+          fail++;
+        }
       }
-    }
-
-    async function updateStock(rec) {
-      try {
-        rec.unitPrice = ALD.round2(await ALD_SERVICE.fetchStockPrice(rec.account));
-        recalc(rec);
-      } catch (e) {
-        alert("股價查詢失敗，請改用手動輸入單價：" + e.message);
-      }
+      refreshing.value = false;
+      alert(
+        `更新完成：成功 ${ok} 筆，失敗 ${fail} 筆` +
+          (fail > 0 ? "（失敗可能因無法連外，請改用手動輸入）" : "")
+      );
     }
 
     return {
-      records,
       settings,
       types,
-      groupedSummary,
+      activeType,
+      isInvest,
+      visibleRecords,
+      summary,
+      refreshing,
       addRow,
       removeRow,
       recalc,
       exposure,
-      updateFx,
-      updateStock,
-      fmt: (v) => ALD.formatAmount(v, store.settings),
+      refreshAll,
+      num: (v) => (Number(v) || 0).toLocaleString("zh-TW"),
     };
   },
 };

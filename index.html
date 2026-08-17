@@ -104,64 +104,109 @@
 
   <script type="text/x-template" id="tpl-detail">
     <div class="page-content">
+      <!-- 5 個資產/負債類別子分頁 -->
+      <div class="subtab-bar">
+        <button
+          v-for="t in types"
+          :key="t"
+          class="subtab-btn"
+          :class="{ active: activeType === t }"
+          @click="activeType = t"
+        >{{ t }}</button>
+      </div>
+
+      <!-- 匯總區 -->
       <div class="card">
-        <div class="section-title">分類彙總</div>
-        <div v-if="groupedSummary.length === 0" class="empty-hint">尚無資料</div>
-        <div v-for="g in groupedSummary" :key="g.type + g.account + g.currency" class="summary-group">
-          <span>{{ g.type }} / {{ g.account }} / {{ g.currency }}</span>
-          <span v-if="g.type === '投資'">單位數 {{ g.unitsSum.toLocaleString() }}，金額 {{ g.amountSum.toLocaleString() }} {{ g.currency }}</span>
-          <span v-else>{{ g.amountSum.toLocaleString() }} {{ g.currency }}（約 {{ fmt(g.amountTWDSum) }}）</span>
+        <div class="sum-total-row">
+          <span class="sum-total-name">{{ activeType }}</span>
+          <span class="sum-total-amt">{{ num(summary.totalTWD) }}</span>
+        </div>
+        <div v-if="summary.groups.length === 0" class="empty-hint">此類別尚無資料</div>
+        <div v-for="g in summary.groups" :key="g.key" class="sum-group">
+          <div class="sum-group-head">
+            <span>{{ g.label }}</span>
+            <span>{{ num(g.subtotalTWD) }}</span>
+          </div>
+          <div v-for="a in g.accounts" :key="a.key" class="sum-acc-card">
+            <div class="sum-acc-row1">
+              <span class="sum-acc-name">{{ a.account }}</span>
+              <span class="sum-acc-cur">{{ isInvest ? (a.units.toLocaleString() + ' 單位') : a.currency }}</span>
+            </div>
+            <div class="sum-acc-row2">
+              <span>{{ isInvest ? '' : num(a.amountOrig) }}</span>
+              <span>{{ num(a.amountTWD) }}</span>
+            </div>
+          </div>
         </div>
       </div>
 
+      <!-- 明細卡片列表 -->
       <div class="card">
-        <div class="toolbar">
-          <button class="btn" @click="addRow">＋ 新增一筆</button>
+        <div class="detail-toolbar">
+          <button class="btn" @click="addRow">＋新增一筆</button>
+          <button class="btn warn" @click="refreshAll" :disabled="refreshing">
+            {{ refreshing ? '更新中…' : '市價/匯率' }}
+          </button>
         </div>
-        <div class="table-scroll">
-          <table class="detail-table">
-            <thead>
-              <tr>
-                <th>類型</th><th>帳戶/項目</th><th>日期</th><th>備註</th>
-                <th>單價</th><th>幣別</th><th>匯率</th><th>單位數</th>
-                <th>金額</th><th>槓桿率</th><th>曝險金額(TWD)</th><th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="rec in records" :key="rec.id">
-                <td>
-                  <select v-model="rec.type">
-                    <option v-for="t in types" :key="t" :value="t">{{ t }}</option>
-                  </select>
-                </td>
-                <td><input type="text" v-model="rec.account" placeholder="帳戶/項目" /></td>
-                <td><input type="date" v-model="rec.date" /></td>
-                <td><input type="text" v-model="rec.note" placeholder="備註" /></td>
-                <td><input type="number" v-model.number="rec.unitPrice" @change="recalc(rec)" /></td>
-                <td><input type="text" v-model="rec.currency" style="width:60px" /></td>
-                <td>
-                  <div style="display:flex; gap:4px; align-items:center;">
-                    <input type="number" v-model.number="rec.fxRate" style="width:70px" />
-                    <button v-if="settings.autoFx && rec.currency !== settings.baseCurrency" class="btn small secondary" @click="updateFx(rec)">抓</button>
-                  </div>
-                </td>
-                <td><input type="number" v-model.number="rec.units" @change="recalc(rec)" /></td>
-                <td><input type="number" v-model.number="rec.amount" /></td>
-                <td><input type="number" v-model.number="rec.leverage" step="0.1" /></td>
-                <td>{{ exposure(rec).toLocaleString() }}</td>
-                <td class="row-actions">
-                  <button v-if="settings.autoStock && rec.type === '投資'" class="btn small secondary" @click="updateStock(rec)">股價</button>
-                  <button class="btn small danger" @click="removeRow(rec.id)">刪</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
 
-      <div class="card">
-        <div class="section-title">資料匯入 / 匯出</div>
-        <div class="empty-hint" style="text-align:left">CSV 匯入/匯出與模擬資料已移至「設定」頁的「資料管理」區。</div>
+        <div v-if="visibleRecords.length === 0" class="empty-hint">此類別尚無明細，點「＋新增一筆」開始</div>
+
+        <div v-for="rec in visibleRecords" :key="rec.id" class="rec-card">
+          <div class="rec-grid">
+            <div class="rec-field">
+              <label>類別</label>
+              <select v-model="rec.type">
+                <option v-for="t in types" :key="t" :value="t">{{ t }}</option>
+              </select>
+            </div>
+            <div class="rec-field">
+              <label>帳戶/項目</label>
+              <input type="text" v-model="rec.account" placeholder="帳戶/項目" />
+            </div>
+            <div class="rec-field">
+              <label>日期</label>
+              <input type="date" v-model="rec.date" />
+            </div>
+
+            <div class="rec-field">
+              <label>單價</label>
+              <input type="number" v-model.number="rec.unitPrice" @change="recalc(rec)" />
+            </div>
+            <div class="rec-field">
+              <label>幣別</label>
+              <input type="text" v-model="rec.currency" />
+            </div>
+            <div class="rec-field">
+              <label>匯率</label>
+              <input type="number" v-model.number="rec.fxRate" />
+            </div>
+            <div class="rec-field">
+              <label>單位數</label>
+              <input type="number" v-model.number="rec.units" @change="recalc(rec)" />
+            </div>
+
+            <div class="rec-field">
+              <label>金額</label>
+              <input type="number" v-model.number="rec.amount" />
+            </div>
+            <div class="rec-field">
+              <label>槓桿率</label>
+              <input type="number" step="0.1" v-model.number="rec.leverage" />
+            </div>
+            <div class="rec-field">
+              <label>曝險金額</label>
+              <input type="text" :value="exposure(rec).toLocaleString()" readonly />
+            </div>
+
+            <div class="rec-field rec-field-full">
+              <label>備註</label>
+              <input type="text" v-model="rec.note" placeholder="備註" />
+            </div>
+          </div>
+          <div class="rec-actions">
+            <button class="btn small danger" @click="removeRow(rec.id)">刪除</button>
+          </div>
+        </div>
       </div>
     </div>
   </script>
@@ -190,8 +235,8 @@
           <input type="checkbox" v-model="settings.autoStock" />
         </div>
         <div class="empty-hint" style="text-align:left">
-          預設為手動輸入。開啟後於「明細」頁每列可個別按「抓」更新匯率或股價；
-          股價來源非官方 API，若查詢失敗請改回手動輸入單價。
+          預設為手動輸入。於「明細」頁右上角的「市價/匯率」按鈕可一次更新所有資料的匯率與（投資的）市價；
+          股價來源非官方 API，若查詢失敗請改回手動輸入。內部網路無法連外時更新會失敗，屬正常現象。
         </div>
       </div>
 
