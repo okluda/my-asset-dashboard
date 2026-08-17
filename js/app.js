@@ -31,14 +31,14 @@ const TabOverview = {
     const totalAssets = computed(() =>
       ALD.round2(
         store.records
-          .filter((r) => ALD.ASSET_TYPES.includes(r.type))
+          .filter((r) => !r.excluded && ALD.ASSET_TYPES.includes(r.type))
           .reduce((sum, r) => sum + ALD.amountTWD(r), 0)
       )
     );
     const totalLiabilities = computed(() =>
       ALD.round2(
         store.records
-          .filter((r) => r.type === "負債")
+          .filter((r) => !r.excluded && r.type === "負債")
           .reduce((sum, r) => sum + ALD.amountTWD(r), 0)
       )
     );
@@ -51,7 +51,7 @@ const TabOverview = {
       return ALD.ASSET_TYPES.map((type) => {
         const amount = ALD.round2(
           store.records
-            .filter((r) => r.type === type)
+            .filter((r) => !r.excluded && r.type === type)
             .reduce((sum, r) => sum + ALD.amountTWD(r), 0)
         );
         const ratio = totalAssets.value > 0 ? amount / totalAssets.value : 0;
@@ -81,14 +81,14 @@ const TabRebalance = {
     const liquidTWD = computed(() =>
       ALD.round2(
         store.records
-          .filter((r) => r.type === "流動資產")
+          .filter((r) => !r.excluded && r.type === "流動資產")
           .reduce((sum, r) => sum + ALD.amountTWD(r), 0)
       )
     );
     const investTWD = computed(() =>
       ALD.round2(
         store.records
-          .filter((r) => r.type === "投資")
+          .filter((r) => !r.excluded && r.type === "投資")
           .reduce((sum, r) => sum + ALD.amountTWD(r), 0)
       )
     );
@@ -99,7 +99,7 @@ const TabRebalance = {
     const exposureTotal = computed(() =>
       ALD.round2(
         store.records
-          .filter((r) => r.type === "流動資產" || r.type === "投資")
+          .filter((r) => !r.excluded && (r.type === "流動資產" || r.type === "投資"))
           .reduce((sum, r) => sum + ALD.exposureTWD(r), 0)
       )
     );
@@ -181,7 +181,7 @@ const TabDetail = {
 
     // 依幣別 -> 帳戶/項目 兩層分組彙總。金額一律用「金額(台幣)」加總。
     const summary = computed(() => {
-      const recs = typeRecords.value;
+      const recs = typeRecords.value.filter((r) => !r.excluded);
       const invest = activeType.value === "投資";
       const groupsMap = {};
       let exposureTotal = 0;
@@ -258,11 +258,11 @@ const TabDetail = {
       if (idx !== -1) store.records.splice(idx, 1);
     }
 
-    // 金額 = 單價 × 單位/額數 × 匯率（計算欄位）；非投資鎖定單價=1、槓桿=1
+    // 金額 = 單價 × 單位/額數 × 匯率（計算欄位）；非投資鎖定單價=1、槓桿=0
     function recalc(rec) {
       if (rec.type !== "投資") {
         rec.unitPrice = 1;
-        rec.leverage = 1;
+        rec.leverage = 0;
       }
       rec.amount = ALD.amountTWD(rec);
     }

@@ -46,7 +46,8 @@ const ALD = (() => {
       fxRate: 1,
       units: 0,
       amount: 0,
-      leverage: 1, // 非投資固定為 1
+      leverage: isInvest ? 1 : 0, // 非投資固定為 0
+      excluded: false, // 勾選後不計入所有計算
     };
   }
 
@@ -57,11 +58,12 @@ const ALD = (() => {
     rec.units = Number(rec.units) || 0;
     rec.fxRate = Number(rec.fxRate) || 1;
     rec.leverage = Number(rec.leverage) || 1;
+    rec.excluded = !!rec.excluded;
     if (rec.type !== "投資") {
       // 舊資料遷移：非投資若無單位/額數但有金額，把金額搬到單位/額數
       if (!rec.units && Number(rec.amount)) rec.units = Number(rec.amount) || 0;
       rec.unitPrice = 1;
-      rec.leverage = 1;
+      rec.leverage = 0; // 非投資槓桿倍數固定為 0
     }
     rec.amount = round2(rec.unitPrice * rec.units * rec.fxRate);
     return rec;
@@ -103,13 +105,13 @@ const ALD = (() => {
   function seedRecords() {
     const today = todayStr();
     const raw = [
-      { type: "流動資產", account: "銀行活存-台幣", currency: "TWD", fxRate: 1, unitPrice: 1, units: 300000, leverage: 1 },
-      { type: "流動資產", account: "銀行活存-美金", currency: "USD", fxRate: 32.5, unitPrice: 1, units: 5000, leverage: 1 },
+      { type: "流動資產", account: "銀行活存-台幣", currency: "TWD", fxRate: 1, unitPrice: 1, units: 300000, leverage: 0 },
+      { type: "流動資產", account: "銀行活存-美金", currency: "USD", fxRate: 32.5, unitPrice: 1, units: 5000, leverage: 0 },
       { type: "投資", account: "0050 元大台灣50", currency: "TWD", fxRate: 1, unitPrice: 140, units: 2000, leverage: 1 },
       { type: "投資", account: "VOO", currency: "USD", fxRate: 32.5, unitPrice: 480, units: 30, leverage: 1.5, note: "美股ETF" },
-      { type: "固定資產", account: "自住房產", currency: "TWD", fxRate: 1, unitPrice: 1, units: 8000000, leverage: 1 },
-      { type: "應收款", account: "親友借款", currency: "TWD", fxRate: 1, unitPrice: 1, units: 100000, leverage: 1 },
-      { type: "負債", account: "房屋貸款", currency: "TWD", fxRate: 1, unitPrice: 1, units: 5000000, leverage: 1 },
+      { type: "固定資產", account: "自住房產", currency: "TWD", fxRate: 1, unitPrice: 1, units: 8000000, leverage: 0 },
+      { type: "應收款", account: "親友借款", currency: "TWD", fxRate: 1, unitPrice: 1, units: 100000, leverage: 0 },
+      { type: "負債", account: "房屋貸款", currency: "TWD", fxRate: 1, unitPrice: 1, units: 5000000, leverage: 0 },
     ];
     return raw.map((r) =>
       normalizeRec({ id: uid(), date: today, note: r.note || "", amount: 0, ...r })
@@ -132,9 +134,10 @@ const ALD = (() => {
     );
   }
 
-  // 曝險金額 = 台幣金額 * 槓桿倍數
+  // 曝險金額 = 台幣金額 * 槓桿倍數（非投資槓桿=0，曝險金額即為 0）
   function exposureTWD(rec) {
-    return round2(amountTWD(rec) * (Number(rec.leverage) || 1));
+    const lev = Number(rec.leverage);
+    return round2(amountTWD(rec) * (isNaN(lev) ? 1 : lev));
   }
 
   // 依設定單位（元/萬元）格式化金額顯示
@@ -157,18 +160,28 @@ const ALD = (() => {
     { key: "account", label: "帳戶/項目" },
     { key: "date", label: "日期" },
     { key: "note", label: "備註" },
-    { key: "unitPrice", label: "單價" },
     { key: "currency", label: "幣別" },
+    { key: "unitPrice", label: "價格" },
     { key: "fxRate", label: "匯率" },
-    { key: "units", label: "單位數" },
+    { key: "units", label: "單位" },
     { key: "amount", label: "金額" },
-    { key: "leverage", label: "槓桿率" },
+    { key: "leverage", label: "槓桿倍數" },
+    { key: "exposure", label: "曝險金額" },
+    { key: "excluded", label: "不計入" },
   ];
+
+  // 匯入時忽略的欄位（金額、曝險金額為計算欄位，以程式計算為準）
+  const CSV_IGNORE_ON_IMPORT = ["amount", "exposure"];
 
   function exportCSV(records) {
     const rows = records.map((r) => {
       const o = {};
-      CSV_COLUMNS.forEach((c) => (o[c.label] = r[c.key]));
+      CSV_COLUMNS.forEach((c) => {
+        if (c.key === "amount") o[c.label] = amountTWD(r);
+        else if (c.key === "exposure") o[c.label] = exposureTWD(r);
+        else if (c.key === "excluded") o[c.label] = r.excluded ? "是" : "";
+        else o[c.label] = r[c.key];
+      });
       return o;
     });
     const csv = Papa.unparse(rows, { columns: CSV_COLUMNS.map((c) => c.label) });
@@ -194,12 +207,21 @@ const ALD = (() => {
           try {
             const labelToKey = {};
             CSV_COLUMNS.forEach((c) => (labelToKey[c.label] = c.key));
+            // 相容舊版匯出的欄位名稱
+            labelToKey["單價"] = "unitPrice";
+            labelToKey["單位數"] = "units";
+            labelToKey["槓桿率"] = "leverage";
             const records = result.data.map((row) => {
               const rec = emptyRecord();
               Object.keys(row).forEach((label) => {
                 const key = labelToKey[label.trim()];
                 if (!key) return;
-                if (["unitPrice", "fxRate", "units", "amount", "leverage"].includes(key)) {
+                // 金額、曝險金額為計算欄位，匯入時忽略檔案值
+                if (CSV_IGNORE_ON_IMPORT.includes(key)) return;
+                if (key === "excluded") {
+                  const v = String(row[label] || "").trim();
+                  rec.excluded = ["是", "Y", "y", "true", "1"].includes(v);
+                } else if (["unitPrice", "fxRate", "units", "leverage"].includes(key)) {
                   rec[key] = Number(row[label]) || 0;
                 } else {
                   rec[key] = row[label] || "";
@@ -209,10 +231,10 @@ const ALD = (() => {
               if (!TYPES.includes(rec.type)) rec.type = "流動資產";
               // 匯入時日期沒資料則留空，不填入預設值
               if (!rec.date) rec.date = "";
-              // 非投資：無論匯入檔有無數值，單價與槓桿倍數一律以預設值 1 寫入
+              // 非投資：無論匯入檔有無數值，價格以 1、槓桿倍數以 0 寫入
               if (rec.type !== "投資") {
                 rec.unitPrice = 1;
-                rec.leverage = 1;
+                rec.leverage = 0;
               }
               // 金額為計算欄位，依 單價 × 單位/額數 × 匯率 重算
               rec.amount = amountTWD(rec);
