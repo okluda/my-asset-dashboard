@@ -1,185 +1,202 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="zh-Hant">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>資產負債看板 App</title>
-    <!-- 引入 Tailwind CSS 用於美化介面 -->
-    <script src="https://tailwindcss.com"></script>
-    <style>
-        /* 隱藏未活化的頁面 */
-        .page-content { display: none; }
-        .page-content.active { display: block; }
-        body { padding-bottom: 90px; } /* 為下方導覽列留空間 */
-    </style>
+  <meta charset="UTF-8" />
+  <!-- viewport-fit=cover 讓內容延伸至瀏海/圓角區域，搭配 safe-area-inset 使用 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#1c1c2e" />
+  <title>資產負債看板</title>
+  <link rel="stylesheet" href="css/style.css" />
 </head>
-<body class="bg-gray-50 text-gray-800 min-h-screen">
+<body>
+  <div id="app"></div>
 
-    <!-- 主內容容器 -->
-    <main class="container mx-auto px-4 py-6 max-w-4xl">
-        
-        <!-- ==================== 1. 總覽分頁 ==================== -->
-        <section id="page-overview" class="page-content active space-y-6">
-            <h1 class="text-2xl font-bold text-gray-900">📊 資產負債總覽</h1>
-            
-            <!-- 上半部: KPI 區塊 -->
-            <div class="grid grid-cols-3 gap-4">
-                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-                    <p class="text-sm text-gray-500 font-medium">總資產</p>
-                    <p id="kpi-assets" class="text-xl font-bold text-emerald-600 mt-1">$0</p>
-                </div>
-                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-                    <p class="text-sm text-gray-500 font-medium">總負債 (負債比)</p>
-                    <p id="kpi-liabilities" class="text-xl font-bold text-rose-600 mt-1">$0 <span id="kpi-debt-ratio" class="text-xs font-normal text-gray-500">(0%)</span></p>
-                </div>
-                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-                    <p class="text-sm text-gray-500 font-medium">淨資產</p>
-                    <p id="kpi-net-worth" class="text-xl font-bold text-blue-600 mt-1">$0</p>
-                </div>
-            </div>
+  <!-- ============ 分頁模板（text/x-template，不需 build step） ============ -->
 
-            <!-- 中間與下半部: 資產子項目區塊 -->
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 space-y-4">
-                <h2 class="text-lg font-semibold text-gray-700">資產配置比例</h2>
-                <div id="overview-items-container" class="space-y-4">
-                    <!-- 動態渲染流動資產、投資、固定資產、應收款 -->
-                </div>
-            </div>
-        </section>
+  <script type="text/x-template" id="tpl-overview">
+    <div class="page-content">
+      <div class="kpi-row">
+        <div class="kpi-card">
+          <div class="kpi-label">資產</div>
+          <div class="kpi-value">{{ fmt(totalAssets) }}</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">負債</div>
+          <div class="kpi-value">{{ fmt(totalLiabilities) }}</div>
+          <div class="kpi-sub">負債比 {{ pct(liabilityRatio) }}</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">淨資產</div>
+          <div class="kpi-value" :class="netAssets >= 0 ? 'positive' : 'negative'">{{ fmt(netAssets) }}</div>
+        </div>
+      </div>
 
-        <!-- ==================== 2. 再平衡分頁 ==================== -->
-        <section id="page-rebalance" class="page-content space-y-6">
-            <h1 class="text-2xl font-bold text-gray-900">⚖️ 資金再平衡</h1>
-            
-            <!-- 第1區: 曝險與總額資訊 -->
-            <div class="grid grid-cols-3 gap-4 bg-white p-5 rounded-xl shadow-sm border border-gray-100">
-                <div>
-                    <p class="text-sm text-gray-500">曝險金額 (TWD)</p>
-                    <p id="reb-exposure" class="text-lg font-bold text-orange-600 mt-1">$0</p>
-                </div>
-                <div>
-                    <p class="text-sm text-gray-500">可動用總額 (流動+投資)</p>
-                    <p id="reb-liquid-total" class="text-lg font-bold text-gray-800 mt-1">$0</p>
-                </div>
-                <div>
-                    <p class="text-sm text-gray-500">曝險比</p>
-                    <p id="reb-exposure-ratio" class="text-lg font-bold text-gray-800 mt-1">0%</p>
-                </div>
-            </div>
+      <div class="card">
+        <div class="section-title">資產組成</div>
+        <div v-if="totalAssets <= 0" class="empty-hint">尚無資產資料，請至「明細」新增</div>
+        <div v-for="item in breakdown" :key="item.type" class="asset-item">
+          <div class="asset-item-row">
+            <span class="asset-item-name">{{ item.type }}</span>
+            <span class="asset-item-amt">{{ fmt(item.amount) }}（{{ pct(item.ratio) }}）</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-bar-fill" :style="{ width: (item.ratio * 100) + '%' }"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </script>
 
-            <!-- 第2區: 再平衡計算機制 -->
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 space-y-4">
-                <div class="flex items-center justify-between">
-                    <label class="font-medium text-gray-700">設定投資再平衡率 (投資佔比)：</label>
-                    <select id="reb-select-ratio" class="border rounded-lg p-2 bg-gray-50 font-medium" onchange="calculateRebalance()">
-                        <option value="0.5">50% (流動 50% : 投資 50%)</option>
-                        <option value="0.6">60% (流動 40% : 投資 60%)</option>
-                        <option value="0.7" selected>70% (流動 30% : 投資 70%)</option>
-                        <option value="0.8">80% (流動 20% : 投資 80%)</option>
-                        <option value="0.9">90% (流動 10% : 投資 90%)</option>
-                        <option value="1.0">100% (流動 0% : 投資 100%)</option>
-                    </select>
-                </div>
+  <script type="text/x-template" id="tpl-rebalance">
+    <div class="page-content">
+      <div class="card">
+        <div class="section-title">曝險概況</div>
+        <div class="summary-group"><span>曝險金額</span><span>{{ fmt(exposureTotal) }}</span></div>
+        <div class="summary-group"><span>可動用總金額（流動資產+投資）</span><span>{{ fmt(pool) }}</span></div>
+        <div class="summary-group"><span>曝險比</span><span>{{ pct(exposureRatio) }}</span></div>
+      </div>
 
-                <div class="border-t pt-4">
-                    <p class="text-sm text-gray-500">目前實際比例 (流動 : 投資)</p>
-                    <div class="flex items-center space-x-2 mt-1">
-                        <span id="reb-current-ratio-text" class="font-semibold text-gray-700">0% : 0%</span>
-                    </div>
-                </div>
+      <div class="card">
+        <div class="section-title">資金再平衡率</div>
+        <div class="form-row">
+          <label>投資目標佔比（流動:投資）</label>
+          <select v-model.number="settings.rebalanceRatio" @change="onRatioChange">
+            <option v-for="r in ratioOptions" :key="r" :value="r">
+              {{ 100 - r }}% : {{ r }}%
+            </option>
+          </select>
+        </div>
+        <div class="summary-group"><span>目前流動資產</span><span>{{ fmt(liquidTWD) }}（{{ pct(liquidRatio) }}）</span></div>
+        <div class="summary-group"><span>目前投資</span><span>{{ fmt(investTWD) }}（{{ pct(investRatio) }}）</span></div>
+      </div>
 
-                <div class="bg-blue-50 p-4 rounded-xl border border-blue-100 flex items-center justify-between">
-                    <div>
-                        <p class="text-sm text-blue-700 font-medium">再平衡執行建議</p>
-                        <p id="reb-action-msg" class="text-lg font-bold text-blue-900 mt-1">無需變動</p>
-                    </div>
-                    <div id="reb-action-badge" class="px-4 py-2 rounded-lg font-bold text-sm bg-gray-200 text-gray-700">💡 檢視中</div>
-                </div>
-            </div>
-        </section>
+      <div class="card rebalance-result">
+        <div v-if="pool <= 0" class="empty-hint">尚無流動資產或投資資料</div>
+        <template v-else>
+          <div class="rebalance-action" :class="action.type">{{ action.label }}</div>
+          <div class="rebalance-amount" v-if="action.amount > 0">{{ fmt(action.amount) }}</div>
+        </template>
+      </div>
+    </div>
+  </script>
 
-        <!-- ==================== 3. 明細分頁 ==================== -->
-        <section id="page-details" class="page-content space-y-6">
-            <h1 class="text-2xl font-bold text-gray-900">🗒️ 帳目明細管理</h1>
+  <script type="text/x-template" id="tpl-detail">
+    <div class="page-content">
+      <div class="card">
+        <div class="section-title">分類彙總</div>
+        <div v-if="groupedSummary.length === 0" class="empty-hint">尚無資料</div>
+        <div v-for="g in groupedSummary" :key="g.type + g.account + g.currency" class="summary-group">
+          <span>{{ g.type }} / {{ g.account }} / {{ g.currency }}</span>
+          <span v-if="g.type === '投資'">單位數 {{ g.unitsSum.toLocaleString() }}，金額 {{ g.amountSum.toLocaleString() }} {{ g.currency }}</span>
+          <span v-else>{{ g.amountSum.toLocaleString() }} {{ g.currency }}（約 {{ fmt(g.amountTWDSum) }}）</span>
+        </div>
+      </div>
 
-            <!-- 上半區：匯總資訊 -->
-            <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100 space-y-3">
-                <h3 class="font-semibold text-gray-700">分區幣別匯總</h3>
-                <div id="details-summary-container" class="grid grid-cols-2 gap-3 text-xs">
-                    <!-- 動態渲染匯總資訊 -->
-                </div>
-            </div>
+      <div class="card">
+        <div class="toolbar">
+          <button class="btn" @click="addRow">＋ 新增一筆</button>
+        </div>
+        <div class="table-scroll">
+          <table class="detail-table">
+            <thead>
+              <tr>
+                <th>類型</th><th>帳戶/項目</th><th>日期</th><th>備註</th>
+                <th>單價</th><th>幣別</th><th>匯率</th><th>單位數</th>
+                <th>金額</th><th>槓桿率</th><th>曝險金額(TWD)</th><th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="rec in records" :key="rec.id">
+                <td>
+                  <select v-model="rec.type">
+                    <option v-for="t in types" :key="t" :value="t">{{ t }}</option>
+                  </select>
+                </td>
+                <td><input type="text" v-model="rec.account" placeholder="帳戶/項目" /></td>
+                <td><input type="date" v-model="rec.date" /></td>
+                <td><input type="text" v-model="rec.note" placeholder="備註" /></td>
+                <td><input type="number" v-model.number="rec.unitPrice" @change="recalc(rec)" /></td>
+                <td><input type="text" v-model="rec.currency" style="width:60px" /></td>
+                <td>
+                  <div style="display:flex; gap:4px; align-items:center;">
+                    <input type="number" v-model.number="rec.fxRate" style="width:70px" />
+                    <button v-if="settings.autoFx && rec.currency !== settings.baseCurrency" class="btn small secondary" @click="updateFx(rec)">抓</button>
+                  </div>
+                </td>
+                <td><input type="number" v-model.number="rec.units" @change="recalc(rec)" /></td>
+                <td><input type="number" v-model.number="rec.amount" /></td>
+                <td><input type="number" v-model.number="rec.leverage" step="0.1" /></td>
+                <td>{{ exposure(rec).toLocaleString() }}</td>
+                <td class="row-actions">
+                  <button v-if="settings.autoStock && rec.type === '投資'" class="btn small secondary" @click="updateStock(rec)">股價</button>
+                  <button class="btn small danger" @click="removeRow(rec.id)">刪</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-            <!-- 中間區：表單新增與明細列表 -->
-            <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                <div class="p-4 bg-gray-50 border-b flex justify-between items-center">
-                    <span class="font-semibold text-gray-700">明細資料清單</span>
-                    <button onclick="openModal()" class="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-700 transition">＋ 新增項目</button>
-                </div>
-                
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left border-collapse text-sm">
-                        <thead>
-                            <tr class="bg-gray-100 text-gray-600 uppercase text-xs">
-                                <th class="p-3">類型</th>
-                                <th class="p-3">帳戶/項目</th>
-                                <th class="p-3">單價/單位</th>
-                                <th class="p-3">幣別/匯率</th>
-                                <th class="p-3">金額 (TWD)</th>
-                                <th class="p-3">曝險 (槓桿)</th>
-                                <th class="p-3 text-center">操作</th>
-                            </tr>
-                        </thead>
-                        <tbody id="details-tbody" class="divide-y divide-gray-100">
-                            <!-- 動態插入資料列 -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+      <div class="card">
+        <div class="section-title">資料匯入 / 匯出</div>
+        <div class="toolbar">
+          <button class="btn secondary" @click="exportCsv">匯出 CSV</button>
+          <button class="btn secondary" @click="$refs.fileInput.click()">匯入 CSV</button>
+          <input type="file" ref="fileInput" accept=".csv" style="display:none" @change="importCsv" />
+        </div>
+      </div>
+    </div>
+  </script>
 
-            <!-- 下半區：資料匯入及匯出 -->
-            <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
-                <div>
-                    <h3 class="font-semibold text-gray-700">資料備份與傳輸</h3>
-                    <p class="text-xs text-gray-400 mt-0.5">支援標準 CSV 格式檔案</p>
-                </div>
-                <div class="flex items-center space-x-3">
-                    <label class="cursor-pointer bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 transition">
-                        📥 匯入 CSV
-                        <input type="file" id="csv-file-input" accept=".csv" class="hidden" onchange="importCSV(event)">
-                    </label>
-                    <button onclick="exportCSV()" class="bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-900 transition">📤 匯出 CSV</button>
-                </div>
-            </div>
-        </section>
+  <script type="text/x-template" id="tpl-settings">
+    <div class="page-content">
+      <div class="card">
+        <div class="section-title">顯示單位</div>
+        <div class="form-row">
+          <label>總覽金額單位</label>
+          <select v-model="settings.unit">
+            <option value="yuan">元</option>
+            <option value="wan">萬元</option>
+          </select>
+        </div>
+      </div>
 
-        <!-- ==================== 4. 設定分頁 ==================== -->
-        <section id="page-settings" class="page-content space-y-6">
-            <h1 class="text-2xl font-bold text-gray-900">📌 系統設定</h1>
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 space-y-4">
-                <div>
-                    <label class="block font-medium text-gray-700 mb-2">總覽數值呈現單位</label>
-                    <div class="flex space-x-4">
-                        <label class="flex items-center space-x-2 cursor-pointer">
-                            <input type="radio" name="unit-setting" value="1" checked onchange="saveSettings()" class="text-blue-600 focus:ring-blue-500">
-                            <span class="text-sm font-medium text-gray-700">元 (原始金額)</span>
-                        </label>
-                        <label class="flex items-center space-x-2 cursor-pointer">
-                            <input type="radio" name="unit-setting" value="10000" onchange="saveSettings()" class="text-blue-600 focus:ring-blue-500">
-                            <span class="text-sm font-medium text-gray-700">萬元 (金額 / 10,000)</span>
-                        </label>
-                    </div>
-                </div>
-            </div>
-        </section>
+      <div class="card">
+        <div class="section-title">資料來源自動更新</div>
+        <div class="form-row">
+          <label>自動抓取即時匯率（Frankfurter）</label>
+          <input type="checkbox" v-model="settings.autoFx" />
+        </div>
+        <div class="form-row">
+          <label>自動抓取股票市值（best-effort，可能失敗）</label>
+          <input type="checkbox" v-model="settings.autoStock" />
+        </div>
+        <div class="empty-hint" style="text-align:left">
+          預設為手動輸入。開啟後於「明細」頁每列可個別按「抓」更新匯率或股價；
+          股價來源非官方 API，若查詢失敗請改回手動輸入單價。
+        </div>
+      </div>
 
-    </main>
+      <div class="card">
+        <div class="section-title">資料管理</div>
+        <div class="toolbar">
+          <button class="btn danger" @click="resetData">清除所有本地資料</button>
+        </div>
+        <div class="empty-hint" style="text-align:left">所有資料僅儲存在本機瀏覽器 localStorage，清除瀏覽器資料或更換裝置/瀏覽器將會遺失，請定期使用「明細」頁的匯出 CSV 備份。</div>
+      </div>
+    </div>
+  </script>
 
-    <!-- ==================== 新增/編輯 彈出視窗 (Modal) ==================== -->
-    <div id="data-modal" class="fixed inset-0 bg-black/50 hidden flex items-center justify-center p-4 z-50">
-        <div class="bg-white rounded-xl max-w-md w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
-            <h2 id="modal-title" class="text-lg font-bold text-gray-900">新增明細項目</h2>
-            <form id="modal-form" onsubmit="handleFormSubmit(event)" class="space-y-3 text-sm">
-                <input type="hidden" id="form-id">
-                
-                <div>
+  <!-- Vue 3 全域版本（CDN，不需 npm/build） -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <!-- PapaParse：處理 CSV 匯入/匯出 -->
+  <script src="https://unpkg.com/papaparse@5/papaparse.min.js"></script>
+
+  <script src="js/store.js"></script>
+  <script src="js/services.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
