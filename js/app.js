@@ -480,3 +480,7 @@ app.config.errorHandler = (err, instance, info) => {
   }
 };
 app.mount("#app");
+// 明確標記「App 已成功掛載」，供錯誤橫幅判斷健康狀態使用；
+// 避免用 DOM 子節點數量判斷（掛載前一瞬間會誤判為不健康）。
+window.__appMounted = true;
+if (window.__refreshErrorBanner) window.__refreshErrorBanner();

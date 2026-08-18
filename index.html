@@ -26,16 +26,11 @@
         return d.toISOString().slice(0, 19).replace("T", " ");
       }
 
-      // 判斷 App 目前是否仍可運作（Vue/Papa 已載入、#app 內已有實際內容），
-      // 讓使用者知道這是「無害的外部腳本錯誤」還是「App 本身故障」
+      // 判斷 App 目前是否仍可運作：以「Vue app.mount() 是否已成功執行」為準，
+      // 避免用 DOM 子節點數量判斷（掛載前一瞬間會誤判為不健康，造成錯誤分類不穩定）
       function appLooksHealthy() {
         try {
-          var root = document.getElementById("app");
-          return (
-            typeof Vue !== "undefined" &&
-            root &&
-            root.children.length > 0
-          );
+          return typeof Vue !== "undefined" && window.__appMounted === true;
         } catch (e) {
           return false;
         }
@@ -107,15 +102,15 @@
           detail = e.error.stack;
         } else if (e.message === "Script error." || !e.message) {
           detail =
-            "Script error.（跨來源腳本，瀏覽器隱藏了細節）\n" +
+            "Script error.（跨來源腳本，瀏覽器隱藏了細節，清除 Cookie/網站資料通常無法解決此問題）\n" +
             "檔案：" + (e.filename || "未知") + ":" + (e.lineno || "?") + ":" + (e.colno || "?") +
-            "\n可能原因：\n" +
-            "1) 瀏覽器沿用了加上 crossorigin 屬性「之前」快取的 CDN 腳本，導致錯誤細節持續被隱藏\n" +
-            "   → 請於瀏覽器「清除網站資料」或強制重新整理後再試一次\n" +
-            "2) 若使用 file:// 開啟，請改用本機伺服器（http）以取得完整錯誤訊息\n" +
+            "\n若要看到真正的錯誤內容，最可靠的方式：\n" +
+            "1) 用 Mac 連接 iPhone，於 Mac Safari「開發」選單開啟此頁的 Web Inspector（iPhone 需先在\n" +
+            "   設定 > Safari > 進階 開啟「網頁檢閱器」），即可看到完整錯誤堆疊\n" +
+            "2) 或暫時關閉 Safari 內容阻擋器/擴充功能後再試一次，排除是否為外部程式干擾\n" +
             (appLooksHealthy()
-              ? "3) 目前偵測到 App 仍正常運作，此錯誤很可能不影響功能，可略過"
-              : "3) 目前偵測到 App 可能未正常運作，建議截圖回報");
+              ? "\n目前偵測到 App 已成功掛載，此錯誤很可能不影響功能，可略過"
+              : "\n目前偵測到 App 尚未成功掛載，建議依上述方式取得完整錯誤內容後回報");
         } else {
           detail = (e.message || "未知錯誤") + "\n" + (e.filename || "") + ":" + (e.lineno || "");
         }
@@ -137,6 +132,10 @@
         showError("Promise 未處理錯誤：\n" + detail);
       });
       window.__showAppError = showError;
+      // 供 app.js 在掛載完成後呼叫，若當時橫幅已顯示，重新整理健康狀態顏色
+      window.__refreshErrorBanner = function () {
+        if (banner.style.display === "block") render();
+      };
     })();
   </script>
 
@@ -391,7 +390,8 @@
           <button class="btn danger" @click="resetData">清除所有本地資料</button>
           <button class="btn danger" @click="forceReset">強制清除並重新載入</button>
         </div>
-        <div class="empty-hint" style="text-align:left">所有資料僅儲存在本機瀏覽器 localStorage，清除瀏覽器資料或更換裝置/瀏覽器將會遺失，請定期使用「匯出 CSV」備份。匯入 CSV 與載入模擬資料皆為「附加」至現有資料。若一般清除無效或資料異常，可用「強制清除並重新載入」。</div>
+        <div class="empty-hint" style="text-align:left">所有資料僅儲存在本機瀏覽器 localStorage，清除瀏覽器資料或更換裝置/瀏覽器將會遺失，請定期使用「匯出 CSV」備份。匯入 CSV 與載入模擬資料皆為「附加」至現有資料。若一般清除無效或資料異常，可用「強制清除並重新載入」。iOS Safari 中「設定 > Safari > 清除瀏覽記錄與網站資料」或「清除 Cookie」也會一併清除本 App 的資料，請務必先備份再操作。</div>
+        <div class="empty-hint" style="text-align:left">Web Inspector 疑難排解：若畫面出現「Script error.」等看不到細節的錯誤，可用 Mac 連接 iPhone，於 iPhone「設定 > Safari > 進階」開啟「網頁檢閱器」，再於 Mac Safari「開發」選單中開啟本頁面即可看到完整錯誤堆疊。</div>
       </div>
     </div>
   </script>
