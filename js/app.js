@@ -415,15 +415,16 @@ const TabSettings = {
       }
     }
 
-    // 強制清除：直接移除 localStorage 所有本 App 的鍵並重新整理，
-    // 用於資料損毀導致一般清除失效時
+    // 強制清除：用於一般清除按鈕因資料損毀（例如 localStorage 內容非合法 JSON）而失效時。
+    // 修正：不可用 removeItem 直接移除金鑰——那會讓 loadRecords() 誤判為「App 從未初始化」
+    // 而自動重新種入模擬資料，造成「看起來沒清除成功」的假象。改為明確寫入空陣列/預設設定。
     function forceReset() {
       if (!confirm("強制清除會移除所有本地資料與設定並重新載入頁面，確定嗎？")) return;
       try {
-        localStorage.removeItem("ald_records_v1");
-        localStorage.removeItem("ald_settings_v1");
+        localStorage.setItem("ald_records_v1", "[]");
+        localStorage.setItem("ald_settings_v1", JSON.stringify(ALD.DEFAULT_SETTINGS));
       } catch (e) {
-        // 即使個別 removeItem 失敗，仍嘗試整體清空
+        // 寫入也失敗（例如 localStorage 損毀無法存取）時，才退回整體清空
         try { localStorage.clear(); } catch (_) {}
       }
       location.reload();
