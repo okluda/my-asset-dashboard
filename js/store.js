@@ -306,6 +306,7 @@ const ALD = (() => {
     TYPES,
     ASSET_TYPES,
     CSV_COLUMNS,
+    DEFAULT_SETTINGS,
     loadRecords,
     saveRecords,
     loadSettings,
