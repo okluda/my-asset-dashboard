@@ -34,6 +34,8 @@ const ALD = (() => {
     purple: { label: "紫色", accent: "#9b6bff" },
     orange: { label: "橘色", accent: "#ff9f43" },
     pink: { label: "粉色", accent: "#ff6b9d" },
+    beige: { label: "米色", accent: "#c9a875" },
+    gray: { label: "灰色", accent: "#8a8d99" },
   };
 
   // 字型選項：切換 --font-family
@@ -353,7 +355,10 @@ const ALD = (() => {
     root.style.setProperty("--accent", color.accent);
     root.style.setProperty("--font-family", font.value);
     root.style.setProperty("--font-scale", size.scale);
-    document.body.classList.toggle("theme-light", settings.themeMode === "light");
+    // 淺色模式套用在 <html>（documentElement）而非只有 <body>：
+    // 若只切換 body 的 class，<html> 本身的 --bg 仍是預設深色，iOS Safari 的
+    // 橡皮筋回彈捲動（overscroll bounce）會露出 <html> 背景，導致「捲動後背景變深色」的錯覺。
+    root.classList.toggle("theme-light", settings.themeMode === "light");
   }
 
   return {

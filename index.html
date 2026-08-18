@@ -162,7 +162,7 @@
       </div>
 
       <div class="card">
-        <div class="section-title">資產組成</div>
+        <div class="section-title">資產</div>
         <div v-if="totalAssets <= 0" class="empty-hint">尚無資產資料，請至「明細」新增</div>
         <div v-for="item in breakdown" :key="item.type" class="asset-item">
           <div class="asset-item-row">
@@ -180,31 +180,36 @@
   <script type="text/x-template" id="tpl-rebalance">
     <div class="page-content">
       <div class="card">
-        <div class="section-title">曝險概況</div>
+        <div class="section-title">配置概況及再平衡</div>
+        <div class="reb-ratio-row">
+          <span>曝險比</span>
+          <span class="reb-ratio-value">{{ pct(exposureRatio) }}</span>
+        </div>
         <div class="summary-group"><span>曝險金額</span><span>{{ fmt(exposureTotal) }}</span></div>
-        <div class="summary-group"><span>可動用總金額（流動資金+投資）</span><span>{{ fmt(pool) }}</span></div>
-        <div class="summary-group"><span>曝險比</span><span>{{ pct(exposureRatio) }}</span></div>
-      </div>
-
-      <div class="card">
-        <div class="section-title">再平衡率</div>
-        <div class="form-row">
-          <label>投資佔比</label>
+        <div class="summary-group"><span>資金部位</span><span>{{ fmt(pool) }}</span></div>
+        <div class="reb-sub-row"><span>流動資金</span><span>{{ fmt(liquidTWD) }}（{{ pct(liquidRatio) }}）</span></div>
+        <div class="reb-sub-row"><span>投資</span><span>{{ fmt(investTWD) }}（{{ pct(investRatio) }}）</span></div>
+        <div class="form-row reb-ratio-select-row">
+          <label>投資配置比</label>
           <select v-model.number="settings.rebalanceRatio" @change="onRatioChange">
             <option v-for="r in ratioOptions" :key="r" :value="r">
               {{ r }}%
             </option>
           </select>
         </div>
-        <div class="summary-group"><span>流動資金</span><span>{{ fmt(liquidTWD) }}（{{ pct(liquidRatio) }}）</span></div>
-        <div class="summary-group"><span>投資</span><span>{{ fmt(investTWD) }}（{{ pct(investRatio) }}）</span></div>
       </div>
 
       <div class="card rebalance-result">
         <div v-if="pool <= 0" class="empty-hint">尚無流動資金或投資資料</div>
         <template v-else>
-          <div class="rebalance-action" :class="action.type">{{ action.label }}</div>
-          <div class="rebalance-amount" v-if="action.amount > 0">{{ fmt(action.amount) }}</div>
+          <div v-if="action.type === 'hold'" class="rebalance-hold">{{ action.label }}</div>
+          <div v-else class="rebalance-advice-box" :class="action.type">
+            <div class="reb-icon-circle" :class="action.type">⬇</div>
+            <div class="rebalance-advice-text">
+              <div class="rebalance-advice-title">再平衡建議</div>
+              <div class="rebalance-advice-amount">{{ action.label }} {{ fmt(action.amount) }}</div>
+            </div>
+          </div>
         </template>
       </div>
     </div>
@@ -228,11 +233,11 @@
         <!-- 第一層標題：非投資為「總計」；投資為「市價」，並多一行「曝險金額」 -->
         <div class="sum-total-row">
           <span class="sum-total-name">{{ isInvest ? '市價' : '總計' }}</span>
-          <span class="sum-total-amt">{{ num(summary.totalTWD) }}</span>
+          <span class="sum-total-amt">{{ fmt(summary.totalTWD) }}</span>
         </div>
         <div v-if="isInvest" class="sum-total-row sum-total-sub">
           <span class="sum-total-name">曝險金額</span>
-          <span class="sum-total-amt">{{ num(summary.exposureTotal) }}</span>
+          <span class="sum-total-amt">{{ fmt(summary.exposureTotal) }}</span>
         </div>
 
         <div v-if="summary.groups.length === 0" class="empty-hint">此類別尚無資料</div>
@@ -241,7 +246,7 @@
           <div class="sum-group-head">
             <span>{{ g.label }}</span>
             <span>
-              {{ num(g.subtotalTWD) }}<span v-if="g.isForeign" class="sum-orig"> ({{ num(g.subtotalOrig) }})</span>
+              {{ fmt(g.subtotalTWD) }}<span v-if="g.isForeign" class="sum-orig"> ({{ num(g.subtotalOrig) }})</span>
             </span>
           </div>
           <!-- 第三層：帳戶/項目，可點選作為下方明細的篩選條件 -->
@@ -259,7 +264,7 @@
             <div class="sum-acc-row2">
               <span></span>
               <span>
-                {{ num(a.amountTWD) }}<span v-if="a.isForeign" class="sum-orig"> ({{ num(a.amountOrig) }})</span>
+                {{ fmt(a.amountTWD) }}<span v-if="a.isForeign" class="sum-orig"> ({{ num(a.amountOrig) }})</span>
               </span>
             </div>
           </div>
@@ -270,14 +275,35 @@
       <div class="card">
         <div class="detail-toolbar">
           <button class="btn" @click="addRow">＋新增一筆</button>
+          <button
+            class="btn secondary date-filter-btn"
+            :class="{ active: dateFilterActive }"
+            @click="onDateFilterClick"
+            @mousedown="startLongPress"
+            @mouseup="cancelLongPress"
+            @mouseleave="cancelLongPress"
+            @touchstart="startLongPress"
+            @touchend="cancelLongPress"
+            @touchcancel="cancelLongPress"
+            title="點一下：篩選此日期／長按：修改日期"
+          >📅 {{ dateFilterValue }}</button>
+          <input
+            type="date"
+            ref="dateFilterInput"
+            v-model="dateFilterValue"
+            @change="onDateFilterInputChange"
+            style="position:absolute; opacity:0; width:0; height:0; pointer-events:none;"
+          />
           <button class="btn warn" @click="refreshAll" :disabled="refreshing">
             {{ refreshing ? '更新中…' : '市價/匯率' }}
           </button>
         </div>
 
-        <div v-if="selectedAccounts.length > 0" class="filter-hint">
-          篩選中：{{ selectedAccounts.join('、') }}
-          <button class="btn small" @click="selectedAccounts = []">清除篩選</button>
+        <div v-if="selectedAccounts.length > 0 || dateFilterActive" class="filter-hint">
+          篩選中：
+          <template v-if="dateFilterActive">日期 {{ dateFilterValue }}</template>
+          <template v-if="selectedAccounts.length > 0">{{ dateFilterActive ? '、' : '' }}{{ selectedAccounts.join('、') }}</template>
+          <button class="btn small" @click="selectedAccounts = []; dateFilterActive = false">清除篩選</button>
         </div>
 
         <div v-if="visibleRecords.length === 0" class="empty-hint">此類別尚無明細，點「＋新增一筆」開始</div>

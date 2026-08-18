@@ -16,8 +16,9 @@
   --font-family: -apple-system, BlinkMacSystemFont, "PingFang TC", "Helvetica Neue", Arial, sans-serif;
 }
 
-/* ---------- 淺色模式（由設定頁「深色/淺色模式」切換 body class 套用） ---------- */
-body.theme-light {
+/* ---------- 淺色模式（由設定頁「深色/淺色模式」切換套用於 <html>，
+   避免只套用在 <body> 導致 iOS 橡皮筋回彈捲動時露出 <html> 的深色背景） ---------- */
+html.theme-light {
   --bg: #f4f5fa;
   --card-bg: #ffffff;
   --card-bg-2: #eef0f7;
@@ -219,21 +220,6 @@ html, body {
   padding: 18px 10px;
 }
 
-.rebalance-action {
-  font-size: calc(26px * var(--font-scale, 1));
-  font-weight: 800;
-  margin-bottom: 4px;
-}
-
-.rebalance-action.buy { color: var(--accent-2); }
-.rebalance-action.sell { color: var(--danger); }
-.rebalance-action.hold { color: var(--text-sub); }
-
-.rebalance-amount {
-  font-size: calc(18px * var(--font-scale, 1));
-  color: var(--text-main);
-}
-
 select, input, button {
   font-family: inherit;
   font-size: calc(15px * var(--font-scale, 1));
@@ -363,7 +349,110 @@ table.detail-table input, table.detail-table select {
 
 .summary-group:last-child { border-bottom: none; }
 
-/* ---------- 底部分頁列（圓角長方 bar） ---------- */
+/* ---------- 再平衡：配置概況及再平衡 ---------- */
+.reb-ratio-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-bottom: 10px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.reb-ratio-value {
+  font-weight: 700;
+  font-size: calc(16px * var(--font-scale, 1));
+}
+
+.reb-sub-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0 4px 14px;
+  font-size: calc(12px * var(--font-scale, 1));
+  color: var(--text-sub);
+}
+
+.reb-ratio-select-row {
+  margin-top: 10px;
+  margin-bottom: 0;
+}
+
+.rebalance-hold {
+  text-align: center;
+  padding: 18px 10px;
+  color: var(--text-sub);
+  font-size: calc(16px * var(--font-scale, 1));
+  font-weight: 700;
+}
+
+/* 再平衡建議：圖案 + 標題/金額，依買入/賣出套用不同底色 */
+.rebalance-advice-box {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 14px;
+  text-align: left;
+}
+
+.rebalance-advice-box.sell {
+  background: rgba(255, 107, 107, 0.15);
+}
+
+.rebalance-advice-box.buy {
+  background: rgba(53, 201, 143, 0.15);
+}
+
+.reb-icon-circle {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(18px * var(--font-scale, 1));
+  font-weight: 700;
+}
+
+.reb-icon-circle.sell {
+  color: var(--danger);
+}
+
+.reb-icon-circle.buy {
+  color: var(--accent-2);
+}
+
+.rebalance-advice-title {
+  font-size: calc(15px * var(--font-scale, 1));
+  font-weight: 700;
+}
+
+.rebalance-advice-amount {
+  font-size: calc(18px * var(--font-scale, 1));
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+.rebalance-advice-box.sell .rebalance-advice-title,
+.rebalance-advice-box.sell .rebalance-advice-amount {
+  color: var(--danger);
+}
+
+.rebalance-advice-box.buy .rebalance-advice-title,
+.rebalance-advice-box.buy .rebalance-advice-amount {
+  color: var(--accent-2);
+}
+
+/* ---------- 明細：日期篩選按鈕（點一下篩選，長按修改日期） ---------- */
+.date-filter-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+
 .tab-bar {
   position: fixed;
   left: 16px;

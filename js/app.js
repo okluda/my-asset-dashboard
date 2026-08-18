@@ -120,6 +120,11 @@ const TabRebalance = {
     const exposureRatio = computed(() => (pool.value > 0 ? exposureTotal.value / pool.value : 0));
 
     // 目標：投資佔比 = rebalanceRatio(%)，流動資金佔比 = 100 - rebalanceRatio
+    // 修正：原本用「liquidTWD > investTWD」的原始金額比較來判斷買入/賣出，
+    // 這與使用者選擇的目標比例（rebalanceRatio）完全無關，只要目標不是 50% 就會誤判。
+    // 正確判斷應直接看 diff（目標投資金額 - 目前投資金額）的正負號：
+    // diff > 0 代表投資佔比不足目標 -> 應買入（把流動資金轉入投資）
+    // diff < 0 代表投資佔比超過目標 -> 應賣出（把投資轉回流動資金）
     const action = computed(() => {
       const targetInvestRatio = (Number(settings.rebalanceRatio) || 70) / 100;
       const targetInvest = pool.value * targetInvestRatio;
@@ -127,12 +132,10 @@ const TabRebalance = {
       if (Math.abs(diff) < 1) {
         return { type: "hold", label: "已達平衡，無需調整", amount: 0 };
       }
-      if (liquidTWD.value > investTWD.value) {
-        // 流動資金偏高 -> 買入（將現金轉入投資）
-        return { type: "buy", label: "建議：買入", amount: Math.abs(diff) };
+      if (diff > 0) {
+        return { type: "buy", label: "買入", amount: Math.abs(diff) };
       }
-      // 投資偏高 -> 賣出（將投資轉回現金）
-      return { type: "sell", label: "建議：賣出", amount: Math.abs(diff) };
+      return { type: "sell", label: "賣出", amount: Math.abs(diff) };
     });
 
     function onRatioChange() {
@@ -175,12 +178,55 @@ const TabDetail = {
       store.records.filter((r) => r.type === activeType.value)
     );
 
-    // 套用第三層篩選後、實際顯示於下方明細的資料
+    // 日期篩選：預設當天。點一下切換是否套用篩選；長按開啟日期選擇器修改要篩選的日期。
+    const dateFilterValue = ref(ALD.todayStr());
+    const dateFilterActive = ref(false);
+    const dateFilterInput = ref(null);
+    let longPressTimer = null;
+    let longPressTriggered = false;
+
+    function startLongPress() {
+      longPressTriggered = false;
+      longPressTimer = setTimeout(() => {
+        longPressTriggered = true;
+        const el = dateFilterInput.value;
+        if (!el) return;
+        if (typeof el.showPicker === "function") el.showPicker();
+        else el.click();
+      }, 550);
+    }
+
+    function cancelLongPress() {
+      if (longPressTimer) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+    }
+
+    // 短按：切換是否套用「篩選對應日期的資料」；長按觸發後的這次 click 不切換篩選狀態
+    function onDateFilterClick() {
+      if (longPressTriggered) {
+        longPressTriggered = false;
+        return;
+      }
+      dateFilterActive.value = !dateFilterActive.value;
+    }
+
+    // 長按選好新日期後，直接套用篩選（讓使用者能立即看到該日期的資料）
+    function onDateFilterInputChange() {
+      dateFilterActive.value = true;
+    }
+
+    // 套用第三層篩選、日期篩選後，實際顯示於下方明細的資料
     const visibleRecords = computed(() => {
-      if (selectedAccounts.value.length === 0) return typeRecords.value;
-      return typeRecords.value.filter((r) =>
-        selectedAccounts.value.includes(r.account || "(未命名)")
-      );
+      let list = typeRecords.value;
+      if (selectedAccounts.value.length > 0) {
+        list = list.filter((r) => selectedAccounts.value.includes(r.account || "(未命名)"));
+      }
+      if (dateFilterActive.value) {
+        list = list.filter((r) => r.date === dateFilterValue.value);
+      }
+      return list;
     });
 
     // 幣別分組標籤：投資用「台股/美股」，非投資用「台幣合計/美元合計」
@@ -342,7 +388,15 @@ const TabDetail = {
       money,
       exposure,
       refreshAll,
+      dateFilterValue,
+      dateFilterActive,
+      dateFilterInput,
+      startLongPress,
+      cancelLongPress,
+      onDateFilterClick,
+      onDateFilterInputChange,
       num: (v) => (Number(v) || 0).toLocaleString("zh-TW"),
+      fmt: (v) => ALD.formatAmount(v, store.settings),
     };
   },
 };
