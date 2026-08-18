@@ -166,7 +166,7 @@
         <div v-if="totalAssets <= 0" class="empty-hint">尚無資產資料，請至「明細」新增</div>
         <div v-for="item in breakdown" :key="item.type" class="asset-item">
           <div class="asset-item-row">
-            <span class="asset-item-name">{{ item.type }}</span>
+            <span class="asset-item-name">{{ catName(item.type) }}</span>
             <span class="asset-item-amt">{{ fmt(item.amount) }}（{{ pct(item.ratio) }}）</span>
           </div>
           <div class="progress-bar">
@@ -187,8 +187,8 @@
         </div>
         <div class="summary-group"><span>曝險金額</span><span>{{ fmt(exposureTotal) }}</span></div>
         <div class="summary-group"><span>資金部位</span><span>{{ fmt(pool) }}</span></div>
-        <div class="reb-sub-row"><span>流動資金</span><span>{{ fmt(liquidTWD) }}（{{ pct(liquidRatio) }}）</span></div>
-        <div class="reb-sub-row"><span>投資</span><span>{{ fmt(investTWD) }}（{{ pct(investRatio) }}）</span></div>
+        <div class="reb-sub-row"><span>{{ catName('流動資金') }}</span><span>{{ fmt(liquidTWD) }}（{{ pct(liquidRatio) }}）</span></div>
+        <div class="reb-sub-row"><span>{{ catName('投資') }}</span><span>{{ fmt(investTWD) }}（{{ pct(investRatio) }}）</span></div>
         <div class="form-row reb-ratio-select-row">
           <label>投資配置比</label>
           <select v-model.number="settings.rebalanceRatio" @change="onRatioChange">
@@ -225,7 +225,7 @@
           class="subtab-btn"
           :class="{ active: activeType === t }"
           @click="activeType = t"
-        >{{ t }}</button>
+        >{{ catName(t) }}</button>
       </div>
 
       <!-- 匯總區 -->
@@ -294,9 +294,6 @@
             @change="onDateFilterInputChange"
             style="position:absolute; opacity:0; width:0; height:0; pointer-events:none;"
           />
-          <button class="btn warn" @click="refreshAll" :disabled="refreshing">
-            {{ refreshing ? '更新中…' : '市價/匯率' }}
-          </button>
         </div>
 
         <div v-if="selectedAccounts.length > 0 || dateFilterActive" class="filter-hint">
@@ -313,12 +310,15 @@
             <div class="rec-field">
               <label>類別</label>
               <select v-model="rec.type" @change="onTypeChange(rec)">
-                <option v-for="t in types" :key="t" :value="t">{{ t }}</option>
+                <option v-for="t in types" :key="t" :value="t">{{ catName(t) }}</option>
               </select>
             </div>
             <div class="rec-field">
               <label>帳戶/項目</label>
-              <input type="text" v-model="rec.account" placeholder="帳戶/項目" />
+              <select v-model="rec.account" @change="onAccountChange(rec)">
+                <option value="">（請選擇）</option>
+                <option v-for="a in accountOptions(rec)" :key="a" :value="a">{{ a }}</option>
+              </select>
             </div>
             <div class="rec-field">
               <label>日期</label>
@@ -327,12 +327,7 @@
 
             <div class="rec-field">
               <label>價格</label>
-              <input
-                type="number"
-                v-model.number="rec.unitPrice"
-                @change="recalc(rec)"
-                :readonly="rec.type !== '投資'"
-              />
+              <input type="number" :value="rec.unitPrice" readonly />
             </div>
             <div class="rec-field">
               <label>幣別</label>
@@ -379,6 +374,21 @@
 
   <script type="text/x-template" id="tpl-settings">
     <div class="page-content">
+      <div class="subtab-bar">
+        <button
+          class="subtab-btn"
+          :class="{ active: settingsTab === 'system' }"
+          @click="settingsTab = 'system'"
+        >系統</button>
+        <button
+          class="subtab-btn"
+          :class="{ active: settingsTab === 'account' }"
+          @click="settingsTab = 'account'"
+        >帳戶</button>
+      </div>
+
+      <!-- ===== 系統子分頁 ===== -->
+      <template v-if="settingsTab === 'system'">
       <div class="card">
         <div class="section-title">外觀設定</div>
         <div class="form-row">
@@ -439,7 +449,7 @@
           <input type="checkbox" v-model="settings.autoStock" />
         </div>
         <div class="empty-hint" style="text-align:left">
-          預設為手動輸入。於「明細」頁右上角的「市價/匯率」按鈕可一次更新所有資料的匯率與（投資的）市價；
+          預設為手動輸入。於「設定 &gt; 帳戶」的「同步價格」按鈕可一次更新所有帳戶/項目的價格（投資取即時市價）；
           股價來源非官方 API，若查詢失敗請改回手動輸入。內部網路無法連外時更新會失敗，屬正常現象。
         </div>
       </div>
@@ -457,6 +467,62 @@
         <div class="empty-hint" style="text-align:left">所有資料僅儲存在本機瀏覽器 localStorage，清除瀏覽器資料或更換裝置/瀏覽器將會遺失，請定期使用「匯出 CSV」備份。匯入 CSV 與載入模擬資料皆為「附加」至現有資料。若一般清除無效或資料異常，可用「強制清除並重新載入」。iOS Safari 中「設定 > Safari > 清除瀏覽記錄與網站資料」或「清除 Cookie」也會一併清除本 App 的資料，請務必先備份再操作。</div>
         <div class="empty-hint" style="text-align:left">Web Inspector 疑難排解：若畫面出現「Script error.」等看不到細節的錯誤，可用 Mac 連接 iPhone，於 iPhone「設定 > Safari > 進階」開啟「網頁檢閱器」，再於 Mac Safari「開發」選單中開啟本頁面即可看到完整錯誤堆疊。</div>
       </div>
+      </template>
+
+      <!-- ===== 帳戶子分頁 ===== -->
+      <template v-else>
+      <div class="card">
+        <div class="section-title">資產子類別</div>
+        <div class="cfg-table">
+          <div class="cfg-row cfg-head">
+            <span>類別</span>
+            <span>名稱</span>
+          </div>
+          <div class="cfg-row" v-for="key in assetCategoryKeys" :key="key">
+            <span class="cfg-cat">{{ key }}</span>
+            <input
+              type="text"
+              v-model="settings.categoryNames[key]"
+              :placeholder="key"
+              @blur="onCategoryNameBlur(key)"
+            />
+          </div>
+        </div>
+        <div class="empty-hint" style="text-align:left">名稱可修改（空白會自動帶回預設），行數固定 4 個。此名稱會套用於畫面呈現與 CSV 匯出入的「類型」欄位值。</div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">帳戶/項目</div>
+        <div class="toolbar">
+          <button class="btn" @click="addAccount">＋新增帳戶/項目</button>
+          <button class="btn warn" @click="syncPrices" :disabled="syncing">
+            {{ syncing ? '同步中…' : '同步價格' }}
+          </button>
+        </div>
+        <div v-if="accounts.length === 0" class="empty-hint">尚無帳戶/項目，點「＋新增帳戶/項目」開始</div>
+        <div class="acc-cfg-card" v-for="acc in accounts" :key="acc.id">
+          <div class="acc-cfg-grid">
+            <div class="rec-field">
+              <label>類別</label>
+              <select v-model="acc.category">
+                <option v-for="t in types" :key="t" :value="t">{{ catName(t) }}</option>
+              </select>
+            </div>
+            <div class="rec-field">
+              <label>帳戶/項目</label>
+              <input type="text" v-model="acc.account" placeholder="帳戶/項目" />
+            </div>
+            <div class="rec-field">
+              <label>價格</label>
+              <input type="number" v-model.number="acc.price" />
+            </div>
+          </div>
+          <div class="acc-cfg-actions">
+            <button class="btn small danger" @click="removeAccount(acc.id)">刪除</button>
+          </div>
+        </div>
+      </div>
+      </template>
     </div>
   </script>
 

@@ -8,6 +8,7 @@
 const ALD = (() => {
   const RECORDS_KEY = "ald_records_v1";
   const SETTINGS_KEY = "ald_settings_v1";
+  const ACCOUNTS_KEY = "ald_accounts_v1";
 
   // 資料來源類型（依規格固定五種）
   const TYPES = ["流動資金", "投資", "固定資產", "應收款", "負債"];
@@ -25,6 +26,14 @@ const ALD = (() => {
     themeColor: "blue", // 主題配色（見 THEME_COLORS）
     fontFamily: "system", // 字型（見 FONT_FAMILIES）
     fontSize: "md", // 字型大小（見 FONT_SIZES）
+    // 資產子類別顯示名稱：可自訂 4 個資產類別的呈現名稱，空白時以內部鍵為預設。
+    // 影響畫面呈現（總覽/明細/再平衡）與 CSV 匯出入的「類型」欄位值。負債名稱固定不可改。
+    categoryNames: {
+      流動資金: "流動資金",
+      投資: "投資",
+      固定資產: "固定資產",
+      應收款: "應收款",
+    },
   };
 
   // 主題配色：切換 --accent（按鈕/選中狀態等主色）
@@ -94,8 +103,9 @@ const ALD = (() => {
     };
   }
 
-  // 正規化單筆資料：確保數值型別、非投資鎖定 單價=1/槓桿=1，並重算金額。
-  // 同時提供舊資料遷移：舊版非投資把金額存在 amount，這裡改用 單位/額數 承載。
+  // 正規化單筆資料：確保數值型別、非投資鎖定槓桿=0，並重算金額。
+  // 價格改由「設定 > 帳戶」帶入，故此處不再強制非投資單價=1，保留原有價格快照。
+  // 同時提供舊資料遷移：舊版非投資把金額存在 amount，這裡改用 單位 承載。
   function normalizeRec(rec) {
     rec.unitPrice = Number(rec.unitPrice) || 0;
     rec.units = Number(rec.units) || 0;
@@ -103,9 +113,10 @@ const ALD = (() => {
     rec.leverage = Number(rec.leverage) || 1;
     rec.excluded = rec.excluded ? 1 : 0;
     if (rec.type !== "投資") {
-      // 舊資料遷移：非投資若無單位/額數但有金額，把金額搬到單位/額數
+      // 舊資料遷移：非投資若無單位但有金額，把金額搬到單位
       if (!rec.units && Number(rec.amount)) rec.units = Number(rec.amount) || 0;
-      rec.unitPrice = 1;
+      // 舊資料相容：非投資若無有效價格，帶入預設 1（維持 金額 = 1 × 單位 × 匯率）
+      if (!rec.unitPrice) rec.unitPrice = 1;
       rec.leverage = 0; // 非投資槓桿倍數固定為 0
     }
     rec.amount = round2(rec.unitPrice * rec.units * rec.fxRate);
@@ -143,6 +154,83 @@ const ALD = (() => {
 
   function saveSettings(settings) {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  }
+
+  // ---------- 資產子類別顯示名稱 ----------
+  // 取得類別 key 的顯示名稱；空白或無設定時回傳內部鍵。負債固定為「負債」。
+  function categoryDisplayName(settings, key) {
+    if (key === "負債") return "負債";
+    const names = (settings && settings.categoryNames) || {};
+    const n = names[key];
+    return n && String(n).trim() ? String(n).trim() : key;
+  }
+
+  // 建立「顯示名稱/內部鍵 -> 內部鍵」的反查表（供 CSV 匯入時把類型名稱轉回內部鍵）
+  function buildTypeNameToKey(settings) {
+    const map = {};
+    TYPES.forEach((k) => {
+      map[k] = k; // 內部鍵本身
+      map[categoryDisplayName(settings, k)] = k; // 顯示名稱
+    });
+    return map;
+  }
+
+  // ---------- 帳戶/項目設定 ----------
+  // 每筆：{ id, category(內部類別鍵), account(帳戶/項目名稱), price(價格) }
+  function emptyAccount(category) {
+    return { id: uid(), category: category || "流動資金", account: "", price: 1 };
+  }
+
+  function seedAccounts() {
+    const raw = [
+      { category: "流動資金", account: "銀行活存-台幣", price: 1 },
+      { category: "流動資金", account: "銀行活存-美金", price: 1 },
+      { category: "投資", account: "0050 元大台灣50", price: 140 },
+      { category: "投資", account: "VOO", price: 480 },
+      { category: "固定資產", account: "自住房產", price: 1 },
+      { category: "應收款", account: "親友借款", price: 1 },
+      { category: "負債", account: "房屋貸款", price: 1 },
+    ];
+    return raw.map((r) => ({ id: uid(), ...r }));
+  }
+
+  function loadAccounts() {
+    try {
+      const rawStr = localStorage.getItem(ACCOUNTS_KEY);
+      // 只有「從未初始化」（null）時才種入預設帳戶；已明確清空（[]）時維持空白
+      if (rawStr === null) return seedAccounts();
+      const arr = JSON.parse(rawStr);
+      if (!Array.isArray(arr)) return seedAccounts();
+      return arr.map((a) => ({
+        id: a.id || uid(),
+        category: TYPES.includes(a.category) ? a.category : "流動資金",
+        account: String(a.account == null ? "" : a.account),
+        price: Number(a.price) || 0,
+      }));
+    } catch (e) {
+      return seedAccounts();
+    }
+  }
+
+  function saveAccounts(accounts) {
+    localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
+  }
+
+  // 依「類別 + 帳戶/項目」查對應價格；找不到回傳 null
+  function lookupAccountPrice(accounts, category, account) {
+    if (!Array.isArray(accounts)) return null;
+    const found = accounts.find(
+      (a) => a.category === category && a.account === account
+    );
+    return found ? Number(found.price) || 0 : null;
+  }
+
+  // 取某類別下的所有帳戶/項目名稱（供明細下拉選單使用）
+  function accountsForCategory(accounts, category) {
+    if (!Array.isArray(accounts)) return [];
+    return accounts
+      .filter((a) => a.category === category && String(a.account).trim() !== "")
+      .map((a) => a.account);
   }
 
   // 首次使用提供的範例資料，方便使用者了解畫面呈現方式。
@@ -218,7 +306,7 @@ const ALD = (() => {
   // 匯入時忽略的欄位（金額、曝險金額為計算欄位，以程式計算為準）
   const CSV_IGNORE_ON_IMPORT = ["amount", "exposure"];
 
-  function exportCSV(records) {
+  function exportCSV(records, settings) {
     if (typeof Papa === "undefined") {
       throw new Error("PapaParse 函式庫未載入（CDN 連線失敗），無法匯出 CSV。");
     }
@@ -229,6 +317,7 @@ const ALD = (() => {
         else if (c.key === "exposure") o[c.label] = exposureTWD(r);
         else if (c.key === "excluded") o[c.label] = r.excluded ? 1 : 0;
         else if (c.key === "date") o[c.label] = normalizeDate(r.date);
+        else if (c.key === "type") o[c.label] = categoryDisplayName(settings, r.type);
         else o[c.label] = r[c.key];
       });
       return o;
@@ -266,12 +355,13 @@ const ALD = (() => {
     return `${y}-${mo}-${d}`;
   }
 
-  function parseCSV(file) {
+  function parseCSV(file, settings) {
     return new Promise((resolve, reject) => {
       if (typeof Papa === "undefined") {
         reject(new Error("PapaParse 函式庫未載入（CDN 連線失敗），無法匯入 CSV。"));
         return;
       }
+      const typeNameToKey = buildTypeNameToKey(settings);
       Papa.parse(file, {
         header: true,
         skipEmptyLines: true,
@@ -295,9 +385,10 @@ const ALD = (() => {
                 if (key) raw[key] = row[label];
               });
 
-              // 類型：值域檢查，不符或空則跳過整列
-              const type = String(raw.type == null ? "" : raw.type).trim();
-              if (!TYPES.includes(type)) {
+              // 類型：接受內部鍵或自訂顯示名稱，轉回內部鍵；不符或空則跳過整列
+              const rawType = String(raw.type == null ? "" : raw.type).trim();
+              const type = typeNameToKey[rawType];
+              if (!type) {
                 skipped++;
                 return;
               }
@@ -373,6 +464,14 @@ const ALD = (() => {
     saveRecords,
     loadSettings,
     saveSettings,
+    loadAccounts,
+    saveAccounts,
+    seedAccounts,
+    emptyAccount,
+    lookupAccountPrice,
+    accountsForCategory,
+    categoryDisplayName,
+    buildTypeNameToKey,
     emptyRecord,
     uid,
     todayStr,
