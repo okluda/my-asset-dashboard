@@ -185,6 +185,7 @@ const ALD = (() => {
         if (c.key === "amount") o[c.label] = amountTWD(r);
         else if (c.key === "exposure") o[c.label] = exposureTWD(r);
         else if (c.key === "excluded") o[c.label] = r.excluded ? 1 : 0;
+        else if (c.key === "date") o[c.label] = normalizeDate(r.date);
         else o[c.label] = r[c.key];
       });
       return o;
@@ -200,6 +201,26 @@ const ALD = (() => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  }
+
+  // 解析數字（去除千分位逗號、空白），空值或非數字則回傳預設值
+  function numOr(val, dflt) {
+    const s = String(val == null ? "" : val).replace(/,/g, "").trim();
+    if (s === "") return dflt;
+    const n = Number(s);
+    return isNaN(n) ? dflt : n;
+  }
+
+  // 正規化日期：接受 yyyy/mm/dd 或 yyyy-mm-dd，輸出 yyyy-mm-dd；空值或無法解析則回傳 ""
+  function normalizeDate(val) {
+    const s = String(val == null ? "" : val).trim();
+    if (s === "") return "";
+    const m = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+    if (!m) return "";
+    const y = m[1];
+    const mo = String(m[2]).padStart(2, "0");
+    const d = String(m[3]).padStart(2, "0");
+    return `${y}-${mo}-${d}`;
   }
 
   function parseCSV(file) {
@@ -220,35 +241,57 @@ const ALD = (() => {
             labelToKey["單價"] = "unitPrice";
             labelToKey["單位數"] = "units";
             labelToKey["槓桿率"] = "leverage";
-            const records = result.data.map((row) => {
-              const rec = emptyRecord();
+
+            let skipped = 0;
+            const records = [];
+            result.data.forEach((row) => {
+              // 先把每個欄位標題對應到 raw 值
+              const raw = {};
               Object.keys(row).forEach((label) => {
                 const key = labelToKey[label.trim()];
-                if (!key) return;
-                // 金額、曝險金額為計算欄位，匯入時忽略檔案值
-                if (CSV_IGNORE_ON_IMPORT.includes(key)) return;
-                if (key === "excluded") {
-                  const v = String(row[label] || "").trim();
-                  rec.excluded = ["1", "是", "Y", "y", "true"].includes(v) ? 1 : 0;
-                } else if (["unitPrice", "fxRate", "units", "leverage"].includes(key)) {
-                  rec[key] = Number(row[label]) || 0;
-                } else {
-                  rec[key] = row[label] || "";
-                }
+                if (key) raw[key] = row[label];
               });
-              rec.id = uid();
-              if (!TYPES.includes(rec.type)) rec.type = "流動資產";
-              // 匯入時日期沒資料則留空，不填入預設值
-              if (!rec.date) rec.date = "";
-              // 非投資：無論匯入檔有無數值，價格以 1、槓桿倍數以 0 寫入
+
+              // 類型：值域檢查，不符或空則跳過整列
+              const type = String(raw.type == null ? "" : raw.type).trim();
+              if (!TYPES.includes(type)) {
+                skipped++;
+                return;
+              }
+
+              const rec = emptyRecord(type);
+              rec.type = type;
+              // 帳戶/項目、備註：文字，空值可匯入
+              rec.account = String(raw.account == null ? "" : raw.account).trim();
+              rec.note = String(raw.note == null ? "" : raw.note).trim();
+              // 日期：yyyy/mm/dd 或 yyyy-mm-dd，空值可匯入（留空）
+              rec.date = normalizeDate(raw.date);
+              // 單價：數字，空值預設 1
+              rec.unitPrice = numOr(raw.unitPrice, 1);
+              // 幣別：值域 TWD/USD，空值或不符預設 TWD
+              const cur = String(raw.currency == null ? "" : raw.currency).trim().toUpperCase();
+              rec.currency = cur === "USD" || cur === "TWD" ? cur : "TWD";
+              // 匯率：空值預設 1
+              rec.fxRate = numOr(raw.fxRate, 1);
+              // 單位數：空值預設 0
+              rec.units = numOr(raw.units, 0);
+              // 槓桿倍數：空值預設 0
+              rec.leverage = numOr(raw.leverage, 0);
+              // 不計入：值域 0/1，空值預設 0
+              rec.excluded = numOr(raw.excluded, 0) === 1 ? 1 : 0;
+
+              // 非投資：價格固定 1、槓桿倍數固定 0（維持資料模型一致）
               if (rec.type !== "投資") {
                 rec.unitPrice = 1;
                 rec.leverage = 0;
               }
-              // 金額為計算欄位，依 單價 × 單位/額數 × 匯率 重算
+
+              // 金額、曝險金額為計算欄位，匯入時不寫入，由功能計算
               rec.amount = amountTWD(rec);
-              return rec;
+              rec.id = uid();
+              records.push(rec);
             });
+            records.__skipped = skipped;
             resolve(records);
           } catch (e) {
             reject(e);
