@@ -12,6 +12,19 @@
   --tabbar-bg: #1a1b2e;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-top: env(safe-area-inset-top, 0px);
+  --font-scale: 1;
+  --font-family: -apple-system, BlinkMacSystemFont, "PingFang TC", "Helvetica Neue", Arial, sans-serif;
+}
+
+/* ---------- 淺色模式（由設定頁「深色/淺色模式」切換 body class 套用） ---------- */
+body.theme-light {
+  --bg: #f4f5fa;
+  --card-bg: #ffffff;
+  --card-bg-2: #eef0f7;
+  --text-main: #22223a;
+  --text-sub: #6b6b80;
+  --border: #dbdeec;
+  --tabbar-bg: #ffffff;
 }
 
 * {
@@ -25,7 +38,7 @@
   left: 0;
   right: 0;
   z-index: 9999;
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale, 1));
 }
 
 .err-bar {
@@ -66,7 +79,7 @@
 
 .err-detail-head button {
   margin-left: 6px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale, 1));
 }
 
 .err-detail-body {
@@ -80,7 +93,7 @@ html, body {
   height: 100%;
   background: var(--bg);
   color: var(--text-main);
-  font-family: -apple-system, BlinkMacSystemFont, "PingFang TC", "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-family);
   -webkit-text-size-adjust: 100%;
   /* iOS 慣性捲動 */
   -webkit-overflow-scrolling: touch;
@@ -95,7 +108,7 @@ html, body {
 
 .page-header {
   padding: calc(14px + var(--safe-top)) 16px 10px;
-  font-size: 20px;
+  font-size: calc(20px * var(--font-scale, 1));
   font-weight: 700;
   position: sticky;
   top: 0;
@@ -119,13 +132,13 @@ html, body {
 }
 
 .card-title {
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale, 1));
   color: var(--text-sub);
   margin-bottom: 6px;
 }
 
 .card-value {
-  font-size: 22px;
+  font-size: calc(22px * var(--font-scale, 1));
   font-weight: 700;
 }
 
@@ -146,19 +159,19 @@ html, body {
 }
 
 .kpi-label {
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale, 1));
   color: var(--text-sub);
 }
 
 .kpi-value {
-  font-size: 17px;
+  font-size: calc(17px * var(--font-scale, 1));
   font-weight: 700;
   margin-top: 4px;
   word-break: break-all;
 }
 
 .kpi-sub {
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale, 1));
   color: var(--text-sub);
   margin-top: 2px;
 }
@@ -174,7 +187,7 @@ html, body {
 .asset-item-row {
   display: flex;
   justify-content: space-between;
-  font-size: 14px;
+  font-size: calc(14px * var(--font-scale, 1));
   margin-bottom: 6px;
 }
 
@@ -207,7 +220,7 @@ html, body {
 }
 
 .rebalance-action {
-  font-size: 26px;
+  font-size: calc(26px * var(--font-scale, 1));
   font-weight: 800;
   margin-bottom: 4px;
 }
@@ -217,13 +230,13 @@ html, body {
 .rebalance-action.hold { color: var(--text-sub); }
 
 .rebalance-amount {
-  font-size: 18px;
+  font-size: calc(18px * var(--font-scale, 1));
   color: var(--text-main);
 }
 
 select, input, button {
   font-family: inherit;
-  font-size: 15px;
+  font-size: calc(15px * var(--font-scale, 1));
 }
 
 .form-row {
@@ -236,7 +249,27 @@ select, input, button {
 
 .form-row label {
   color: var(--text-sub);
-  font-size: 14px;
+  font-size: calc(14px * var(--font-scale, 1));
+}
+
+/* ---------- 設定：外觀主題配色選色器 ---------- */
+.theme-swatch-row {
+  display: flex;
+  gap: 10px;
+}
+
+.theme-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+
+.theme-swatch.active {
+  border-color: var(--text-main);
+  box-shadow: 0 0 0 2px var(--card-bg);
 }
 
 select, input[type="text"], input[type="number"], input[type="date"] {
@@ -259,7 +292,7 @@ table.detail-table {
   border-collapse: collapse;
   width: 100%;
   min-width: 920px;
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale, 1));
 }
 
 table.detail-table th, table.detail-table td {
@@ -279,7 +312,7 @@ table.detail-table th {
 table.detail-table input, table.detail-table select {
   width: 100%;
   min-width: 70px;
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale, 1));
   padding: 4px 6px;
 }
 
@@ -309,7 +342,7 @@ table.detail-table input, table.detail-table select {
 
 .btn.small {
   padding: 5px 9px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale, 1));
   border-radius: 6px;
 }
 
@@ -323,7 +356,7 @@ table.detail-table input, table.detail-table select {
 .summary-group {
   display: flex;
   justify-content: space-between;
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale, 1));
   padding: 6px 0;
   border-bottom: 1px dashed var(--border);
 }
@@ -352,7 +385,7 @@ table.detail-table input, table.detail-table select {
   color: var(--text-sub);
   padding: 10px 4px;
   border-radius: 18px;
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale, 1));
   font-weight: 600;
   display: flex;
   flex-direction: column;
@@ -366,7 +399,7 @@ table.detail-table input, table.detail-table select {
 }
 
 .tab-icon {
-  font-size: 18px;
+  font-size: calc(18px * var(--font-scale, 1));
   line-height: 1;
 }
 
@@ -374,11 +407,11 @@ table.detail-table input, table.detail-table select {
   color: var(--text-sub);
   text-align: center;
   padding: 20px 0;
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale, 1));
 }
 
 .section-title {
-  font-size: 15px;
+  font-size: calc(15px * var(--font-scale, 1));
   font-weight: 700;
   margin: 6px 0 10px;
 }
@@ -400,7 +433,7 @@ table.detail-table input, table.detail-table select {
   color: var(--text-sub);
   border-radius: 14px;
   padding: 7px 14px;
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale, 1));
   font-weight: 600;
   white-space: nowrap;
 }
@@ -417,7 +450,7 @@ table.detail-table input, table.detail-table select {
   justify-content: space-between;
   align-items: baseline;
   font-weight: 700;
-  font-size: 16px;
+  font-size: calc(16px * var(--font-scale, 1));
   padding-bottom: 10px;
   margin-bottom: 4px;
   border-bottom: 1px solid var(--border);
@@ -428,7 +461,7 @@ table.detail-table input, table.detail-table select {
 }
 
 .sum-total-sub {
-  font-size: 14px;
+  font-size: calc(14px * var(--font-scale, 1));
   border-bottom: none;
   padding-bottom: 2px;
   margin-bottom: 0;
@@ -444,7 +477,7 @@ table.detail-table input, table.detail-table select {
 .sum-orig {
   color: var(--text-sub);
   font-weight: 400;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale, 1));
 }
 
 /* 篩選提示列 */
@@ -453,7 +486,7 @@ table.detail-table input, table.detail-table select {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale, 1));
   color: var(--text-sub);
   margin-bottom: 12px;
 }
@@ -465,7 +498,7 @@ table.detail-table input, table.detail-table select {
 .sum-group-head {
   display: flex;
   justify-content: space-between;
-  font-size: 14px;
+  font-size: calc(14px * var(--font-scale, 1));
   font-weight: 600;
   color: var(--text-main);
   margin-bottom: 8px;
@@ -483,7 +516,7 @@ table.detail-table input, table.detail-table select {
 .sum-acc-row1 {
   display: flex;
   justify-content: space-between;
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale, 1));
   color: var(--text-sub);
   margin-bottom: 6px;
 }
@@ -496,7 +529,7 @@ table.detail-table input, table.detail-table select {
 .sum-acc-row2 {
   display: flex;
   justify-content: space-between;
-  font-size: 14px;
+  font-size: calc(14px * var(--font-scale, 1));
   font-weight: 600;
 }
 
@@ -544,14 +577,14 @@ table.detail-table input, table.detail-table select {
 }
 
 .rec-field label {
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale, 1));
   color: var(--text-sub);
 }
 
 .rec-field input,
 .rec-field select {
   width: 100%;
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale, 1));
   padding: 6px 8px;
   box-sizing: border-box;
 }
@@ -581,7 +614,7 @@ table.detail-table input, table.detail-table select {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale, 1));
   color: var(--text-sub);
   cursor: pointer;
 }
