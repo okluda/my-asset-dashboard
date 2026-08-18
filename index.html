@@ -12,47 +12,95 @@
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
-  <!-- 錯誤顯示橫幅：手機上沒有開發者工具可看 console，發生例外時直接顯示在畫面上 -->
-  <div id="error-banner" style="display:none; position:fixed; top:0; left:0; right:0; z-index:9999; background:#b00020; color:#fff; padding:10px 14px; font-size:13px; white-space:pre-wrap; max-height:50vh; overflow:auto;"></div>
+  <!-- 錯誤顯示橫幅：手機上沒有開發者工具可看 console，發生例外時直接顯示在畫面上。
+       採用「不遮蔽內容」設計：預設只顯示一個小提示條，點擊才展開完整內容，避免蓋住畫面上方資料。 -->
+  <div id="error-banner" class="err-collapsed" style="display:none;"></div>
   <script>
     (function () {
       var banner = document.getElementById("error-banner");
       var lastMsg = "";
+      var errorCount = 0;
+
       function ts() {
         var d = new Date();
         return d.toISOString().slice(0, 19).replace("T", " ");
       }
-      function showError(msg) {
-        lastMsg = msg;
-        banner.style.display = "block";
+
+      // 判斷 App 目前是否仍可運作（Vue/Papa 已載入、#app 內已有實際內容），
+      // 讓使用者知道這是「無害的外部腳本錯誤」還是「App 本身故障」
+      function appLooksHealthy() {
+        try {
+          var root = document.getElementById("app");
+          return (
+            typeof Vue !== "undefined" &&
+            root &&
+            root.children.length > 0
+          );
+        } catch (e) {
+          return false;
+        }
+      }
+
+      function render() {
         banner.textContent = "";
+        var healthy = appLooksHealthy();
+        var bar = document.createElement("div");
+        bar.className = "err-bar" + (healthy ? " err-bar-warn" : " err-bar-danger");
+        bar.textContent =
+          (healthy ? "⚠ " : "🛑 ") +
+          "偵測到 " + errorCount + " 個錯誤" +
+          (healthy ? "（App 仍運作中，點擊查看細節）" : "（App 可能無法正常運作，點擊查看細節）");
+        bar.onclick = function () {
+          banner.classList.toggle("err-collapsed");
+        };
+        banner.appendChild(bar);
+
+        var detailBox = document.createElement("div");
+        detailBox.className = "err-detail";
+
         var head = document.createElement("div");
-        head.style.cssText = "display:flex;justify-content:space-between;gap:8px;margin-bottom:6px;";
+        head.className = "err-detail-head";
         var title = document.createElement("strong");
-        title.textContent = "⚠ 發生錯誤（請截圖回報） " + ts();
+        title.textContent = "最近一筆錯誤 " + ts();
         head.appendChild(title);
         var btns = document.createElement("span");
         var copyBtn = document.createElement("button");
         copyBtn.textContent = "複製";
-        copyBtn.style.cssText = "margin-left:6px;font-size:12px;";
-        copyBtn.onclick = function () {
+        copyBtn.onclick = function (ev) {
+          ev.stopPropagation();
           try {
             if (navigator.clipboard) navigator.clipboard.writeText(lastMsg);
           } catch (e) {}
         };
         var closeBtn = document.createElement("button");
-        closeBtn.textContent = "關閉";
-        closeBtn.style.cssText = "margin-left:6px;font-size:12px;";
-        closeBtn.onclick = function () { banner.style.display = "none"; };
+        closeBtn.textContent = "收合";
+        closeBtn.onclick = function (ev) {
+          ev.stopPropagation();
+          banner.classList.add("err-collapsed");
+        };
         btns.appendChild(copyBtn);
         btns.appendChild(closeBtn);
         head.appendChild(btns);
+
         var body = document.createElement("div");
-        body.style.whiteSpace = "pre-wrap";
-        body.textContent = msg;
-        banner.appendChild(head);
-        banner.appendChild(body);
+        body.className = "err-detail-body";
+        body.textContent = lastMsg;
+
+        detailBox.appendChild(head);
+        detailBox.appendChild(body);
+        banner.appendChild(detailBox);
       }
+
+      function showError(msg) {
+        lastMsg = msg;
+        errorCount++;
+        banner.style.display = "block";
+        // 預設收合，避免蓋住上方畫面內容；使用者可點擊小提示條展開
+        banner.classList.add("err-collapsed");
+        render();
+      }
+
+      // 一般 JS 執行期錯誤（含跨來源腳本的錯誤，若 crossorigin 生效則能看到完整 stack）
       window.addEventListener("error", function (e) {
         var detail;
         if (e.error && e.error.stack) {
@@ -61,12 +109,28 @@
           detail =
             "Script error.（跨來源腳本，瀏覽器隱藏了細節）\n" +
             "檔案：" + (e.filename || "未知") + ":" + (e.lineno || "?") + ":" + (e.colno || "?") +
-            "\n若使用 file:// 開啟，請改用本機伺服器（http）以取得完整錯誤訊息。";
+            "\n可能原因：\n" +
+            "1) 瀏覽器沿用了加上 crossorigin 屬性「之前」快取的 CDN 腳本，導致錯誤細節持續被隱藏\n" +
+            "   → 請於瀏覽器「清除網站資料」或強制重新整理後再試一次\n" +
+            "2) 若使用 file:// 開啟，請改用本機伺服器（http）以取得完整錯誤訊息\n" +
+            (appLooksHealthy()
+              ? "3) 目前偵測到 App 仍正常運作，此錯誤很可能不影響功能，可略過"
+              : "3) 目前偵測到 App 可能未正常運作，建議截圖回報");
         } else {
           detail = (e.message || "未知錯誤") + "\n" + (e.filename || "") + ":" + (e.lineno || "");
         }
         showError(detail);
       });
+
+      // CDN 資源本身載入失敗（例如完全連不上 unpkg.com）——比 window.onerror 更早、更明確
+      window.__cdnLoadError = function (name) {
+        showError(
+          "CDN 資源載入失敗：" + name + "\n" +
+          "常見原因：目前網路無法連到 unpkg.com（例如內部網路限制對外連線）。\n" +
+          "解法：改用可連外的網路開啟，或將 " + name + " 下載到本機後改用本地路徑引用。"
+        );
+      };
+
       window.addEventListener("unhandledrejection", function (e) {
         var r = e.reason;
         var detail = r && r.stack ? r.stack : (r && r.message ? r.message : String(r));
@@ -332,10 +396,11 @@
     </div>
   </script>
 
-  <!-- Vue 3 全域版本（CDN，不需 npm/build）。crossorigin 讓跨來源腳本的錯誤細節能被 window.onerror 取得 -->
-  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js" crossorigin="anonymous"></script>
+  <!-- Vue 3 全域版本（CDN，不需 npm/build）。crossorigin 讓跨來源腳本的錯誤細節能被 window.onerror 取得。
+       ?cb= 為快取破壞參數：避免瀏覽器沿用「加上 crossorigin 之前」快取的舊版回應（會導致錯誤細節持續被隱藏）。 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js?cb=20260818" crossorigin="anonymous" onerror="window.__cdnLoadError && window.__cdnLoadError('Vue')"></script>
   <!-- PapaParse：處理 CSV 匯入/匯出 -->
-  <script src="https://unpkg.com/papaparse@5/papaparse.min.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/papaparse@5/papaparse.min.js?cb=20260818" crossorigin="anonymous" onerror="window.__cdnLoadError && window.__cdnLoadError('PapaParse')"></script>
 
   <script src="js/store.js"></script>
   <script src="js/services.js"></script>

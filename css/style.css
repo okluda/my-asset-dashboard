@@ -18,6 +18,62 @@
   box-sizing: border-box;
 }
 
+/* ---------- 錯誤提示橫幅：不遮蔽內容，預設收合成一條小提示，點擊展開 ---------- */
+#error-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  font-size: 13px;
+}
+
+.err-bar {
+  padding: 8px 14px;
+  padding-top: calc(8px + var(--safe-top));
+  color: #fff;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.err-bar-warn {
+  background: #b8860b;
+}
+
+.err-bar-danger {
+  background: #b00020;
+}
+
+.err-detail {
+  background: #1a0006;
+  color: #fff;
+  padding: 10px 14px;
+  max-height: 45vh;
+  overflow: auto;
+}
+
+/* 收合狀態：只留提示條，細節區域隱藏，避免蓋住畫面內容 */
+#error-banner.err-collapsed .err-detail {
+  display: none;
+}
+
+.err-detail-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.err-detail-head button {
+  margin-left: 6px;
+  font-size: 12px;
+}
+
+.err-detail-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 html, body {
   margin: 0;
   padding: 0;
