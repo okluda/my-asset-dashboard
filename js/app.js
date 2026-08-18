@@ -372,7 +372,11 @@ const TabSettings = {
       try {
         const imported = await ALD.parseCSV(file);
         store.records.push(...imported);
-        alert("已匯入 " + imported.length + " 筆資料");
+        const skipped = imported.__skipped || 0;
+        alert(
+          "已匯入 " + imported.length + " 筆資料" +
+            (skipped > 0 ? "\n（略過 " + skipped + " 筆：類型空白或不符值域）" : "")
+        );
       } catch (e) {
         reportError("CSV 匯入失敗：", e);
         alert("CSV 匯入失敗：" + (e && e.message ? e.message : e));
