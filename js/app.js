@@ -21,6 +21,7 @@ const { createApp, reactive, computed, watch, ref } = Vue;
 const store = reactive({
   records: ALD.loadRecords(),
   settings: ALD.loadSettings(),
+  accounts: ALD.loadAccounts(),
 });
 
 watch(
@@ -32,6 +33,12 @@ watch(
 watch(
   () => store.settings,
   (val) => ALD.saveSettings(val),
+  { deep: true }
+);
+
+watch(
+  () => store.accounts,
+  (val) => ALD.saveAccounts(val),
   { deep: true }
 );
 
@@ -81,6 +88,7 @@ const TabOverview = {
       breakdown,
       fmt: (v) => ALD.formatAmount(v, store.settings),
       pct: (v) => ALD.formatPercent(v),
+      catName: (t) => ALD.categoryDisplayName(store.settings, t),
     };
   },
 };
@@ -156,6 +164,7 @@ const TabRebalance = {
       onRatioChange,
       fmt: (v) => ALD.formatAmount(v, store.settings),
       pct: (v) => ALD.formatPercent(v),
+      catName: (t) => ALD.categoryDisplayName(store.settings, t),
     };
   },
 };
@@ -167,7 +176,6 @@ const TabDetail = {
     const settings = store.settings;
     const types = ALD.TYPES;
     const activeType = ref(types[0]);
-    const refreshing = ref(false);
     // 第三層（帳戶/項目）篩選：空陣列代表顯示全部
     const selectedAccounts = ref([]);
 
@@ -318,17 +326,36 @@ const TabDetail = {
       if (idx !== -1) store.records.splice(idx, 1);
     }
 
-    // 金額 = 單價 × 單位/額數 × 匯率（計算欄位）；非投資鎖定單價=1、槓桿=0
+    // 金額 = 價格 × 單位 × 匯率（計算欄位）；非投資鎖定槓桿=0（價格改由帳戶設定帶入）
     function recalc(rec) {
       if (rec.type !== "投資") {
-        rec.unitPrice = 1;
         rec.leverage = 0;
       }
       rec.amount = ALD.amountTWD(rec);
     }
 
-    // 類別變更時，套用非投資的固定值並重算金額
+    // 依「設定 > 帳戶」中該類別對應帳戶/項目的價格，寫入此筆明細的價格
+    function applyAccountPrice(rec) {
+      const p = ALD.lookupAccountPrice(store.accounts, rec.type, rec.account);
+      if (p !== null) rec.unitPrice = p;
+    }
+
+    // 該類別可選的帳戶/項目清單（含目前值，避免現有資料的帳戶不在清單時消失）
+    function accountOptions(rec) {
+      const opts = ALD.accountsForCategory(store.accounts, rec.type);
+      if (rec.account && !opts.includes(rec.account)) return [rec.account, ...opts];
+      return opts;
+    }
+
+    // 選擇帳戶/項目時，帶入對應價格並重算金額
+    function onAccountChange(rec) {
+      applyAccountPrice(rec);
+      recalc(rec);
+    }
+
+    // 類別變更時，重新帶入對應價格、套用非投資固定值並重算金額
     function onTypeChange(rec) {
+      applyAccountPrice(rec);
       recalc(rec);
     }
 
@@ -340,35 +367,6 @@ const TabDetail = {
       return ALD.exposureTWD(rec);
     }
 
-    // 一次更新所有資料的匯率與（投資的）市價
-    async function refreshAll() {
-      if (refreshing.value) return;
-      refreshing.value = true;
-      let ok = 0;
-      let fail = 0;
-      for (const rec of store.records) {
-        try {
-          if (rec.currency && rec.currency !== settings.baseCurrency) {
-            rec.fxRate = ALD.round2(
-              await ALD_SERVICE.fetchFxRate(rec.currency, settings.baseCurrency)
-            );
-          }
-          if (rec.type === "投資" && rec.account) {
-            rec.unitPrice = ALD.round2(await ALD_SERVICE.fetchStockPrice(rec.account));
-          }
-          recalc(rec);
-          ok++;
-        } catch (e) {
-          fail++;
-        }
-      }
-      refreshing.value = false;
-      alert(
-        `更新完成：成功 ${ok} 筆，失敗 ${fail} 筆` +
-          (fail > 0 ? "（失敗可能因無法連外，請改用手動輸入）" : "")
-      );
-    }
-
     return {
       settings,
       types,
@@ -377,7 +375,6 @@ const TabDetail = {
       typeRecords,
       visibleRecords,
       summary,
-      refreshing,
       selectedAccounts,
       toggleSelect,
       isSelected,
@@ -385,9 +382,10 @@ const TabDetail = {
       removeRow,
       recalc,
       onTypeChange,
+      onAccountChange,
+      accountOptions,
       money,
       exposure,
-      refreshAll,
       dateFilterValue,
       dateFilterActive,
       dateFilterInput,
@@ -397,6 +395,7 @@ const TabDetail = {
       onDateFilterInputChange,
       num: (v) => (Number(v) || 0).toLocaleString("zh-TW"),
       fmt: (v) => ALD.formatAmount(v, store.settings),
+      catName: (t) => ALD.categoryDisplayName(store.settings, t),
     };
   },
 };
@@ -406,6 +405,12 @@ const TabSettings = {
   template: "#tpl-settings",
   setup() {
     const settings = store.settings;
+    const accounts = store.accounts;
+    const settingsTab = ref("system");
+    const assetCategoryKeys = ALD.ASSET_TYPES;
+    const types = ALD.TYPES;
+    const syncing = ref(false);
+    const catName = (t) => ALD.categoryDisplayName(store.settings, t);
 
     // 將例外完整資訊（含 stack）顯示到畫面錯誤橫幅，方便截圖回報
     function reportError(prefix, e) {
@@ -415,9 +420,65 @@ const TabSettings = {
       console.error(prefix, e);
     }
 
+    // 資產子類別名稱：留空時回填預設（等於鍵）
+    function onCategoryNameBlur(key) {
+      if (!settings.categoryNames[key] || !settings.categoryNames[key].trim()) {
+        settings.categoryNames[key] = key;
+      }
+    }
+
+    // 新增一筆帳戶/項目設定，預設類別為第一個資產子類別
+    function addAccount() {
+      store.accounts.push(ALD.emptyAccount(assetCategoryKeys[0]));
+    }
+
+    function removeAccount(id) {
+      const idx = store.accounts.findIndex((a) => a.id === id);
+      if (idx !== -1) store.accounts.splice(idx, 1);
+    }
+
+    // 把帳戶設定中的價格套回對應的明細資料並重算金額
+    function applyPricesToRecords() {
+      for (const rec of store.records) {
+        const p = ALD.lookupAccountPrice(store.accounts, rec.type, rec.account);
+        if (p !== null) rec.unitPrice = p;
+        if (rec.type !== "投資") rec.leverage = 0;
+        rec.amount = ALD.amountTWD(rec);
+      }
+    }
+
+    // 同步「投資」類別帳戶的即時價格（市值），完成後套回明細
+    async function syncPrices() {
+      if (syncing.value) return;
+      syncing.value = true;
+      let ok = 0;
+      let fail = 0;
+      try {
+        for (const acc of store.accounts) {
+          if (acc.category === "投資" && acc.account) {
+            try {
+              acc.price = ALD.round2(await ALD_SERVICE.fetchStockPrice(acc.account));
+              ok++;
+            } catch (e) {
+              fail++;
+            }
+          }
+        }
+        applyPricesToRecords();
+        alert(
+          "價格同步完成：成功 " + ok + " 筆，失敗 " + fail + " 筆" +
+            (fail > 0 ? "（失敗可能因無法連外，請改用手動輸入）" : "")
+        );
+      } catch (e) {
+        reportError("價格同步失敗：", e);
+      } finally {
+        syncing.value = false;
+      }
+    }
+
     function exportCsv() {
       try {
-        ALD.exportCSV(store.records);
+        ALD.exportCSV(store.records, store.settings);
       } catch (e) {
         reportError("匯出 CSV 失敗：", e);
       }
@@ -427,7 +488,7 @@ const TabSettings = {
       const file = evt.target.files[0];
       if (!file) return;
       try {
-        const imported = await ALD.parseCSV(file);
+        const imported = await ALD.parseCSV(file, store.settings);
         store.records.push(...imported);
         const skipped = imported.__skipped || 0;
         alert(
@@ -489,6 +550,16 @@ const TabSettings = {
 
     return {
       settings,
+      accounts,
+      settingsTab,
+      assetCategoryKeys,
+      types,
+      syncing,
+      catName,
+      onCategoryNameBlur,
+      addAccount,
+      removeAccount,
+      syncPrices,
       exportCsv,
       importCsv,
       loadSample,
