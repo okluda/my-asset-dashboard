@@ -331,11 +331,13 @@
             </div>
             <div class="rec-field">
               <label>幣別</label>
-              <input type="text" v-model="rec.currency" @change="recalc(rec)" />
+              <select v-model="rec.currency" @change="onCurrencyChange(rec)">
+                <option v-for="c in currencyOptions" :key="c" :value="c">{{ c }}</option>
+              </select>
             </div>
             <div class="rec-field">
               <label>匯率</label>
-              <input type="number" v-model.number="rec.fxRate" @change="recalc(rec)" />
+              <input type="number" :value="rec.fxRate" readonly />
             </div>
             <div class="rec-field">
               <label>單位</label>
@@ -472,7 +474,46 @@
       <!-- ===== 帳戶子分頁 ===== -->
       <template v-else>
       <div class="card">
-        <div class="section-title">資產子類別</div>
+        <div class="section-title">幣別</div>
+        <div class="toolbar">
+          <button class="btn" @click="addCurrency">＋新增幣別</button>
+          <button class="btn warn" @click="syncFxRates" :disabled="syncingFx">
+            {{ syncingFx ? '同步中…' : '同步匯率' }}
+          </button>
+        </div>
+        <div class="cfg-table">
+          <div class="cfg-row cfg-row-cur cfg-head">
+            <span>幣別代碼</span>
+            <span>匯率</span>
+            <span></span>
+          </div>
+          <div class="cfg-row cfg-row-cur" v-for="cur in settings.currencies" :key="cur.code + '_' + settings.currencies.indexOf(cur)">
+            <input
+              type="text"
+              class="cfg-cur-code"
+              v-model="cur.code"
+              :placeholder="'幣別'"
+              :disabled="cur.code === settings.baseCurrency"
+              @blur="onCurrencyCodeBlur"
+            />
+            <input
+              type="number"
+              v-model.number="cur.rate"
+              :disabled="cur.code === settings.baseCurrency"
+              @change="applyFxToRecords"
+            />
+            <button
+              class="btn small danger"
+              :disabled="cur.code === settings.baseCurrency"
+              @click="removeCurrency(cur.code)"
+            >刪除</button>
+          </div>
+        </div>
+        <div class="empty-hint" style="text-align:left">基準幣別 {{ settings.baseCurrency }} 匯率固定為 1，不可刪除或修改。「同步匯率」會抓取各幣別對 {{ settings.baseCurrency }} 的即時匯率。明細輸入與 CSV 匯出入的幣別/匯率皆與此連動。</div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">資產類別</div>
         <div class="cfg-table">
           <div class="cfg-row cfg-head">
             <span>類別</span>

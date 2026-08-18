@@ -359,6 +359,16 @@ const TabDetail = {
       recalc(rec);
     }
 
+    // 幣別下拉選項：取自「設定 > 幣別」
+    const currencyOptions = computed(() => ALD.currencyCodes(store.settings));
+
+    // 選擇幣別時，依「設定 > 幣別」帶入對應匯率並重算金額
+    function onCurrencyChange(rec) {
+      const r = ALD.currencyRate(store.settings, rec.currency);
+      if (r !== null) rec.fxRate = r;
+      recalc(rec);
+    }
+
     function money(rec) {
       return ALD.amountTWD(rec);
     }
@@ -384,6 +394,8 @@ const TabDetail = {
       onTypeChange,
       onAccountChange,
       accountOptions,
+      currencyOptions,
+      onCurrencyChange,
       money,
       exposure,
       dateFilterValue,
@@ -410,6 +422,7 @@ const TabSettings = {
     const assetCategoryKeys = ALD.ASSET_TYPES;
     const types = ALD.TYPES;
     const syncing = ref(false);
+    const syncingFx = ref(false);
     const catName = (t) => ALD.categoryDisplayName(store.settings, t);
 
     // 將例外完整資訊（含 stack）顯示到畫面錯誤橫幅，方便截圖回報
@@ -424,6 +437,67 @@ const TabSettings = {
     function onCategoryNameBlur(key) {
       if (!settings.categoryNames[key] || !settings.categoryNames[key].trim()) {
         settings.categoryNames[key] = key;
+      }
+    }
+
+    // ---------- 幣別設定 ----------
+    // 新增一個空白幣別
+    function addCurrency() {
+      settings.currencies.push(ALD.emptyCurrency());
+    }
+
+    function removeCurrency(code) {
+      if (code === settings.baseCurrency) return; // 基準幣別不可刪除
+      const idx = settings.currencies.findIndex((c) => c.code === code);
+      if (idx !== -1) settings.currencies.splice(idx, 1);
+    }
+
+    // 幣別代碼輸入完成：正規化（大寫、去重、確保基準幣別），並套回明細
+    function onCurrencyCodeBlur() {
+      ALD.normalizeCurrencies(settings);
+      applyFxToRecords();
+    }
+
+    // 依「設定 > 幣別」的匯率，套回所有明細的匯率並重算金額
+    function applyFxToRecords() {
+      for (const rec of store.records) {
+        const r = ALD.currencyRate(store.settings, rec.currency);
+        if (r !== null) rec.fxRate = r;
+        rec.amount = ALD.amountTWD(rec);
+      }
+    }
+
+    // 同步各幣別對基準幣別的即時匯率，完成後套回明細
+    async function syncFxRates() {
+      if (syncingFx.value) return;
+      syncingFx.value = true;
+      let ok = 0;
+      let fail = 0;
+      try {
+        for (const cur of settings.currencies) {
+          if (cur.code === settings.baseCurrency) {
+            cur.rate = 1;
+            continue;
+          }
+          if (!cur.code) continue;
+          try {
+            cur.rate = ALD.round2(
+              await ALD_SERVICE.fetchFxRate(cur.code, settings.baseCurrency)
+            );
+            ok++;
+          } catch (e) {
+            fail++;
+          }
+        }
+        applyFxToRecords();
+        alert(
+          "匯率同步完成：成功 " + ok + " 筆，失敗 " + fail + " 筆" +
+            (fail > 0 ? "（失敗可能因無法連外，請改用手動輸入）" : "")
+        );
+      } catch (e) {
+        reportError("匯率同步失敗：", e);
+      } finally {
+        syncingFx.value = false;
       }
     }
 
@@ -555,8 +629,14 @@ const TabSettings = {
       assetCategoryKeys,
       types,
       syncing,
+      syncingFx,
       catName,
       onCategoryNameBlur,
+      addCurrency,
+      removeCurrency,
+      onCurrencyCodeBlur,
+      applyFxToRecords,
+      syncFxRates,
       addAccount,
       removeAccount,
       syncPrices,

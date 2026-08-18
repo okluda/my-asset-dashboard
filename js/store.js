@@ -34,6 +34,12 @@ const ALD = (() => {
       固定資產: "固定資產",
       應收款: "應收款",
     },
+    // 幣別設定：每個幣別對應一個匯率（換算為 baseCurrency 台幣）。
+    // baseCurrency（TWD）匯率固定為 1。明細輸入與 CSV 匯出入的幣別/匯率皆與此連動。
+    currencies: [
+      { code: "TWD", rate: 1 },
+      { code: "USD", rate: 32.5 },
+    ],
   };
 
   // 主題配色：切換 --accent（按鈕/選中狀態等主色）
@@ -145,11 +151,49 @@ const ALD = (() => {
   function loadSettings() {
     try {
       const raw = localStorage.getItem(SETTINGS_KEY);
-      if (!raw) return { ...DEFAULT_SETTINGS };
-      return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+      const s = raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : { ...DEFAULT_SETTINGS };
+      normalizeCurrencies(s);
+      return s;
     } catch (e) {
-      return { ...DEFAULT_SETTINGS };
+      const s = { ...DEFAULT_SETTINGS };
+      normalizeCurrencies(s);
+      return s;
     }
+  }
+
+  // 正規化幣別設定：確保為陣列、baseCurrency 一定存在且匯率固定為 1、去除重複與空白代碼。
+  function normalizeCurrencies(settings) {
+    const base = settings.baseCurrency || "TWD";
+    let list = Array.isArray(settings.currencies) ? settings.currencies : [];
+    const seen = {};
+    const out = [];
+    list.forEach((c) => {
+      const code = String(c && c.code != null ? c.code : "").trim().toUpperCase();
+      if (!code || seen[code]) return;
+      seen[code] = true;
+      out.push({ code, rate: code === base ? 1 : Number(c.rate) || 0 });
+    });
+    // 確保 base 幣別存在且置頂、匯率為 1
+    if (!seen[base]) out.unshift({ code: base, rate: 1 });
+    settings.currencies = out;
+    return out;
+  }
+
+  // 取所有幣別代碼（供明細下拉與 CSV 驗證使用）
+  function currencyCodes(settings) {
+    return (Array.isArray(settings.currencies) ? settings.currencies : []).map((c) => c.code);
+  }
+
+  // 依幣別代碼取匯率；找不到回傳 null
+  function currencyRate(settings, code) {
+    const c = (Array.isArray(settings.currencies) ? settings.currencies : []).find(
+      (x) => x.code === code
+    );
+    return c ? Number(c.rate) || 0 : null;
+  }
+
+  function emptyCurrency() {
+    return { code: "", rate: 0 };
   }
 
   function saveSettings(settings) {
@@ -402,11 +446,13 @@ const ALD = (() => {
               rec.date = normalizeDate(raw.date);
               // 單價：數字，空值預設 1
               rec.unitPrice = numOr(raw.unitPrice, 1);
-              // 幣別：值域 TWD/USD，空值或不符預設 TWD
+              // 幣別：值域為「設定 > 幣別」清單，空值或不符預設 baseCurrency
               const cur = String(raw.currency == null ? "" : raw.currency).trim().toUpperCase();
-              rec.currency = cur === "USD" || cur === "TWD" ? cur : "TWD";
-              // 匯率：空值預設 1
-              rec.fxRate = numOr(raw.fxRate, 1);
+              const codes = currencyCodes(settings);
+              rec.currency = codes.includes(cur) ? cur : settings.baseCurrency || "TWD";
+              // 匯率：與「設定 > 幣別」連動——依幣別代入設定匯率；查無則退回 CSV 值或 1
+              const settingRate = currencyRate(settings, rec.currency);
+              rec.fxRate = settingRate != null ? settingRate : numOr(raw.fxRate, 1);
               // 單位數：空值預設 0
               rec.units = numOr(raw.units, 0);
               // 槓桿倍數：空值預設 0
@@ -472,6 +518,10 @@ const ALD = (() => {
     accountsForCategory,
     categoryDisplayName,
     buildTypeNameToKey,
+    normalizeCurrencies,
+    currencyCodes,
+    currencyRate,
+    emptyCurrency,
     emptyRecord,
     uid,
     todayStr,

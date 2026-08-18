@@ -728,3 +728,78 @@ table.detail-table input, table.detail-table select {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* ===== 設定 > 帳戶：設定表格 ===== */
+.cfg-table {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 資產類別：兩欄（類別 / 名稱），以間距與分隔線區分欄位 */
+.cfg-row {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr;
+  gap: 14px;
+  align-items: center;
+}
+
+/* 幣別：三欄（代碼 / 匯率 / 刪除） */
+.cfg-row-cur {
+  grid-template-columns: 1.2fr 1fr auto;
+  gap: 10px;
+}
+
+.cfg-head {
+  font-size: calc(12px * var(--font-scale, 1));
+  color: var(--text-sub);
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 2px;
+}
+
+/* 類別欄：獨立成一個欄位方塊，不與名稱輸入框相連 */
+.cfg-cat {
+  font-size: calc(14px * var(--font-scale, 1));
+  padding: 6px 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.cfg-row input {
+  width: 100%;
+  font-size: calc(14px * var(--font-scale, 1));
+  padding: 6px 8px;
+  box-sizing: border-box;
+}
+
+.cfg-cur-code {
+  text-transform: uppercase;
+}
+
+.cfg-row input:disabled {
+  color: var(--text-sub);
+  opacity: 0.7;
+}
+
+/* 帳戶/項目：三欄同一排（類別 / 帳戶項目 / 價格），刪除鈕獨立一行 */
+.acc-cfg-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  margin-top: 10px;
+}
+
+.acc-cfg-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr 1fr;
+  gap: 8px;
+}
+
+.acc-cfg-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
