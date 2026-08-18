@@ -10,10 +10,10 @@ const ALD = (() => {
   const SETTINGS_KEY = "ald_settings_v1";
 
   // 資料來源類型（依規格固定五種）
-  const TYPES = ["流動資產", "投資", "固定資產", "應收款", "負債"];
+  const TYPES = ["流動資金", "投資", "固定資產", "應收款", "負債"];
 
   // 屬於「資產」的類型（用於總覽資產加總、負債比計算）
-  const ASSET_TYPES = ["流動資產", "投資", "固定資產", "應收款"];
+  const ASSET_TYPES = ["流動資金", "投資", "固定資產", "應收款"];
 
   const DEFAULT_SETTINGS = {
     unit: "yuan", // 'yuan' = 元, 'wan' = 萬元
@@ -21,6 +21,47 @@ const ALD = (() => {
     autoStock: false, // 是否自動抓取股票市值
     baseCurrency: "TWD",
     rebalanceRatio: 70, // 再平衡：投資目標佔比(%)，預設 70% -> 流動:投資 = 3:7
+    themeMode: "dark", // 'dark' | 'light'
+    themeColor: "blue", // 主題配色（見 THEME_COLORS）
+    fontFamily: "system", // 字型（見 FONT_FAMILIES）
+    fontSize: "md", // 字型大小（見 FONT_SIZES）
+  };
+
+  // 主題配色：切換 --accent（按鈕/選中狀態等主色）
+  const THEME_COLORS = {
+    blue: { label: "藍色", accent: "#5b8cff" },
+    green: { label: "綠色", accent: "#35c98f" },
+    purple: { label: "紫色", accent: "#9b6bff" },
+    orange: { label: "橘色", accent: "#ff9f43" },
+    pink: { label: "粉色", accent: "#ff6b9d" },
+  };
+
+  // 字型選項：切換 --font-family
+  const FONT_FAMILIES = {
+    system: {
+      label: "系統預設",
+      value: '-apple-system, BlinkMacSystemFont, "PingFang TC", "Helvetica Neue", Arial, sans-serif',
+    },
+    serif: {
+      label: "明體（襯線）",
+      value: '"Songti TC", "PMingLiU", Georgia, serif',
+    },
+    rounded: {
+      label: "圓體",
+      value: '"PingFang TC", "Hiragino Sans", "Microsoft JhengHei", sans-serif',
+    },
+    mono: {
+      label: "等寬",
+      value: '"SF Mono", Menlo, Consolas, monospace',
+    },
+  };
+
+  // 字型大小：切換 --font-scale（所有文字級距的乘數）
+  const FONT_SIZES = {
+    sm: { label: "小", scale: 0.9 },
+    md: { label: "中（預設）", scale: 1 },
+    lg: { label: "大", scale: 1.15 },
+    xl: { label: "特大", scale: 1.3 },
   };
 
   function uid() {
@@ -33,7 +74,7 @@ const ALD = (() => {
   }
 
   function emptyRecord(type) {
-    const t = type || "流動資產";
+    const t = type || "流動資金";
     const isInvest = t === "投資";
     return {
       id: uid(),
@@ -107,8 +148,8 @@ const ALD = (() => {
   function seedRecords() {
     const today = todayStr();
     const raw = [
-      { type: "流動資產", account: "銀行活存-台幣", currency: "TWD", fxRate: 1, unitPrice: 1, units: 300000, leverage: 0 },
-      { type: "流動資產", account: "銀行活存-美金", currency: "USD", fxRate: 32.5, unitPrice: 1, units: 5000, leverage: 0 },
+      { type: "流動資金", account: "銀行活存-台幣", currency: "TWD", fxRate: 1, unitPrice: 1, units: 300000, leverage: 0 },
+      { type: "流動資金", account: "銀行活存-美金", currency: "USD", fxRate: 32.5, unitPrice: 1, units: 5000, leverage: 0 },
       { type: "投資", account: "0050 元大台灣50", currency: "TWD", fxRate: 1, unitPrice: 140, units: 2000, leverage: 1 },
       { type: "投資", account: "VOO", currency: "USD", fxRate: 32.5, unitPrice: 480, units: 30, leverage: 1.5, note: "美股ETF" },
       { type: "固定資產", account: "自住房產", currency: "TWD", fxRate: 1, unitPrice: 1, units: 8000000, leverage: 0 },
@@ -302,11 +343,27 @@ const ALD = (() => {
     });
   }
 
+  // 依設定套用外觀主題：設定 CSS 變數（配色/字型/字型大小）與淺色模式 class
+  function applyTheme(settings) {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    const color = THEME_COLORS[settings.themeColor] || THEME_COLORS.blue;
+    const font = FONT_FAMILIES[settings.fontFamily] || FONT_FAMILIES.system;
+    const size = FONT_SIZES[settings.fontSize] || FONT_SIZES.md;
+    root.style.setProperty("--accent", color.accent);
+    root.style.setProperty("--font-family", font.value);
+    root.style.setProperty("--font-scale", size.scale);
+    document.body.classList.toggle("theme-light", settings.themeMode === "light");
+  }
+
   return {
     TYPES,
     ASSET_TYPES,
     CSV_COLUMNS,
     DEFAULT_SETTINGS,
+    THEME_COLORS,
+    FONT_FAMILIES,
+    FONT_SIZES,
     loadRecords,
     saveRecords,
     loadSettings,
@@ -324,5 +381,6 @@ const ALD = (() => {
     exportCSV,
     parseCSV,
     seedRecords,
+    applyTheme,
   };
 })();

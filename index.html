@@ -182,7 +182,7 @@
       <div class="card">
         <div class="section-title">曝險概況</div>
         <div class="summary-group"><span>曝險金額</span><span>{{ fmt(exposureTotal) }}</span></div>
-        <div class="summary-group"><span>可動用總金額（流動資產+投資）</span><span>{{ fmt(pool) }}</span></div>
+        <div class="summary-group"><span>可動用總金額（流動資金+投資）</span><span>{{ fmt(pool) }}</span></div>
         <div class="summary-group"><span>曝險比</span><span>{{ pct(exposureRatio) }}</span></div>
       </div>
 
@@ -196,12 +196,12 @@
             </option>
           </select>
         </div>
-        <div class="summary-group"><span>流動資產</span><span>{{ fmt(liquidTWD) }}（{{ pct(liquidRatio) }}）</span></div>
+        <div class="summary-group"><span>流動資金</span><span>{{ fmt(liquidTWD) }}（{{ pct(liquidRatio) }}）</span></div>
         <div class="summary-group"><span>投資</span><span>{{ fmt(investTWD) }}（{{ pct(investRatio) }}）</span></div>
       </div>
 
       <div class="card rebalance-result">
-        <div v-if="pool <= 0" class="empty-hint">尚無流動資產或投資資料</div>
+        <div v-if="pool <= 0" class="empty-hint">尚無流動資金或投資資料</div>
         <template v-else>
           <div class="rebalance-action" :class="action.type">{{ action.label }}</div>
           <div class="rebalance-amount" v-if="action.amount > 0">{{ fmt(action.amount) }}</div>
@@ -353,6 +353,44 @@
 
   <script type="text/x-template" id="tpl-settings">
     <div class="page-content">
+      <div class="card">
+        <div class="section-title">外觀設定</div>
+        <div class="form-row">
+          <label>深色/淺色模式</label>
+          <select v-model="settings.themeMode">
+            <option value="dark">深色</option>
+            <option value="light">淺色</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>配色</label>
+          <div class="theme-swatch-row">
+            <button
+              v-for="(c, key) in themeColors"
+              :key="key"
+              type="button"
+              class="theme-swatch"
+              :class="{ active: settings.themeColor === key }"
+              :style="{ background: c.accent }"
+              :title="c.label"
+              @click="settings.themeColor = key"
+            ></button>
+          </div>
+        </div>
+        <div class="form-row">
+          <label>字型</label>
+          <select v-model="settings.fontFamily">
+            <option v-for="(f, key) in fontFamilies" :key="key" :value="key">{{ f.label }}</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>字型大小</label>
+          <select v-model="settings.fontSize">
+            <option v-for="(s, key) in fontSizes" :key="key" :value="key">{{ s.label }}</option>
+          </select>
+        </div>
+      </div>
+
       <div class="card">
         <div class="section-title">顯示單位</div>
         <div class="form-row">

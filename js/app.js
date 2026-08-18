@@ -35,6 +35,9 @@ watch(
   { deep: true }
 );
 
+// 外觀主題（配色/字型/字型大小）：載入時立即套用，設定變更時即時反映
+watch(() => store.settings, (val) => ALD.applyTheme(val), { deep: true, immediate: true });
+
 // ---------- 總覽 ----------
 const TabOverview = {
   template: "#tpl-overview",
@@ -92,7 +95,7 @@ const TabRebalance = {
     const liquidTWD = computed(() =>
       ALD.round2(
         store.records
-          .filter((r) => !r.excluded && r.type === "流動資產")
+          .filter((r) => !r.excluded && r.type === "流動資金")
           .reduce((sum, r) => sum + ALD.amountTWD(r), 0)
       )
     );
@@ -110,13 +113,13 @@ const TabRebalance = {
     const exposureTotal = computed(() =>
       ALD.round2(
         store.records
-          .filter((r) => !r.excluded && (r.type === "流動資產" || r.type === "投資"))
+          .filter((r) => !r.excluded && (r.type === "流動資金" || r.type === "投資"))
           .reduce((sum, r) => sum + ALD.exposureTWD(r), 0)
       )
     );
     const exposureRatio = computed(() => (pool.value > 0 ? exposureTotal.value / pool.value : 0));
 
-    // 目標：投資佔比 = rebalanceRatio(%)，流動資產佔比 = 100 - rebalanceRatio
+    // 目標：投資佔比 = rebalanceRatio(%)，流動資金佔比 = 100 - rebalanceRatio
     const action = computed(() => {
       const targetInvestRatio = (Number(settings.rebalanceRatio) || 70) / 100;
       const targetInvest = pool.value * targetInvestRatio;
@@ -125,7 +128,7 @@ const TabRebalance = {
         return { type: "hold", label: "已達平衡，無需調整", amount: 0 };
       }
       if (liquidTWD.value > investTWD.value) {
-        // 流動資產偏高 -> 買入（將現金轉入投資）
+        // 流動資金偏高 -> 買入（將現金轉入投資）
         return { type: "buy", label: "建議：買入", amount: Math.abs(diff) };
       }
       // 投資偏高 -> 賣出（將投資轉回現金）
@@ -430,7 +433,17 @@ const TabSettings = {
       location.reload();
     }
 
-    return { settings, exportCsv, importCsv, loadSample, resetData, forceReset };
+    return {
+      settings,
+      exportCsv,
+      importCsv,
+      loadSample,
+      resetData,
+      forceReset,
+      themeColors: ALD.THEME_COLORS,
+      fontFamilies: ALD.FONT_FAMILIES,
+      fontSizes: ALD.FONT_SIZES,
+    };
   },
 };
 
