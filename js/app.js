@@ -676,10 +676,10 @@ const App = {
   setup() {
     const activeTab = ref("overview");
     const tabs = [
-      { key: "overview", label: "總覽", icon: "📊", component: "TabOverview" },
-      { key: "rebalance", label: "再平衡", icon: "⚖️", component: "TabRebalance" },
-      { key: "detail", label: "明細", icon: "📋", component: "TabDetail" },
-      { key: "settings", label: "設定", icon: "⚙️", component: "TabSettings" },
+      { key: "overview", label: "總覽", icon: "⬠", component: "TabOverview" },
+      { key: "rebalance", label: "再平衡", icon: "⟠", component: "TabRebalance" },
+      { key: "detail", label: "明細", icon: "≣", component: "TabDetail" },
+      { key: "settings", label: "設定", icon: "⛯", component: "TabSettings" },
     ];
     const tabTitles = Object.fromEntries(tabs.map((t) => [t.key, t.label]));
     const activeComponent = computed(

@@ -204,7 +204,7 @@
         <template v-else>
           <div v-if="action.type === 'hold'" class="rebalance-hold">{{ action.label }}</div>
           <div v-else class="rebalance-advice-box" :class="action.type">
-            <div class="reb-icon-circle" :class="action.type">⬇</div>
+            <div class="reb-icon-circle" :class="action.type">{{ action.type === 'buy' ? '↓' : '↑' }}</div>
             <div class="rebalance-advice-text">
               <div class="rebalance-advice-title">再平衡建議</div>
               <div class="rebalance-advice-amount">{{ action.label }} {{ fmt(action.amount) }}</div>
