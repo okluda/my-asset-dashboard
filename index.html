@@ -466,6 +466,13 @@
           <button class="btn danger" @click="resetData">清除所有本地資料</button>
           <button class="btn danger" @click="forceReset">強制清除並重新載入</button>
         </div>
+        <hr class="data-divider" />
+        <div class="empty-hint" style="text-align:left">帳戶/項目設定（類別、帳戶/項目、價格、槓桿倍數）的匯出入：</div>
+        <div class="toolbar">
+          <button class="btn secondary" @click="exportAccountsCsv">匯出帳戶設定</button>
+          <button class="btn secondary" @click="$refs.accFileInput.click()">匯入帳戶設定</button>
+          <input type="file" ref="accFileInput" accept=".csv" style="display:none" @change="importAccountsCsv" />
+        </div>
         <div class="empty-hint" style="text-align:left">所有資料僅儲存在本機瀏覽器 localStorage，清除瀏覽器資料或更換裝置/瀏覽器將會遺失，請定期使用「匯出 CSV」備份。匯入 CSV 與載入模擬資料皆為「附加」至現有資料。若一般清除無效或資料異常，可用「強制清除並重新載入」。iOS Safari 中「設定 > Safari > 清除瀏覽記錄與網站資料」或「清除 Cookie」也會一併清除本 App 的資料，請務必先備份再操作。</div>
         <div class="empty-hint" style="text-align:left">Web Inspector 疑難排解：若畫面出現「Script error.」等看不到細節的錯誤，可用 Mac 連接 iPhone，於 iPhone「設定 > Safari > 進階」開啟「網頁檢閱器」，再於 Mac Safari「開發」選單中開啟本頁面即可看到完整錯誤堆疊。</div>
       </div>
@@ -545,7 +552,7 @@
           <div class="acc-cfg-grid">
             <div class="rec-field">
               <label>類別</label>
-              <select v-model="acc.category">
+              <select v-model="acc.category" @change="onAccountCategoryChange(acc)">
                 <option v-for="t in types" :key="t" :value="t">{{ catName(t) }}</option>
               </select>
             </div>
@@ -557,10 +564,25 @@
               <label>價格</label>
               <input type="number" v-model.number="acc.price" />
             </div>
+            <div class="rec-field">
+              <label>槓桿倍數</label>
+              <input type="number" v-model.number="acc.leverage" />
+            </div>
           </div>
           <div class="acc-cfg-actions">
             <button class="btn small danger" @click="removeAccount(acc.id)">刪除</button>
           </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">套用至明細</div>
+        <div class="empty-hint" style="text-align:left">依「類別 + 帳戶/項目」把設定值更新到現有明細資料並重算金額/曝險。</div>
+        <div class="toolbar">
+          <button class="btn secondary" @click="applyFxToRecords">套用匯率</button>
+          <button class="btn secondary" @click="applyPricesToRecords">套用價格</button>
+          <button class="btn secondary" @click="applyLeverageToRecords">套用倍數</button>
+          <button class="btn" @click="applyAllToRecords">全部套用</button>
         </div>
       </div>
       </template>
