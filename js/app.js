@@ -723,26 +723,24 @@ const App = {
       {{ tabTitles[activeTab] }}
     </div>
     <component :is="activeComponent"></component>
-    <div class="bottom-bar">
-      <nav class="tab-bar">
-        <button
-          v-for="tab in tabs"
-          :key="tab.key"
-          class="tab-btn"
-          :class="{ active: activeTab === tab.key }"
-          @click="activeTab = tab.key"
-        >
-          <span class="tab-icon">{{ tab.icon }}</span>
-          <span>{{ tab.label }}</span>
-        </button>
-      </nav>
+    <nav class="tab-bar">
       <button
-        v-if="activeTab === 'detail'"
-        class="scroll-fab"
-        @click="onScrollFab"
-        aria-label="捲動至頂端或底部"
-      >↑↓</button>
-    </div>
+        v-for="tab in tabs"
+        :key="tab.key"
+        class="tab-btn"
+        :class="{ active: activeTab === tab.key }"
+        @click="activeTab = tab.key"
+      >
+        <span class="tab-icon">{{ tab.icon }}</span>
+        <span>{{ tab.label }}</span>
+      </button>
+    </nav>
+    <button
+      v-if="activeTab === 'detail'"
+      class="scroll-fab"
+      @click="onScrollFab"
+      aria-label="捲動至頂端或底部"
+    >↑↓</button>
   `,
   setup() {
     const activeTab = ref("overview");

@@ -413,6 +413,19 @@
               :title="c.label"
               @click="settings.themeColor = key"
             ></button>
+            <label
+              class="theme-swatch theme-swatch-custom"
+              :class="{ active: settings.themeColor === 'custom' }"
+              :style="settings.themeColor === 'custom' ? { background: settings.customColor } : {}"
+              title="自訂顏色"
+            >
+              <span v-if="settings.themeColor !== 'custom'" class="theme-swatch-custom-icon">＋</span>
+              <input
+                type="color"
+                v-model="settings.customColor"
+                @input="settings.themeColor = 'custom'"
+              />
+            </label>
           </div>
         </div>
         <div class="form-row">
