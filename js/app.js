@@ -326,18 +326,17 @@ const TabDetail = {
       if (idx !== -1) store.records.splice(idx, 1);
     }
 
-    // 金額 = 價格 × 單位 × 匯率（計算欄位）；非投資鎖定槓桿=0（價格改由帳戶設定帶入）
+    // 金額 = 價格 × 單位 × 匯率（計算欄位）
     function recalc(rec) {
-      if (rec.type !== "投資") {
-        rec.leverage = 0;
-      }
       rec.amount = ALD.amountTWD(rec);
     }
 
-    // 依「設定 > 帳戶」中該類別對應帳戶/項目的價格，寫入此筆明細的價格
-    function applyAccountPrice(rec) {
+    // 依「設定 > 帳戶」中該類別對應帳戶/項目的價格與槓桿倍數，寫入此筆明細
+    function applyAccountConfig(rec) {
       const p = ALD.lookupAccountPrice(store.accounts, rec.type, rec.account);
       if (p !== null) rec.unitPrice = p;
+      const lev = ALD.lookupAccountLeverage(store.accounts, rec.type, rec.account);
+      if (lev !== null) rec.leverage = lev;
     }
 
     // 該類別可選的帳戶/項目清單（含目前值，避免現有資料的帳戶不在清單時消失）
@@ -347,15 +346,15 @@ const TabDetail = {
       return opts;
     }
 
-    // 選擇帳戶/項目時，帶入對應價格並重算金額
+    // 選擇帳戶/項目時，帶入對應價格與槓桿倍數並重算金額
     function onAccountChange(rec) {
-      applyAccountPrice(rec);
+      applyAccountConfig(rec);
       recalc(rec);
     }
 
-    // 類別變更時，重新帶入對應價格、套用非投資固定值並重算金額
+    // 類別變更時，重新帶入對應價格/槓桿倍數並重算金額
     function onTypeChange(rec) {
-      applyAccountPrice(rec);
+      applyAccountConfig(rec);
       recalc(rec);
     }
 
@@ -511,13 +510,71 @@ const TabSettings = {
       if (idx !== -1) store.accounts.splice(idx, 1);
     }
 
+    // 帳戶類別變更時，若槓桿倍數仍為預設值則依新類別調整（投資=1，其餘=0）
+    function onAccountCategoryChange(acc) {
+      const cur = Number(acc.leverage) || 0;
+      if (cur === 0 || cur === 1) {
+        acc.leverage = acc.category === "投資" ? 1 : 0;
+      }
+    }
+
     // 把帳戶設定中的價格套回對應的明細資料並重算金額
     function applyPricesToRecords() {
       for (const rec of store.records) {
         const p = ALD.lookupAccountPrice(store.accounts, rec.type, rec.account);
         if (p !== null) rec.unitPrice = p;
-        if (rec.type !== "投資") rec.leverage = 0;
         rec.amount = ALD.amountTWD(rec);
+      }
+    }
+
+    // 把帳戶設定中的槓桿倍數套回對應的明細資料並重算金額
+    function applyLeverageToRecords() {
+      for (const rec of store.records) {
+        const lev = ALD.lookupAccountLeverage(store.accounts, rec.type, rec.account);
+        if (lev !== null) rec.leverage = lev;
+        rec.amount = ALD.amountTWD(rec);
+      }
+    }
+
+    // 一次套用匯率、價格、槓桿倍數至所有明細
+    function applyAllToRecords() {
+      applyFxToRecords();
+      applyPricesToRecords();
+      applyLeverageToRecords();
+    }
+
+    // 匯出帳戶/項目設定為 CSV
+    function exportAccountsCsv() {
+      try {
+        ALD.exportAccountsCSV(store.accounts, store.settings);
+      } catch (e) {
+        reportError("匯出帳戶設定失敗：", e);
+      }
+    }
+
+    // 匯入帳戶/項目設定 CSV（取代現有設定）
+    async function importAccountsCsv(evt) {
+      const file = evt.target.files[0];
+      if (!file) return;
+      try {
+        const imported = await ALD.parseAccountsCSV(file, store.settings);
+        if (
+          store.accounts.length > 0 &&
+          !confirm("匯入將「取代」現有的帳戶/項目設定，確定要繼續嗎？")
+        ) {
+          return;
+        }
+        const skipped = imported.__skipped || 0;
+        store.accounts.splice(0, store.accounts.length, ...imported);
+        alert(
+          "已匯入 " + imported.length + " 筆帳戶/項目設定" +
+            (skipped > 0 ? "\n（略過 " + skipped + " 筆：類別空白或不符值域）" : "")
+        );
+      } catch (e) {
+        reportError("帳戶設定匯入失敗：", e);
+        alert("帳戶設定匯入失敗：" + (e && e.message ? e.message : e));
+      } finally {
+        evt.target.value = "";
       }
     }
 
@@ -562,7 +619,7 @@ const TabSettings = {
       const file = evt.target.files[0];
       if (!file) return;
       try {
-        const imported = await ALD.parseCSV(file, store.settings);
+        const imported = await ALD.parseCSV(file, store.settings, store.accounts);
         store.records.push(...imported);
         const skipped = imported.__skipped || 0;
         alert(
@@ -639,6 +696,12 @@ const TabSettings = {
       syncFxRates,
       addAccount,
       removeAccount,
+      onAccountCategoryChange,
+      applyPricesToRecords,
+      applyLeverageToRecords,
+      applyAllToRecords,
+      exportAccountsCsv,
+      importAccountsCsv,
       syncPrices,
       exportCsv,
       importCsv,
@@ -660,18 +723,26 @@ const App = {
       {{ tabTitles[activeTab] }}
     </div>
     <component :is="activeComponent"></component>
-    <nav class="tab-bar">
+    <div class="bottom-bar">
+      <nav class="tab-bar">
+        <button
+          v-for="tab in tabs"
+          :key="tab.key"
+          class="tab-btn"
+          :class="{ active: activeTab === tab.key }"
+          @click="activeTab = tab.key"
+        >
+          <span class="tab-icon">{{ tab.icon }}</span>
+          <span>{{ tab.label }}</span>
+        </button>
+      </nav>
       <button
-        v-for="tab in tabs"
-        :key="tab.key"
-        class="tab-btn"
-        :class="{ active: activeTab === tab.key }"
-        @click="activeTab = tab.key"
-      >
-        <span class="tab-icon">{{ tab.icon }}</span>
-        <span>{{ tab.label }}</span>
-      </button>
-    </nav>
+        v-if="activeTab === 'detail'"
+        class="scroll-fab"
+        @click="onScrollFab"
+        aria-label="捲動至頂端或底部"
+      >↑↓</button>
+    </div>
   `,
   setup() {
     const activeTab = ref("overview");
@@ -685,7 +756,17 @@ const App = {
     const activeComponent = computed(
       () => tabs.find((t) => t.key === activeTab.value).component
     );
-    return { activeTab, tabs, tabTitles, activeComponent };
+
+    // 明細浮動捲動鈕：預設捲到最底部；若已接近底部則改捲到最頂端。
+    function onScrollFab() {
+      const doc = document.documentElement;
+      const scrollTop = window.pageYOffset || doc.scrollTop || 0;
+      const maxScroll = doc.scrollHeight - window.innerHeight;
+      const atBottom = maxScroll - scrollTop < 8; // 已在（或非常接近）底部
+      window.scrollTo({ top: atBottom ? 0 : maxScroll, behavior: "smooth" });
+    }
+
+    return { activeTab, tabs, tabTitles, activeComponent, onScrollFab };
   },
 };
 

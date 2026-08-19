@@ -109,21 +109,25 @@ const ALD = (() => {
     };
   }
 
-  // 正規化單筆資料：確保數值型別、非投資鎖定槓桿=0，並重算金額。
+  // 正規化單筆資料：確保數值型別並重算金額。
   // 價格改由「設定 > 帳戶」帶入，故此處不再強制非投資單價=1，保留原有價格快照。
+  // 槓桿倍數改由「設定 > 帳戶」帶入（可套用於任一類別），故不再強制非投資槓桿=0，保留既有值。
   // 同時提供舊資料遷移：舊版非投資把金額存在 amount，這裡改用 單位 承載。
   function normalizeRec(rec) {
     rec.unitPrice = Number(rec.unitPrice) || 0;
     rec.units = Number(rec.units) || 0;
     rec.fxRate = Number(rec.fxRate) || 1;
-    rec.leverage = Number(rec.leverage) || 1;
+    // 槓桿倍數：缺值時依類別帶預設（投資=1，其餘=0）
+    rec.leverage =
+      rec.leverage == null || isNaN(Number(rec.leverage))
+        ? (rec.type === "投資" ? 1 : 0)
+        : Number(rec.leverage);
     rec.excluded = rec.excluded ? 1 : 0;
     if (rec.type !== "投資") {
       // 舊資料遷移：非投資若無單位但有金額，把金額搬到單位
       if (!rec.units && Number(rec.amount)) rec.units = Number(rec.amount) || 0;
       // 舊資料相容：非投資若無有效價格，帶入預設 1（維持 金額 = 1 × 單位 × 匯率）
       if (!rec.unitPrice) rec.unitPrice = 1;
-      rec.leverage = 0; // 非投資槓桿倍數固定為 0
     }
     rec.amount = round2(rec.unitPrice * rec.units * rec.fxRate);
     return rec;
@@ -220,20 +224,22 @@ const ALD = (() => {
   }
 
   // ---------- 帳戶/項目設定 ----------
-  // 每筆：{ id, category(內部類別鍵), account(帳戶/項目名稱), price(價格) }
+  // 每筆：{ id, category(內部類別鍵), account(帳戶/項目名稱), price(價格), leverage(槓桿倍數) }
+  // 槓桿倍數預設：類別為「投資」時為 1，其餘為 0。
   function emptyAccount(category) {
-    return { id: uid(), category: category || "流動資金", account: "", price: 1 };
+    const cat = category || "流動資金";
+    return { id: uid(), category: cat, account: "", price: 1, leverage: cat === "投資" ? 1 : 0 };
   }
 
   function seedAccounts() {
     const raw = [
-      { category: "流動資金", account: "銀行活存-台幣", price: 1 },
-      { category: "流動資金", account: "銀行活存-美金", price: 1 },
-      { category: "投資", account: "0050 元大台灣50", price: 140 },
-      { category: "投資", account: "VOO", price: 480 },
-      { category: "固定資產", account: "自住房產", price: 1 },
-      { category: "應收款", account: "親友借款", price: 1 },
-      { category: "負債", account: "房屋貸款", price: 1 },
+      { category: "流動資金", account: "銀行活存-台幣", price: 1, leverage: 0 },
+      { category: "流動資金", account: "銀行活存-美金", price: 1, leverage: 0 },
+      { category: "投資", account: "0050 元大台灣50", price: 140, leverage: 1 },
+      { category: "投資", account: "VOO", price: 480, leverage: 1 },
+      { category: "固定資產", account: "自住房產", price: 1, leverage: 0 },
+      { category: "應收款", account: "親友借款", price: 1, leverage: 0 },
+      { category: "負債", account: "房屋貸款", price: 1, leverage: 0 },
     ];
     return raw.map((r) => ({ id: uid(), ...r }));
   }
@@ -245,12 +251,17 @@ const ALD = (() => {
       if (rawStr === null) return seedAccounts();
       const arr = JSON.parse(rawStr);
       if (!Array.isArray(arr)) return seedAccounts();
-      return arr.map((a) => ({
-        id: a.id || uid(),
-        category: TYPES.includes(a.category) ? a.category : "流動資金",
-        account: String(a.account == null ? "" : a.account),
-        price: Number(a.price) || 0,
-      }));
+      return arr.map((a) => {
+        const category = TYPES.includes(a.category) ? a.category : "流動資金";
+        return {
+          id: a.id || uid(),
+          category,
+          account: String(a.account == null ? "" : a.account),
+          price: Number(a.price) || 0,
+          // 槓桿倍數：缺值時依類別帶預設（投資=1，其餘=0）
+          leverage: a.leverage == null ? (category === "投資" ? 1 : 0) : (Number(a.leverage) || 0),
+        };
+      });
     } catch (e) {
       return seedAccounts();
     }
@@ -260,13 +271,24 @@ const ALD = (() => {
     localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
   }
 
+  // 依「類別 + 帳戶/項目」查對應帳戶設定物件；找不到回傳 null
+  function lookupAccount(accounts, category, account) {
+    if (!Array.isArray(accounts)) return null;
+    return (
+      accounts.find((a) => a.category === category && a.account === account) || null
+    );
+  }
+
   // 依「類別 + 帳戶/項目」查對應價格；找不到回傳 null
   function lookupAccountPrice(accounts, category, account) {
-    if (!Array.isArray(accounts)) return null;
-    const found = accounts.find(
-      (a) => a.category === category && a.account === account
-    );
+    const found = lookupAccount(accounts, category, account);
     return found ? Number(found.price) || 0 : null;
+  }
+
+  // 依「類別 + 帳戶/項目」查對應槓桿倍數；找不到回傳 null
+  function lookupAccountLeverage(accounts, category, account) {
+    const found = lookupAccount(accounts, category, account);
+    return found ? Number(found.leverage) || 0 : null;
   }
 
   // 取某類別下的所有帳戶/項目名稱（供明細下拉選單使用）
@@ -399,7 +421,7 @@ const ALD = (() => {
     return `${y}-${mo}-${d}`;
   }
 
-  function parseCSV(file, settings) {
+  function parseCSV(file, settings, accounts) {
     return new Promise((resolve, reject) => {
       if (typeof Papa === "undefined") {
         reject(new Error("PapaParse 函式庫未載入（CDN 連線失敗），無法匯入 CSV。"));
@@ -455,15 +477,17 @@ const ALD = (() => {
               rec.fxRate = settingRate != null ? settingRate : numOr(raw.fxRate, 1);
               // 單位數：空值預設 0
               rec.units = numOr(raw.units, 0);
-              // 槓桿倍數：空值預設 0
-              rec.leverage = numOr(raw.leverage, 0);
+              // 槓桿倍數：優先讀取「設定 > 帳戶」對應項目的設定值並寫入明細；
+              // 查無設定時退回 CSV 值（空值預設：投資=1，其餘=0）
+              const cfgLev = lookupAccountLeverage(accounts, type, rec.account);
+              rec.leverage =
+                cfgLev != null ? cfgLev : numOr(raw.leverage, type === "投資" ? 1 : 0);
               // 不計入：值域 0/1，空值預設 0
               rec.excluded = numOr(raw.excluded, 0) === 1 ? 1 : 0;
 
-              // 非投資：價格固定 1、槓桿倍數固定 0（維持資料模型一致）
+              // 非投資：價格固定 1（槓桿倍數改由帳戶設定決定，不再固定 0）
               if (rec.type !== "投資") {
                 rec.unitPrice = 1;
-                rec.leverage = 0;
               }
 
               // 金額、曝險金額為計算欄位，匯入時不寫入，由功能計算
@@ -473,6 +497,83 @@ const ALD = (() => {
             });
             records.__skipped = skipped;
             resolve(records);
+          } catch (e) {
+            reject(e);
+          }
+        },
+        error: (err) => reject(err),
+      });
+    });
+  }
+
+  // ---------- 帳戶/項目設定 CSV 匯出/匯入 ----------
+  // 欄位：類別（顯示名稱）、帳戶/項目、價格、槓桿倍數
+  const ACCOUNT_CSV_COLUMNS = [
+    { key: "category", label: "類別" },
+    { key: "account", label: "帳戶/項目" },
+    { key: "price", label: "價格" },
+    { key: "leverage", label: "槓桿倍數" },
+  ];
+
+  function exportAccountsCSV(accounts, settings) {
+    if (typeof Papa === "undefined") {
+      throw new Error("PapaParse 函式庫未載入（CDN 連線失敗），無法匯出 CSV。");
+    }
+    const rows = (accounts || []).map((a) => ({
+      類別: categoryDisplayName(settings, a.category),
+      "帳戶/項目": a.account,
+      價格: Number(a.price) || 0,
+      槓桿倍數: Number(a.leverage) || 0,
+    }));
+    const csv = Papa.unparse(rows, { columns: ACCOUNT_CSV_COLUMNS.map((c) => c.label) });
+    const bom = "\uFEFF";
+    const blob = new Blob([bom + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `帳戶項目設定_${todayStr()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  // 解析帳戶/項目設定 CSV，回傳帳戶物件陣列（含新 id）。類別不符或空白則跳過整列。
+  function parseAccountsCSV(file, settings) {
+    return new Promise((resolve, reject) => {
+      if (typeof Papa === "undefined") {
+        reject(new Error("PapaParse 函式庫未載入（CDN 連線失敗），無法匯入 CSV。"));
+        return;
+      }
+      const typeNameToKey = buildTypeNameToKey(settings);
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        encoding: "UTF-8",
+        complete: (result) => {
+          try {
+            let skipped = 0;
+            const accounts = [];
+            result.data.forEach((row) => {
+              const get = (label) => {
+                const k = Object.keys(row).find((x) => x.trim() === label);
+                return k ? row[k] : "";
+              };
+              // 類別：接受內部鍵或自訂顯示名稱，轉回內部鍵；不符或空則跳過整列
+              const rawCat = String(get("類別") || "").trim();
+              const category = typeNameToKey[rawCat];
+              if (!category) {
+                skipped++;
+                return;
+              }
+              const account = String(get("帳戶/項目") || "").trim();
+              const price = numOr(get("價格"), 1);
+              // 槓桿倍數：空值預設依類別（投資=1，其餘=0）
+              const leverage = numOr(get("槓桿倍數"), category === "投資" ? 1 : 0);
+              accounts.push({ id: uid(), category, account, price, leverage });
+            });
+            accounts.__skipped = skipped;
+            resolve(accounts);
           } catch (e) {
             reject(e);
           }
@@ -514,7 +615,9 @@ const ALD = (() => {
     saveAccounts,
     seedAccounts,
     emptyAccount,
+    lookupAccount,
     lookupAccountPrice,
+    lookupAccountLeverage,
     accountsForCategory,
     categoryDisplayName,
     buildTypeNameToKey,
@@ -522,6 +625,8 @@ const ALD = (() => {
     currencyCodes,
     currencyRate,
     emptyCurrency,
+    exportAccountsCSV,
+    parseAccountsCSV,
     emptyRecord,
     uid,
     todayStr,
