@@ -23,7 +23,8 @@ const ALD = (() => {
     baseCurrency: "TWD",
     rebalanceRatio: 70, // 再平衡：投資目標佔比(%)，預設 70% -> 流動:投資 = 3:7
     themeMode: "dark", // 'dark' | 'light'
-    themeColor: "blue", // 主題配色（見 THEME_COLORS）
+    themeColor: "blue", // 主題配色（見 THEME_COLORS）；'custom' 時改用 customColor
+    customColor: "#5b8cff", // 自訂配色（themeColor === 'custom' 時生效）
     fontFamily: "system", // 字型（見 FONT_FAMILIES）
     fontSize: "md", // 字型大小（見 FONT_SIZES）
     // 資產子類別顯示名稱：可自訂 4 個資產類別的呈現名稱，空白時以內部鍵為預設。
@@ -587,10 +588,14 @@ const ALD = (() => {
   function applyTheme(settings) {
     if (typeof document === "undefined") return;
     const root = document.documentElement;
-    const color = THEME_COLORS[settings.themeColor] || THEME_COLORS.blue;
+    // 配色：themeColor === 'custom' 時使用自訂色，否則用預設配色表
+    const accent =
+      settings.themeColor === "custom"
+        ? (settings.customColor || "#5b8cff")
+        : (THEME_COLORS[settings.themeColor] || THEME_COLORS.blue).accent;
     const font = FONT_FAMILIES[settings.fontFamily] || FONT_FAMILIES.system;
     const size = FONT_SIZES[settings.fontSize] || FONT_SIZES.md;
-    root.style.setProperty("--accent", color.accent);
+    root.style.setProperty("--accent", accent);
     root.style.setProperty("--font-family", font.value);
     root.style.setProperty("--font-scale", size.scale);
     // 淺色模式套用在 <html>（documentElement）而非只有 <body>：
