@@ -15,7 +15,7 @@ if (typeof Vue === "undefined") {
   throw new Error(__msg);
 }
 
-const { createApp, reactive, computed, watch, ref } = Vue;
+const { createApp, reactive, computed, watch, ref, onMounted, onUnmounted, nextTick } = Vue;
 
 // ---------- 共用 reactive store ----------
 const store = reactive({
@@ -736,7 +736,7 @@ const App = {
       </button>
     </nav>
     <button
-      v-if="activeTab === 'detail'"
+      v-if="activeTab === 'detail' && fabVisible"
       class="scroll-fab"
       @click="onScrollFab"
       aria-label="捲動至頂端或底部"
@@ -764,7 +764,37 @@ const App = {
       window.scrollTo({ top: atBottom ? 0 : maxScroll, behavior: "smooth" });
     }
 
-    return { activeTab, tabs, tabTitles, activeComponent, onScrollFab };
+    // 是否顯示浮動捲動鈕：僅當頁面內容高度「超過」裝置可視高度時才需要捲動，
+    // 此時才顯示按鈕；內容未超出（例如資料筆數很少）就不需要捲動、隱藏按鈕避免遮擋畫面。
+    const fabVisible = ref(false);
+    const OVERFLOW_THRESHOLD = 24; // 容許誤差（px），避免臨界值時按鈕閃爍
+    function checkOverflow() {
+      const doc = document.documentElement;
+      fabVisible.value = doc.scrollHeight - window.innerHeight > OVERFLOW_THRESHOLD;
+    }
+    let resizeTimer = null;
+    function onResize() {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(checkOverflow, 150);
+    }
+
+    onMounted(() => {
+      checkOverflow();
+      window.addEventListener("resize", onResize);
+      // 內容高度會隨分頁切換、資料新增/刪除、篩選而變動，這裡在 DOM 更新後統一重新檢查
+      watch(
+        () => [activeTab.value, store.records.length],
+        () => nextTick(checkOverflow),
+        { flush: "post" }
+      );
+      watch(store.records, () => nextTick(checkOverflow), { deep: true, flush: "post" });
+    });
+    onUnmounted(() => {
+      window.removeEventListener("resize", onResize);
+      clearTimeout(resizeTimer);
+    });
+
+    return { activeTab, tabs, tabTitles, activeComponent, onScrollFab, fabVisible };
   },
 };
 

@@ -23,7 +23,7 @@ const ALD = (() => {
     baseCurrency: "TWD",
     rebalanceRatio: 70, // 再平衡：投資目標佔比(%)，預設 70% -> 流動:投資 = 3:7
     themeMode: "dark", // 'dark' | 'light'
-    themeColor: "blue", // 主題配色（見 THEME_COLORS）；'custom' 時改用 customColor
+    themeColor: "grayBlue", // 主題配色（見 THEME_COLORS）；'custom' 時改用 customColor
     customColor: "#5b8cff", // 自訂配色（themeColor === 'custom' 時生效）
     fontFamily: "system", // 字型（見 FONT_FAMILIES）
     fontSize: "md", // 字型大小（見 FONT_SIZES）
@@ -43,15 +43,14 @@ const ALD = (() => {
     ],
   };
 
-  // 主題配色：切換 --accent（按鈕/選中狀態等主色）
+  // 主題配色：切換 --accent（按鈕/選中狀態等主色）。莫蘭迪低飽和色系。
   const THEME_COLORS = {
-    blue: { label: "藍色", accent: "#5b8cff" },
-    green: { label: "綠色", accent: "#35c98f" },
-    purple: { label: "紫色", accent: "#9b6bff" },
-    orange: { label: "橘色", accent: "#ff9f43" },
-    pink: { label: "粉色", accent: "#ff6b9d" },
-    beige: { label: "米色", accent: "#c9a875" },
-    gray: { label: "灰色", accent: "#8a8d99" },
+    morandiPink: { label: "莫蘭迪粉", accent: "#D4C2C1" },
+    grayBlue: { label: "灰藍", accent: "#B7C9D9" },
+    terracotta: { label: "淡陶土", accent: "#E2B7A0" },
+    oliveGray: { label: "橄欖灰綠", accent: "#A4A37A" },
+    fogPurple: { label: "霧紫灰", accent: "#C9C0C9" },
+    almond: { label: "米杏", accent: "#D8CFC4" },
   };
 
   // 字型選項：切換 --font-family
@@ -592,7 +591,7 @@ const ALD = (() => {
     const accent =
       settings.themeColor === "custom"
         ? (settings.customColor || "#5b8cff")
-        : (THEME_COLORS[settings.themeColor] || THEME_COLORS.blue).accent;
+        : (THEME_COLORS[settings.themeColor] || THEME_COLORS.grayBlue).accent;
     const font = FONT_FAMILIES[settings.fontFamily] || FONT_FAMILIES.system;
     const size = FONT_SIZES[settings.fontSize] || FONT_SIZES.md;
     root.style.setProperty("--accent", accent);

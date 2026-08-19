@@ -511,10 +511,10 @@ table.detail-table input, table.detail-table select {
   width: 52px;
   height: 52px;
   border-radius: 50%;
-  background: transparent;
+  background: var(--tabbar-bg);
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
-  color: var(--text);
+  color: var(--text-main);
   border: 1px solid var(--border);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
   font-size: calc(17px * var(--font-scale, 1));
