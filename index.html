@@ -321,9 +321,13 @@
 
         <div v-if="hasActiveFilter" class="filter-hint">
           <span>篩選中：</span>
-          <span v-if="selectedAccountFilter" class="filter-chip">
-            {{ selectedAccountFilter.account }}／{{ selectedAccountFilter.currency }}
-            <button type="button" class="filter-chip-x" @click="selectedAccountFilter = null" aria-label="移除帳戶篩選">×</button>
+          <span
+            v-for="s in selectedAccountFilters"
+            :key="s.account + '_' + s.currency"
+            class="filter-chip"
+          >
+            {{ s.account }}／{{ s.currency }}
+            <button type="button" class="filter-chip-x" @click="removeAccountFilter(s.account, s.currency)" aria-label="移除帳戶篩選">×</button>
           </span>
           <span v-if="excludedStatus !== 'all'" class="filter-chip">
             {{ excludedStatus === 'excluded' ? '已勾選不計入' : '未勾選不計入' }}

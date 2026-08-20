@@ -176,10 +176,10 @@ const TabDetail = {
     const settings = store.settings;
     const types = ALD.TYPES;
     const activeType = ref(types[0]);
-    // 帳戶/幣別篩選：null 代表不篩選；有值時為 { account, currency } 一組，
-    // 避免不同幣別但同名的帳戶被混在一起（同一顯示卡片本來就已依幣別分組，
-    // 直接沿用該分組的幣別，不需另外新增幣別下拉選單）。
-    const selectedAccountFilter = ref(null);
+    // 帳戶/幣別篩選：多選，陣列中每筆為 { account, currency } 一組。
+    // 空陣列代表不篩選。同名但不同幣別的帳戶視為不同選項（幣別取自該帳戶所屬
+    // 分組，不寫死支援哪些幣別），多選之間為 OR 關係。
+    const selectedAccountFilters = ref([]);
     // 不計入三態篩選：'all' 全部 / 'excluded' 已勾選不計入 / 'included' 未勾選不計入。
     // 僅影響「顯示」，不會修改任何一筆資料的 excluded 值。
     const excludedStatus = ref("all");
@@ -231,15 +231,18 @@ const TabDetail = {
       dateFilterActive.value = true;
     }
 
-    // 套用帳戶/幣別、不計入、日期三種篩選後，實際顯示於下方明細的資料。
-    // 三種條件可任意組合；此為唯一計算篩選結果的地方，資料新增/刪除/修改後
-    // （store.records 變動）會自動重新計算，不需額外處理。
+    // 套用帳戶/幣別（多選 OR）、不計入、日期三種篩選後，實際顯示於下方明細的資料。
+    // 帳戶/幣別多選之間為 OR，選取結果再與不計入、日期條件做 AND；
+    // 此為唯一計算篩選結果的地方，資料新增/刪除/修改後（store.records 變動）
+    // 會自動重新計算，不需額外處理。
     const visibleRecords = computed(() => {
       let list = typeRecords.value;
-      const sel = selectedAccountFilter.value;
-      if (sel) {
-        list = list.filter(
-          (r) => (r.account || "(未命名)") === sel.account && (r.currency || "TWD") === sel.currency
+      const sel = selectedAccountFilters.value;
+      if (sel.length > 0) {
+        list = list.filter((r) =>
+          sel.some(
+            (s) => (r.account || "(未命名)") === s.account && (r.currency || "TWD") === s.currency
+          )
         );
       }
       if (excludedStatus.value === "excluded") {
@@ -255,14 +258,14 @@ const TabDetail = {
 
     // 目前是否有任何一種篩選條件生效（供摘要列與空狀態顯示判斷）
     const hasActiveFilter = computed(
-      () => !!selectedAccountFilter.value || excludedStatus.value !== "all" || dateFilterActive.value
+      () => selectedAccountFilters.value.length > 0 || excludedStatus.value !== "all" || dateFilterActive.value
     );
 
-    // 清除全部篩選：帳戶/幣別、不計入、日期篩選狀態與卡片高亮一併重設。
+    // 清除全部篩選：帳戶/幣別（全部取消選取）、不計入、日期篩選狀態與卡片高亮一併重設。
     // 日期文字回到「今天」——與「日期篩選預設值＝當天」的既有邏輯一致，
     // 避免清除後按鈕仍停留在使用者先前長按選過的日期，造成混淆。
     function clearFilters() {
-      selectedAccountFilter.value = null;
+      selectedAccountFilters.value = [];
       excludedStatus.value = "all";
       dateFilterActive.value = false;
       dateFilterValue.value = ALD.todayStr();
@@ -334,23 +337,30 @@ const TabDetail = {
     // 切換子分頁時，帳戶/幣別篩選對象已不存在於新類別中，故重設；
     // 不計入、日期篩選為跨類別的通用條件，維持不變。
     watch(activeType, () => {
-      selectedAccountFilter.value = null;
+      selectedAccountFilters.value = [];
     });
 
-    // 點選幣別分組下的帳戶卡片：以「帳戶＋幣別」為篩選條件（幣別取自該卡片所屬分組，
-    // 不寫死 TWD/USD，動態支援設定中新增的任何幣別）。再次點選同一張卡片則取消篩選。
+    // 點選幣別分組下的帳戶卡片：多選（OR）。以「帳戶＋幣別」為篩選條件（幣別取自
+    // 該卡片所屬分組，不寫死 TWD/USD，動態支援設定中新增的任何幣別）。
+    // 點擊未選帳戶為加入選取，點擊已選帳戶則從選取清單移除（取消）。
     function toggleAccountFilter(account, currency) {
-      const cur = selectedAccountFilter.value;
-      if (cur && cur.account === account && cur.currency === currency) {
-        selectedAccountFilter.value = null;
-      } else {
-        selectedAccountFilter.value = { account, currency };
-      }
+      const arr = selectedAccountFilters.value;
+      const idx = arr.findIndex((s) => s.account === account && s.currency === currency);
+      if (idx === -1) arr.push({ account, currency });
+      else arr.splice(idx, 1);
     }
 
     function isAccountSelected(account, currency) {
-      const cur = selectedAccountFilter.value;
-      return !!cur && cur.account === account && cur.currency === currency;
+      return selectedAccountFilters.value.some(
+        (s) => s.account === account && s.currency === currency
+      );
+    }
+
+    // 移除單筆已選帳戶/幣別（供篩選摘要 Chip 的個別移除按鈕使用）
+    function removeAccountFilter(account, currency) {
+      const arr = selectedAccountFilters.value;
+      const idx = arr.findIndex((s) => s.account === account && s.currency === currency);
+      if (idx !== -1) arr.splice(idx, 1);
     }
 
     // 新增時預設帶入目前子分頁的類別
@@ -421,9 +431,10 @@ const TabDetail = {
       typeRecords,
       visibleRecords,
       summary,
-      selectedAccountFilter,
+      selectedAccountFilters,
       toggleAccountFilter,
       isAccountSelected,
+      removeAccountFilter,
       excludedStatus,
       hasActiveFilter,
       clearFilters,
