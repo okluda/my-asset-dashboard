@@ -176,8 +176,13 @@ const TabDetail = {
     const settings = store.settings;
     const types = ALD.TYPES;
     const activeType = ref(types[0]);
-    // 第三層（帳戶/項目）篩選：空陣列代表顯示全部
-    const selectedAccounts = ref([]);
+    // 帳戶/幣別篩選：null 代表不篩選；有值時為 { account, currency } 一組，
+    // 避免不同幣別但同名的帳戶被混在一起（同一顯示卡片本來就已依幣別分組，
+    // 直接沿用該分組的幣別，不需另外新增幣別下拉選單）。
+    const selectedAccountFilter = ref(null);
+    // 不計入三態篩選：'all' 全部 / 'excluded' 已勾選不計入 / 'included' 未勾選不計入。
+    // 僅影響「顯示」，不會修改任何一筆資料的 excluded 值。
+    const excludedStatus = ref("all");
 
     const isInvest = computed(() => activeType.value === "投資");
 
@@ -220,22 +225,48 @@ const TabDetail = {
       dateFilterActive.value = !dateFilterActive.value;
     }
 
-    // 長按選好新日期後，直接套用篩選（讓使用者能立即看到該日期的資料）
+    // 長按選好新日期、使用者按下「確認」後，原生 input 觸發 change，直接套用篩選
+    // （若使用者按「取消」，change 不會觸發，日期與篩選條件維持不變）
     function onDateFilterInputChange() {
       dateFilterActive.value = true;
     }
 
-    // 套用第三層篩選、日期篩選後，實際顯示於下方明細的資料
+    // 套用帳戶/幣別、不計入、日期三種篩選後，實際顯示於下方明細的資料。
+    // 三種條件可任意組合；此為唯一計算篩選結果的地方，資料新增/刪除/修改後
+    // （store.records 變動）會自動重新計算，不需額外處理。
     const visibleRecords = computed(() => {
       let list = typeRecords.value;
-      if (selectedAccounts.value.length > 0) {
-        list = list.filter((r) => selectedAccounts.value.includes(r.account || "(未命名)"));
+      const sel = selectedAccountFilter.value;
+      if (sel) {
+        list = list.filter(
+          (r) => (r.account || "(未命名)") === sel.account && (r.currency || "TWD") === sel.currency
+        );
+      }
+      if (excludedStatus.value === "excluded") {
+        list = list.filter((r) => ALD.isExcluded(r));
+      } else if (excludedStatus.value === "included") {
+        list = list.filter((r) => !ALD.isExcluded(r));
       }
       if (dateFilterActive.value) {
         list = list.filter((r) => r.date === dateFilterValue.value);
       }
       return list;
     });
+
+    // 目前是否有任何一種篩選條件生效（供摘要列與空狀態顯示判斷）
+    const hasActiveFilter = computed(
+      () => !!selectedAccountFilter.value || excludedStatus.value !== "all" || dateFilterActive.value
+    );
+
+    // 清除全部篩選：帳戶/幣別、不計入、日期篩選狀態與卡片高亮一併重設。
+    // 日期文字回到「今天」——與「日期篩選預設值＝當天」的既有邏輯一致，
+    // 避免清除後按鈕仍停留在使用者先前長按選過的日期，造成混淆。
+    function clearFilters() {
+      selectedAccountFilter.value = null;
+      excludedStatus.value = "all";
+      dateFilterActive.value = false;
+      dateFilterValue.value = ALD.todayStr();
+    }
 
     // 幣別分組標籤：投資用「台股/美股」，非投資用「台幣合計/美元合計」
     function groupLabel(type, currency) {
@@ -249,7 +280,7 @@ const TabDetail = {
 
     // 依幣別 -> 帳戶/項目 兩層分組彙總。金額一律用「金額(台幣)」加總。
     const summary = computed(() => {
-      const recs = typeRecords.value.filter((r) => !r.excluded);
+      const recs = typeRecords.value.filter((r) => !ALD.isExcluded(r));
       const invest = activeType.value === "投資";
       const groupsMap = {};
       let exposureTotal = 0;
@@ -300,20 +331,26 @@ const TabDetail = {
       return { groups, totalTWD, exposureTotal, invest };
     });
 
-    // 切換子分頁時清除篩選
+    // 切換子分頁時，帳戶/幣別篩選對象已不存在於新類別中，故重設；
+    // 不計入、日期篩選為跨類別的通用條件，維持不變。
     watch(activeType, () => {
-      selectedAccounts.value = [];
+      selectedAccountFilter.value = null;
     });
 
-    function toggleSelect(accountName) {
-      const arr = selectedAccounts.value;
-      const idx = arr.indexOf(accountName);
-      if (idx === -1) arr.push(accountName);
-      else arr.splice(idx, 1);
+    // 點選幣別分組下的帳戶卡片：以「帳戶＋幣別」為篩選條件（幣別取自該卡片所屬分組，
+    // 不寫死 TWD/USD，動態支援設定中新增的任何幣別）。再次點選同一張卡片則取消篩選。
+    function toggleAccountFilter(account, currency) {
+      const cur = selectedAccountFilter.value;
+      if (cur && cur.account === account && cur.currency === currency) {
+        selectedAccountFilter.value = null;
+      } else {
+        selectedAccountFilter.value = { account, currency };
+      }
     }
 
-    function isSelected(accountName) {
-      return selectedAccounts.value.includes(accountName);
+    function isAccountSelected(account, currency) {
+      const cur = selectedAccountFilter.value;
+      return !!cur && cur.account === account && cur.currency === currency;
     }
 
     // 新增時預設帶入目前子分頁的類別
@@ -384,9 +421,12 @@ const TabDetail = {
       typeRecords,
       visibleRecords,
       summary,
-      selectedAccounts,
-      toggleSelect,
-      isSelected,
+      selectedAccountFilter,
+      toggleAccountFilter,
+      isAccountSelected,
+      excludedStatus,
+      hasActiveFilter,
+      clearFilters,
       addRow,
       removeRow,
       recalc,
@@ -719,7 +759,7 @@ const TabSettings = {
 const App = {
   components: { TabOverview, TabRebalance, TabDetail, TabSettings },
   template: `
-    <div class="page-header">
+    <div class="page-header" ref="pageHeaderRef">
       {{ tabTitles[activeTab] }}
     </div>
     <component :is="activeComponent"></component>
@@ -794,7 +834,41 @@ const App = {
       clearTimeout(resizeTimer);
     });
 
-    return { activeTab, tabs, tabTitles, activeComponent, onScrollFab, fabVisible };
+    // 分類按鈕列（.subtab-bar，明細/設定共用）需以 sticky 固定在標題列正下方。
+    // 標題列高度會隨安全區域（瀏海機型）、字型大小設定而變動，不寫死像素值，
+    // 改用 ResizeObserver 即時量測實際高度，寫入 CSS 變數供 .subtab-bar 的 top 使用。
+    const pageHeaderRef = ref(null);
+    let headerObserver = null;
+    function applyHeaderHeight() {
+      const h = pageHeaderRef.value ? pageHeaderRef.value.offsetHeight : 0;
+      if (h > 0) {
+        document.documentElement.style.setProperty("--page-header-height", h + "px");
+      }
+    }
+    onMounted(() => {
+      applyHeaderHeight();
+      if (window.ResizeObserver && pageHeaderRef.value) {
+        headerObserver = new ResizeObserver(applyHeaderHeight);
+        headerObserver.observe(pageHeaderRef.value);
+      } else {
+        // 無 ResizeObserver 支援時退而求其次，依賴 resize 事件重新量測
+        window.addEventListener("resize", applyHeaderHeight);
+      }
+    });
+    onUnmounted(() => {
+      if (headerObserver) headerObserver.disconnect();
+      window.removeEventListener("resize", applyHeaderHeight);
+    });
+
+    return {
+      activeTab,
+      tabs,
+      tabTitles,
+      activeComponent,
+      onScrollFab,
+      fabVisible,
+      pageHeaderRef,
+    };
   },
 };
 

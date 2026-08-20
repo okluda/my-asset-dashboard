@@ -85,9 +85,16 @@ const ALD = (() => {
     return "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   }
 
+  // 取得「本地時區」今天日期字串（YYYY-MM-DD）。
+  // 注意：不可用 d.toISOString() 取日期，那會先轉為 UTC，在本地時區為 UTC+8 的
+  // 凌晨 00:00~07:59 時會被換算成「前一天」的 UTC 日期，導致日期篩選/新增資料
+  // 預設日期偏移一天。改用本地年/月/日組字串，避免此時區偏移問題。
   function todayStr() {
     const d = new Date();
-    return d.toISOString().slice(0, 10);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
   }
 
   function emptyRecord(type) {
@@ -337,6 +344,12 @@ const ALD = (() => {
   function exposureTWD(rec) {
     const lev = Number(rec.leverage);
     return round2(amountTWD(rec) * (isNaN(lev) ? 1 : lev));
+  }
+
+  // 判斷單筆資料是否為「不計入」：統一處理 1/true 為不計入，0/false/null/undefined/
+  // 欄位不存在一律視為「計入」，避免舊資料或型別不一致造成篩選誤判。
+  function isExcluded(rec) {
+    return !!rec && (rec.excluded === 1 || rec.excluded === true);
   }
 
   // 依設定單位（元/萬元）格式化金額顯示
@@ -638,6 +651,7 @@ const ALD = (() => {
     origAmount,
     amountTWD,
     exposureTWD,
+    isExcluded,
     normalizeRec,
     formatAmount,
     formatPercent,
