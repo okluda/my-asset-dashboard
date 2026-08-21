@@ -840,7 +840,15 @@ table.detail-table input, table.detail-table select {
   font-size: calc(14px * var(--font-scale, 1));
   font-weight: 600;
   color: var(--text-main);
+  margin-bottom: 2px;
+}
+
+/* 外幣原幣金額第二行：右對齊、較小字級、緊湊行高，避免撐高合計區 */
+.sum-group-orig {
+  display: flex;
+  justify-content: flex-end;
   margin-bottom: 8px;
+  line-height: 1.2;
 }
 
 .sum-acc-card {
@@ -982,6 +990,15 @@ table.detail-table input, table.detail-table select {
   flex: 1;
 }
 
+/* 不計入／備註列：兩者皆為單一輸入控制項（無 label），此列需垂直置中對齊 */
+.rec-row-inline {
+  align-items: center;
+}
+
+.rec-field-note {
+  justify-content: center;
+}
+
 .rec-field-full {
   grid-column: 1 / -1;
 }
@@ -999,13 +1016,56 @@ table.detail-table input, table.detail-table select {
   box-sizing: border-box;
 }
 
-/* 日期欄位：靠左對齊、避免內容溢出壓到相鄰欄位 */
-.rec-field input[type="date"] {
-  text-align: left;
-  min-width: 0;
-  max-width: 100%;
-  -webkit-appearance: none;
-  appearance: none;
+/* 日期欄位容器：文字層 + 原生 input 疊合。原生 input 完整保留預設外觀與互動，
+   僅將其顯示文字設為透明，改由下方文字層顯示固定 YYYY-MM-DD 格式。 */
+.date-field-wrap {
+  position: relative;
+  width: 100%;
+  background: var(--card-bg-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+
+/* 選擇器改用 input[type="date"].date-native-input（屬性+類別），
+   優先度須高於全域 input[type="date"] 規則（第 302 行），
+   否則其 background/color 會覆蓋此處的 transparent 設定，導致文字層被蓋住看不見。 */
+input[type="date"].date-native-input {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  margin: 0;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  color: transparent;
+  box-sizing: border-box;
+  font-size: calc(13px * var(--font-scale, 1));
+}
+
+/* 隱藏 WebKit 日期欄位內部各段文字（月/日/年），避免 color:transparent 之外仍洩漏文字 */
+input[type="date"].date-native-input::-webkit-datetime-edit,
+input[type="date"].date-native-input::-webkit-datetime-edit-fields-wrapper,
+input[type="date"].date-native-input::-webkit-datetime-edit-text,
+input[type="date"].date-native-input::-webkit-datetime-edit-month-field,
+input[type="date"].date-native-input::-webkit-datetime-edit-day-field,
+input[type="date"].date-native-input::-webkit-datetime-edit-year-field {
+  color: transparent;
+}
+
+.date-display-text {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 0;
+  font-size: calc(13px * var(--font-scale, 1));
+  color: var(--text-main);
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: calc(100% - 32px);
 }
 
 .rec-field input[readonly] {
