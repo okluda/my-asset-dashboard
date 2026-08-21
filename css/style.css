@@ -840,7 +840,16 @@ table.detail-table input, table.detail-table select {
   font-size: calc(14px * var(--font-scale, 1));
   font-weight: 600;
   color: var(--text-main);
-  margin-bottom: 8px;
+  margin-bottom: 2px;
+}
+
+/* 外幣原幣金額第二行：右對齐、較小字級、緊湊行高，避免撐高合計區。
+   僅在 v-if="g.isForeign" 時條件式渲染，台幣（基準幣別）不顯示此行。 */
+.sum-group-orig {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 4px;
+  line-height: 1.2;
 }
 
 .sum-acc-card {
@@ -972,14 +981,24 @@ table.detail-table input, table.detail-table select {
   gap: 3px;
   min-width: 0;
   flex: 1;
+  justify-content: flex-start;
+}
+
+/* 當 rec-field 包含的是直接的 input（無 label）時，如備註欄位 */
+.rec-field > input:only-child,
+.rec-field > select:only-child {
+  gap: 0;
+  margin-top: 0;
 }
 
 .rec-field-shrink {
   flex: 0 0 auto;
+  justify-content: center;
 }
 
 .rec-field-grow {
   flex: 1;
+  justify-content: center;
 }
 
 .rec-field-full {
@@ -997,6 +1016,7 @@ table.detail-table input, table.detail-table select {
   font-size: calc(13px * var(--font-scale, 1));
   padding: 6px 8px;
   box-sizing: border-box;
+  height: auto;
 }
 
 /* 日期欄位：靠左對齊、避免內容溢出壓到相鄰欄位 */
@@ -1004,8 +1024,62 @@ table.detail-table input, table.detail-table select {
   text-align: left;
   min-width: 0;
   max-width: 100%;
-  -webkit-appearance: none;
-  appearance: none;
+}
+
+/* 日期 input 容器：使用文字層顯示 YYYY-MM-DD 格式（避免 iOS Safari 預設的「YYYY年M月D日」），
+   同時保留原生 date input 的實際觸控能力與日期選擇器。 */
+.date-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: auto;
+  background: var(--card-bg-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0;
+  margin: 0;
+  box-sizing: border-box;
+}
+
+/* 日期顯示文字層：顯示 YYYY-MM-DD 格式，與 input 具相同尺寸/對齖/樣式 */
+.date-input-display {
+  position: relative;
+  z-index: 0;
+  left: 8px;
+  right: 8px;
+  padding: 6px 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  font-size: calc(13px * var(--font-scale, 1));
+  color: var(--text-main);
+  pointer-events: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  box-sizing: border-box;
+}
+
+/* 原生 date input 覆蓋層：使用 position:absolute、inset:0 精確覆蓋整個容器。
+   opacity 設為 0.01（極低值）保留觸控反饋、而非完全隱形。
+   此 input 保留完整寬高與點擊偵測，直接接收觸控。 */
+.date-input-native {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  color: transparent;
+  opacity: 0.01;
+  cursor: pointer;
+  font-size: calc(13px * var(--font-scale, 1));
+  box-sizing: border-box;
 }
 
 .rec-field input[readonly] {
@@ -1027,6 +1101,7 @@ table.detail-table input, table.detail-table select {
   font-size: calc(13px * var(--font-scale, 1));
   color: var(--text-sub);
   cursor: pointer;
+  margin: 0;
 }
 
 .rec-exclude input {

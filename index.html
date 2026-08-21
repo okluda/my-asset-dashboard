@@ -260,12 +260,14 @@
 
         <div v-if="summary.groups.length === 0" class="empty-hint">此類別尚無資料</div>
         <div v-for="g in summary.groups" :key="g.key" class="sum-group">
-          <!-- 第二層：幣別合計，右側一律用金額加總 -->
+          <!-- 第二層：幣別合計。外幣原幣金額換行顯示在第二行右對齐，避免第一行過長。
+               台幣或基準幣別維持單行。 -->
           <div class="sum-group-head">
             <span>{{ g.label }}</span>
-            <span>
-              {{ fmt(g.subtotalTWD) }}<span v-if="g.isForeign" class="sum-orig"> ({{ num(g.subtotalOrig) }})</span>
-            </span>
+            <span>{{ fmt(g.subtotalTWD) }}</span>
+          </div>
+          <div v-if="g.isForeign" class="sum-group-orig">
+            <span class="sum-orig">({{ num(g.subtotalOrig) }})</span>
           </div>
           <!-- 第三層：帳戶/項目，可點選作為下方明細的篩選條件（依所屬幣別分組，
                篩選時同時比對「帳戶＋幣別」，避免不同幣別但同名帳戶互相混淆） -->
@@ -436,7 +438,7 @@
             <span class="rec-summary-date">{{ dateMD(rec.date) }}</span>
             <span class="rec-summary-account">{{ rec.account || '(未命名)' }}</span>
             <span class="rec-summary-amount">{{ num(money(rec)) }}</span>
-            <span class="rec-toggle-arrow">{{ isExpanded(rec.id) ? '▾' : '▸' }}</span>
+            <span class="rec-toggle-arrow">{{ isExpanded(rec.id) ? '▽' : '▷' }}</span>
           </div>
 
           <template v-if="isExpanded(rec.id)">
@@ -444,7 +446,14 @@
             <div class="rec-row">
               <div class="rec-field">
                 <label>日期</label>
-                <input type="date" v-model="rec.date" />
+                <!-- iOS Safari 會自動將 date input 顯示為「YYYY年M月D日」格式。
+                     為了統一顯示為「YYYY-MM-DD」，使用文字層顯示 rec.date，
+                     並以半透明原生 input（position:absolute、inset:0）覆蓋整個容器，
+                     保留實際尺寸、觸控能力及瀏覽器原生日期選擇器。 -->
+                <div class="date-input-wrapper">
+                  <span class="date-input-display">{{ rec.date }}</span>
+                  <input type="date" v-model="rec.date" class="date-input-native" />
+                </div>
               </div>
               <div class="rec-field">
                 <label>帳戶/項目</label>
@@ -508,7 +517,6 @@
                 </label>
               </div>
               <div class="rec-field rec-field-grow">
-                <label>備註</label>
                 <input type="text" v-model="rec.note" placeholder="備註" />
               </div>
             </div>
