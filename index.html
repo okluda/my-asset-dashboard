@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="theme-color" content="#1c1c2e" />
-  <title>資產負債看板</title>
+  <title>fishbubble</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
@@ -249,13 +249,14 @@
               {{ fmt(g.subtotalTWD) }}<span v-if="g.isForeign" class="sum-orig"> ({{ num(g.subtotalOrig) }})</span>
             </span>
           </div>
-          <!-- 第三層：帳戶/項目，可點選作為下方明細的篩選條件 -->
+          <!-- 第三層：帳戶/項目，可點選作為下方明細的篩選條件（依所屬幣別分組，
+               篩選時同時比對「帳戶＋幣別」，避免不同幣別但同名帳戶互相混淆） -->
           <div
             v-for="a in g.accounts"
             :key="a.key"
             class="sum-acc-card"
-            :class="{ selected: isSelected(a.account) }"
-            @click="toggleSelect(a.account)"
+            :class="{ selected: isAccountSelected(a.account, a.currency) }"
+            @click="toggleAccountFilter(a.account, a.currency)"
           >
             <div class="sum-acc-row1">
               <span class="sum-acc-name">{{ a.account }}</span>
@@ -275,18 +276,37 @@
       <div class="card">
         <div class="detail-toolbar">
           <button class="btn" @click="addRow">＋新增一筆</button>
-          <button
-            class="btn secondary date-filter-btn"
-            :class="{ active: dateFilterActive }"
-            @click="onDateFilterClick"
-            @mousedown="startLongPress"
-            @mouseup="cancelLongPress"
-            @mouseleave="cancelLongPress"
-            @touchstart="startLongPress"
-            @touchend="cancelLongPress"
-            @touchcancel="cancelLongPress"
-            title="點一下：篩選此日期／長按：修改日期"
-          >📅 {{ dateFilterValue }}</button>
+          <div class="date-filter-group" role="group" aria-label="日期篩選">
+            <button
+              type="button"
+              class="btn secondary date-nav-btn"
+              @click="goPrevDay"
+              aria-label="前一天"
+              title="前一天"
+            >‹</button>
+            <button
+              class="btn secondary date-filter-btn"
+              :class="{ active: dateFilterActive }"
+              @click="onDateFilterClick"
+              :aria-pressed="dateFilterActive"
+              :aria-label="'日期篩選：' + dateFilterValue + (dateFilterActive ? '（篩選中）' : '') + '。點一下套用或取消此日期篩選'"
+              title="點一下：套用或取消此日期篩選"
+            >{{ dateFilterValue }}</button>
+            <button
+              type="button"
+              class="btn secondary date-nav-btn"
+              @click="goNextDay"
+              aria-label="後一天"
+              title="後一天"
+            >›</button>
+            <button
+              type="button"
+              class="btn secondary date-cal-btn"
+              @click="openDatePicker"
+              aria-label="開啟日曆選擇日期"
+              title="開啟日曆選擇日期"
+            >📅</button>
+          </div>
           <input
             type="date"
             ref="dateFilterInput"
@@ -296,14 +316,55 @@
           />
         </div>
 
-        <div v-if="selectedAccounts.length > 0 || dateFilterActive" class="filter-hint">
-          篩選中：
-          <template v-if="dateFilterActive">日期 {{ dateFilterValue }}</template>
-          <template v-if="selectedAccounts.length > 0">{{ dateFilterActive ? '、' : '' }}{{ selectedAccounts.join('、') }}</template>
-          <button class="btn small" @click="selectedAccounts = []; dateFilterActive = false">清除篩選</button>
+        <!-- 不計入三態篩選：全部／已勾選不計入／未勾選不計入。僅影響顯示，不修改原始資料 -->
+        <div class="excl-filter-row" role="group" aria-label="不計入篩選">
+          <button
+            type="button"
+            class="excl-filter-btn"
+            :class="{ active: excludedStatus === 'all' }"
+            @click="excludedStatus = 'all'"
+          >全部</button>
+          <button
+            type="button"
+            class="excl-filter-btn"
+            :class="{ active: excludedStatus === 'excluded' }"
+            @click="excludedStatus = 'excluded'"
+          >已勾選不計入</button>
+          <button
+            type="button"
+            class="excl-filter-btn"
+            :class="{ active: excludedStatus === 'included' }"
+            @click="excludedStatus = 'included'"
+          >未勾選不計入</button>
         </div>
 
-        <div v-if="visibleRecords.length === 0" class="empty-hint">此類別尚無明細，點「＋新增一筆」開始</div>
+        <div v-if="hasActiveFilter" class="filter-hint">
+          <span>篩選中：</span>
+          <span
+            v-for="s in selectedAccountFilters"
+            :key="s.account + '_' + s.currency"
+            class="filter-chip"
+          >
+            {{ s.account }}／{{ s.currency }}
+            <button type="button" class="filter-chip-x" @click="removeAccountFilter(s.account, s.currency)" aria-label="移除帳戶篩選">×</button>
+          </span>
+          <span v-if="excludedStatus !== 'all'" class="filter-chip">
+            {{ excludedStatus === 'excluded' ? '已勾選不計入' : '未勾選不計入' }}
+            <button type="button" class="filter-chip-x" @click="excludedStatus = 'all'" aria-label="移除不計入篩選">×</button>
+          </span>
+          <span v-if="dateFilterActive" class="filter-chip">
+            {{ dateFilterValue }}
+            <button type="button" class="filter-chip-x" @click="dateFilterActive = false" aria-label="移除日期篩選">×</button>
+          </span>
+          <button class="btn small" @click="clearFilters">清除全部</button>
+        </div>
+
+        <div v-if="visibleRecords.length === 0" class="empty-hint">
+          此類別尚無明細
+          <template v-if="hasActiveFilter">（符合目前篩選條件）</template>
+          <template v-else>，點「＋新增一筆」開始</template>
+          <button v-if="hasActiveFilter" class="btn small" @click="clearFilters">清除篩選</button>
+        </div>
 
         <div v-for="rec in visibleRecords" :key="rec.id" class="rec-card" :class="{ 'rec-excluded': rec.excluded }">
           <div class="rec-grid">

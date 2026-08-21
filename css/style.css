@@ -119,7 +119,13 @@ html, body {
 
 .page-content {
   flex: 1;
-  overflow-y: auto;
+  /* 注意：不加 overflow-y:auto。#app 為 min-height（非固定 height）的 flex 欄，
+     內容過高時是「整個文件（document）」在捲動，而非此容器本身。若此處加上
+     overflow-y:auto，會讓本容器成為子層 sticky 元素（.subtab-bar）的定位容器，
+     但它本身其實不會真的內部捲動，導致 sticky top 的偏移量與 .page-header
+     （相對 viewport）重複疊加，造成分類列被往下推開一段空白。維持與
+     .page-header 一致、以 viewport/document 為捲動容器，避免雙重捲動與此類
+     sticky 偏移錯位問題。 */
   padding: 4px 16px calc(96px + var(--safe-bottom));
 }
 
@@ -480,13 +486,31 @@ table.detail-table input, table.detail-table select {
   color: var(--accent-2);
 }
 
-/* ---------- 明細：日期篩選按鈕（點一下篩選，長按修改日期） ---------- */
+/* ---------- 明細：日期篩選（顯示日期／是否套用篩選分開管理；前後一天＋日曆入口） ---------- */
 .date-filter-btn.active {
   background: var(--accent);
   color: #fff;
   border-color: var(--accent);
 }
 
+.date-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.date-nav-btn,
+.date-cal-btn {
+  padding: 6px 10px;
+  flex: 0 0 auto;
+}
+
+.date-filter-btn {
+  flex: 0 1 auto;
+  white-space: nowrap;
+}
 
 .tab-bar {
   position: fixed;
@@ -570,14 +594,25 @@ table.detail-table input, table.detail-table select {
   margin: 6px 0 10px;
 }
 
-/* ---------- 明細：子分頁列 ---------- */
+/* ---------- 明細：子分頁列 ----------
+   sticky 固定在標題列（.page-header）正下方：top 由 JS（ResizeObserver 量測標題列
+   實際高度）寫入 --page-header-height CSS 變數，不寫死像素值；fallback 52px 僅在
+   JS 尚未量測完成前的極短暫過渡使用。整頁只有單一（document 層級）垂直捲動，
+   此處只讓按鈕列本身可水平捲動（overflow-x），並鎖死 overflow-y 避免產生第二層
+   垂直捲軸。左右以負外距延伸到版面邊緣、再用 padding 內縮，讓背景完全覆蓋
+   .page-content 左右留白，捲動時才不會在留白處看到底下卡片內容穿幫。 */
 .subtab-bar {
+  position: sticky;
+  top: var(--page-header-height, 52px);
+  z-index: 4;
+  background: var(--bg);
   display: flex;
   gap: 6px;
   overflow-x: auto;
+  overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
-  padding-bottom: 4px;
-  margin-bottom: 12px;
+  margin: 0 -16px 12px;
+  padding: 0 16px 4px;
 }
 
 .subtab-btn {
@@ -634,7 +669,8 @@ table.detail-table input, table.detail-table select {
   font-size: calc(12px * var(--font-scale, 1));
 }
 
-/* 篩選提示列 */
+/* 篩選提示列：以可個別移除的 Chip 呈現目前生效的篩選條件（帳戶/幣別、不計入、
+   日期），可自動換行，行動裝置點擊區域較大、也方便單獨清除某一項條件 */
 .filter-hint {
   display: flex;
   align-items: center;
@@ -643,6 +679,56 @@ table.detail-table input, table.detail-table select {
   font-size: calc(12px * var(--font-scale, 1));
   color: var(--text-sub);
   margin-bottom: 12px;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--card-bg-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 6px 3px 10px;
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+.filter-chip-x {
+  background: transparent;
+  border: none;
+  color: var(--text-sub);
+  font-size: 1.1em;
+  line-height: 1;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+
+/* 不計入三態篩選：全部／已勾選不計入／未勾選不計入 */
+.excl-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.excl-filter-btn {
+  flex: 1 1 auto;
+  min-width: 84px;
+  text-align: center;
+  background: var(--card-bg-2);
+  border: 1px solid var(--border);
+  color: var(--text-sub);
+  border-radius: 10px;
+  padding: 6px 8px;
+  font-size: calc(12px * var(--font-scale, 1));
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.excl-filter-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
 }
 
 .sum-group {

@@ -176,8 +176,13 @@ const TabDetail = {
     const settings = store.settings;
     const types = ALD.TYPES;
     const activeType = ref(types[0]);
-    // 第三層（帳戶/項目）篩選：空陣列代表顯示全部
-    const selectedAccounts = ref([]);
+    // 帳戶/幣別篩選：多選，陣列中每筆為 { account, currency } 一組。
+    // 空陣列代表不篩選。同名但不同幣別的帳戶視為不同選項（幣別取自該帳戶所屬
+    // 分組，不寫死支援哪些幣別），多選之間為 OR 關係。
+    const selectedAccountFilters = ref([]);
+    // 不計入三態篩選：'all' 全部 / 'excluded' 已勾選不計入 / 'included' 未勾選不計入。
+    // 僅影響「顯示」，不會修改任何一筆資料的 excluded 值。
+    const excludedStatus = ref("all");
 
     const isInvest = computed(() => activeType.value === "投資");
 
@@ -186,56 +191,102 @@ const TabDetail = {
       store.records.filter((r) => r.type === activeType.value)
     );
 
-    // 日期篩選：預設當天。點一下切換是否套用篩選；長按開啟日期選擇器修改要篩選的日期。
+    // 日期篩選：「顯示日期」(dateFilterValue) 與「是否套用篩選」(dateFilterActive) 分開管理。
+    // 短按日期按鈕：切換是否套用篩選；前一天/後一天按鈕：切換顯示日期並立即套用篩選；
+    // 日曆按鈕：開啟原生 date input 選擇日期，選定後立即套用，取消則維持原狀。
     const dateFilterValue = ref(ALD.todayStr());
     const dateFilterActive = ref(false);
     const dateFilterInput = ref(null);
-    let longPressTimer = null;
-    let longPressTriggered = false;
 
-    function startLongPress() {
-      longPressTriggered = false;
-      longPressTimer = setTimeout(() => {
-        longPressTriggered = true;
-        const el = dateFilterInput.value;
-        if (!el) return;
-        if (typeof el.showPicker === "function") el.showPicker();
-        else el.click();
-      }, 550);
+    // 以本地年/月/日組出 Date 物件做位移，避免用 `new Date("YYYY-MM-DD")`（會被當 UTC 解析）
+    // 或 toISOString() 造成日期偏移一天的問題。
+    function shiftDateStr(dateStr, deltaDays) {
+      const [y, m, d] = (dateStr || ALD.todayStr()).split("-").map(Number);
+      const dt = new Date(y, (m || 1) - 1, d || 1);
+      dt.setDate(dt.getDate() + deltaDays);
+      const yy = dt.getFullYear();
+      const mm = String(dt.getMonth() + 1).padStart(2, "0");
+      const dd = String(dt.getDate()).padStart(2, "0");
+      return `${yy}-${mm}-${dd}`;
     }
 
-    function cancelLongPress() {
-      if (longPressTimer) {
-        clearTimeout(longPressTimer);
-        longPressTimer = null;
-      }
-    }
-
-    // 短按：切換是否套用「篩選對應日期的資料」；長按觸發後的這次 click 不切換篩選狀態
+    // 短按：切換是否套用「篩選對應日期的資料」
     function onDateFilterClick() {
-      if (longPressTriggered) {
-        longPressTriggered = false;
-        return;
-      }
       dateFilterActive.value = !dateFilterActive.value;
     }
 
-    // 長按選好新日期後，直接套用篩選（讓使用者能立即看到該日期的資料）
+    // 前一天／後一天：切換顯示日期後立即套用篩選
+    function goPrevDay() {
+      dateFilterValue.value = shiftDateStr(dateFilterValue.value, -1);
+      dateFilterActive.value = true;
+    }
+    function goNextDay() {
+      dateFilterValue.value = shiftDateStr(dateFilterValue.value, 1);
+      dateFilterActive.value = true;
+    }
+
+    // 日曆入口：直接開啟原生 date input 選擇日期，不再依賴長按。
+    // showPicker() 並非所有瀏覽器/裝置都支援，故先做功能檢測並包 try/catch，
+    // 失敗時 fallback 為直接觸發 input 的 click（多數手機瀏覽器點擊 date input 即會跳出原生選擇器）。
+    function openDatePicker() {
+      const el = dateFilterInput.value;
+      if (!el) return;
+      try {
+        if (typeof el.showPicker === "function") {
+          el.showPicker();
+          return;
+        }
+      } catch (e) {
+        // 部分瀏覽器（如需使用者手勢觸發）showPicker 可能拋出例外，改用 fallback
+      }
+      el.click();
+    }
+
+    // 使用者透過日曆選好日期並確認後，原生 input 觸發 change，立即套用篩選
+    // （若使用者按「取消」，change 不會觸發，日期與篩選條件維持不變）
     function onDateFilterInputChange() {
       dateFilterActive.value = true;
     }
 
-    // 套用第三層篩選、日期篩選後，實際顯示於下方明細的資料
+    // 套用帳戶/幣別（多選 OR）、不計入、日期三種篩選後，實際顯示於下方明細的資料。
+    // 帳戶/幣別多選之間為 OR，選取結果再與不計入、日期條件做 AND；
+    // 此為唯一計算篩選結果的地方，資料新增/刪除/修改後（store.records 變動）
+    // 會自動重新計算，不需額外處理。
     const visibleRecords = computed(() => {
       let list = typeRecords.value;
-      if (selectedAccounts.value.length > 0) {
-        list = list.filter((r) => selectedAccounts.value.includes(r.account || "(未命名)"));
+      const sel = selectedAccountFilters.value;
+      if (sel.length > 0) {
+        list = list.filter((r) =>
+          sel.some(
+            (s) => (r.account || "(未命名)") === s.account && (r.currency || "TWD") === s.currency
+          )
+        );
+      }
+      if (excludedStatus.value === "excluded") {
+        list = list.filter((r) => ALD.isExcluded(r));
+      } else if (excludedStatus.value === "included") {
+        list = list.filter((r) => !ALD.isExcluded(r));
       }
       if (dateFilterActive.value) {
         list = list.filter((r) => r.date === dateFilterValue.value);
       }
       return list;
     });
+
+    // 目前是否有任何一種篩選條件生效（供摘要列與空狀態顯示判斷）
+    const hasActiveFilter = computed(
+      () => selectedAccountFilters.value.length > 0 || excludedStatus.value !== "all" || dateFilterActive.value
+    );
+
+    // 清除全部篩選：帳戶/幣別（全部取消選取）、不計入、日期篩選狀態與卡片高亮一併重設。
+    // 日期文字回到「今天」——與「日期篩選預設值＝當天」的既有邏輯一致，
+    // 避免清除後按鈕仍停留在使用者先前長按選過的日期，造成混淆。
+    function clearFilters() {
+      selectedAccountFilters.value = [];
+      excludedStatus.value = "all";
+      dateFilterActive.value = false;
+      dateFilterValue.value = ALD.todayStr();
+    }
 
     // 幣別分組標籤：投資用「台股/美股」，非投資用「台幣合計/美元合計」
     function groupLabel(type, currency) {
@@ -249,7 +300,7 @@ const TabDetail = {
 
     // 依幣別 -> 帳戶/項目 兩層分組彙總。金額一律用「金額(台幣)」加總。
     const summary = computed(() => {
-      const recs = typeRecords.value.filter((r) => !r.excluded);
+      const recs = typeRecords.value.filter((r) => !ALD.isExcluded(r));
       const invest = activeType.value === "投資";
       const groupsMap = {};
       let exposureTotal = 0;
@@ -300,20 +351,33 @@ const TabDetail = {
       return { groups, totalTWD, exposureTotal, invest };
     });
 
-    // 切換子分頁時清除篩選
+    // 切換子分頁時，帳戶/幣別篩選對象已不存在於新類別中，故重設；
+    // 不計入、日期篩選為跨類別的通用條件，維持不變。
     watch(activeType, () => {
-      selectedAccounts.value = [];
+      selectedAccountFilters.value = [];
     });
 
-    function toggleSelect(accountName) {
-      const arr = selectedAccounts.value;
-      const idx = arr.indexOf(accountName);
-      if (idx === -1) arr.push(accountName);
+    // 點選幣別分組下的帳戶卡片：多選（OR）。以「帳戶＋幣別」為篩選條件（幣別取自
+    // 該卡片所屬分組，不寫死 TWD/USD，動態支援設定中新增的任何幣別）。
+    // 點擊未選帳戶為加入選取，點擊已選帳戶則從選取清單移除（取消）。
+    function toggleAccountFilter(account, currency) {
+      const arr = selectedAccountFilters.value;
+      const idx = arr.findIndex((s) => s.account === account && s.currency === currency);
+      if (idx === -1) arr.push({ account, currency });
       else arr.splice(idx, 1);
     }
 
-    function isSelected(accountName) {
-      return selectedAccounts.value.includes(accountName);
+    function isAccountSelected(account, currency) {
+      return selectedAccountFilters.value.some(
+        (s) => s.account === account && s.currency === currency
+      );
+    }
+
+    // 移除單筆已選帳戶/幣別（供篩選摘要 Chip 的個別移除按鈕使用）
+    function removeAccountFilter(account, currency) {
+      const arr = selectedAccountFilters.value;
+      const idx = arr.findIndex((s) => s.account === account && s.currency === currency);
+      if (idx !== -1) arr.splice(idx, 1);
     }
 
     // 新增時預設帶入目前子分頁的類別
@@ -384,9 +448,13 @@ const TabDetail = {
       typeRecords,
       visibleRecords,
       summary,
-      selectedAccounts,
-      toggleSelect,
-      isSelected,
+      selectedAccountFilters,
+      toggleAccountFilter,
+      isAccountSelected,
+      removeAccountFilter,
+      excludedStatus,
+      hasActiveFilter,
+      clearFilters,
       addRow,
       removeRow,
       recalc,
@@ -400,8 +468,9 @@ const TabDetail = {
       dateFilterValue,
       dateFilterActive,
       dateFilterInput,
-      startLongPress,
-      cancelLongPress,
+      goPrevDay,
+      goNextDay,
+      openDatePicker,
       onDateFilterClick,
       onDateFilterInputChange,
       num: (v) => (Number(v) || 0).toLocaleString("zh-TW"),
@@ -719,7 +788,7 @@ const TabSettings = {
 const App = {
   components: { TabOverview, TabRebalance, TabDetail, TabSettings },
   template: `
-    <div class="page-header">
+    <div class="page-header" ref="pageHeaderRef">
       {{ tabTitles[activeTab] }}
     </div>
     <component :is="activeComponent"></component>
@@ -794,7 +863,41 @@ const App = {
       clearTimeout(resizeTimer);
     });
 
-    return { activeTab, tabs, tabTitles, activeComponent, onScrollFab, fabVisible };
+    // 分類按鈕列（.subtab-bar，明細/設定共用）需以 sticky 固定在標題列正下方。
+    // 標題列高度會隨安全區域（瀏海機型）、字型大小設定而變動，不寫死像素值，
+    // 改用 ResizeObserver 即時量測實際高度，寫入 CSS 變數供 .subtab-bar 的 top 使用。
+    const pageHeaderRef = ref(null);
+    let headerObserver = null;
+    function applyHeaderHeight() {
+      const h = pageHeaderRef.value ? pageHeaderRef.value.offsetHeight : 0;
+      if (h > 0) {
+        document.documentElement.style.setProperty("--page-header-height", h + "px");
+      }
+    }
+    onMounted(() => {
+      applyHeaderHeight();
+      if (window.ResizeObserver && pageHeaderRef.value) {
+        headerObserver = new ResizeObserver(applyHeaderHeight);
+        headerObserver.observe(pageHeaderRef.value);
+      } else {
+        // 無 ResizeObserver 支援時退而求其次，依賴 resize 事件重新量測
+        window.addEventListener("resize", applyHeaderHeight);
+      }
+    });
+    onUnmounted(() => {
+      if (headerObserver) headerObserver.disconnect();
+      window.removeEventListener("resize", applyHeaderHeight);
+    });
+
+    return {
+      activeTab,
+      tabs,
+      tabTitles,
+      activeComponent,
+      onScrollFab,
+      fabVisible,
+      pageHeaderRef,
+    };
   },
 };
 
