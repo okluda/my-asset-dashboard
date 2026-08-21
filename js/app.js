@@ -184,6 +184,25 @@ const TabDetail = {
     // 僅影響「顯示」，不會修改任何一筆資料的 excluded 值。
     const excludedStatus = ref("all");
 
+    // 明細卡片收折：依 record.id 管理是否展開，預設全部收合；不寫入原始資料，
+    // 也不受篩選/排序/新增/刪除影響（僅是額外的 UI 狀態，用 Set 記錄哪些 id 已展開）。
+    const expandedIds = ref(new Set());
+    function isExpanded(id) {
+      return expandedIds.value.has(id);
+    }
+    function toggleExpand(id) {
+      const set = expandedIds.value;
+      if (set.has(id)) set.delete(id);
+      else set.add(id);
+    }
+
+    // 收合摘要用日期顯示：只取 MM-DD，實際欄位（rec.date）仍完整保留 YYYY-MM-DD，
+    // 編輯與儲存皆不受影響（此函式僅用於畫面顯示）。
+    function dateMD(d) {
+      if (!d || typeof d !== "string" || d.length < 10) return d || "";
+      return d.slice(5);
+    }
+
     const isInvest = computed(() => activeType.value === "投資");
 
     // 目前子分頁類別的所有明細
@@ -492,6 +511,7 @@ const TabDetail = {
     function removeRow(id) {
       const idx = store.records.findIndex((r) => r.id === id);
       if (idx !== -1) store.records.splice(idx, 1);
+      expandedIds.value.delete(id); // 清除已刪除項目殘留的展開狀態，避免累積無用資料
     }
 
     // 金額 = 價格 × 單位 × 匯率（計算欄位）
@@ -557,6 +577,10 @@ const TabDetail = {
       isAccountSelected,
       removeAccountFilter,
       excludedStatus,
+      expandedIds,
+      isExpanded,
+      toggleExpand,
+      dateMD,
       hasActiveFilter,
       clearFilters,
       sortRules,
