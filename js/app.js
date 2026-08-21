@@ -127,6 +127,29 @@ const TabRebalance = {
     );
     const exposureRatio = computed(() => (pool.value > 0 ? exposureTotal.value / pool.value : 0));
 
+    // 曝險比（槓桿）：只計入「投資」類別中槓桿倍數不等於 1 倍的曝險金額，
+    // 分母沿用同一個資金部位（流動資金＋投資），排除「不計入」資料。
+    // leverage 需以正規化後的數值比較（normalizeRec 已保證非 null/NaN），避免字串或空值誤判。
+    const exposureLeveragedTotal = computed(() =>
+      ALD.round2(
+        store.records
+          .filter((r) => !r.excluded && r.type === "投資" && Number(r.leverage) !== 1)
+          .reduce((sum, r) => sum + ALD.exposureTWD(r), 0)
+      )
+    );
+    const exposureLeveragedRatio = computed(() =>
+      pool.value > 0 ? exposureLeveragedTotal.value / pool.value : 0
+    );
+
+    // 1 倍槓桿投資合計（台幣換算），供槓桿再平衡建議使用；排除「不計入」資料。
+    const invest1xTWD = computed(() =>
+      ALD.round2(
+        store.records
+          .filter((r) => !r.excluded && r.type === "投資" && Number(r.leverage) === 1)
+          .reduce((sum, r) => sum + ALD.amountTWD(r), 0)
+      )
+    );
+
     // 目標：投資佔比 = rebalanceRatio(%)，流動資金佔比 = 100 - rebalanceRatio
     // 修正：原本用「liquidTWD > investTWD」的原始金額比較來判斷買入/賣出，
     // 這與使用者選擇的目標比例（rebalanceRatio）完全無關，只要目標不是 50% 就會誤判。
@@ -137,6 +160,26 @@ const TabRebalance = {
       const targetInvestRatio = (Number(settings.rebalanceRatio) || 70) / 100;
       const targetInvest = pool.value * targetInvestRatio;
       const diff = ALD.round2(targetInvest - investTWD.value);
+      if (Math.abs(diff) < 1) {
+        return { type: "hold", label: "已達平衡，無需調整", amount: 0 };
+      }
+      if (diff > 0) {
+        return { type: "buy", label: "買入", amount: Math.abs(diff) };
+      }
+      return { type: "sell", label: "賣出", amount: Math.abs(diff) };
+    });
+
+    // 槓桿再平衡建議：
+    // 差額 = (流動現金 + 1倍槓桿投資) - (1 - 投資配置比) × (流動現金 + 全部投資)
+    // 把「流動現金」與「1 倍槓桿投資」視為同一組非槓桿部位，跟原本 action 的
+    // 「目標流動資金 = (1-投資配置比)×資金部位」比較：
+    // diff > 0 代表非槓桿部位超過目標流動資金 -> 多餘資金應轉入投資（買入）
+    // diff < 0 代表非槓桿部位不足目標流動資金 -> 應把（槓桿）投資部位轉回流動資金（賣出）
+    // 與原本 action 的正負號慣例一致，故沿用相同的 buy/sell 判斷與容差。
+    const actionLeveraged = computed(() => {
+      const targetInvestRatio = (Number(settings.rebalanceRatio) || 70) / 100;
+      const targetLiquid = pool.value * (1 - targetInvestRatio);
+      const diff = ALD.round2(liquidTWD.value + invest1xTWD.value - targetLiquid);
       if (Math.abs(diff) < 1) {
         return { type: "hold", label: "已達平衡，無需調整", amount: 0 };
       }
@@ -160,7 +203,10 @@ const TabRebalance = {
       pool,
       exposureTotal,
       exposureRatio,
+      exposureLeveragedTotal,
+      exposureLeveragedRatio,
       action,
+      actionLeveraged,
       onRatioChange,
       fmt: (v) => ALD.formatAmount(v, store.settings),
       pct: (v) => ALD.formatPercent(v),
@@ -210,12 +256,11 @@ const TabDetail = {
       store.records.filter((r) => r.type === activeType.value)
     );
 
-    // 日期篩選：「顯示日期」(dateFilterValue) 與「是否套用篩選」(dateFilterActive) 分開管理。
-    // 短按日期按鈕：切換是否套用篩選；前一天/後一天按鈕：切換顯示日期並立即套用篩選；
-    // 日曆按鈕：開啟原生 date input 選擇日期，選定後立即套用，取消則維持原狀。
+    // 日期篩選：「顯示日期」(dateFilterValue) 與「是否套用篩選」(dateFilterActive) 分開管理，
+    // 兩者互不強制連動：前一天/後一天、日曆選日期都只改變顯示日期，是否套用篩選（dateFilterActive）
+    // 維持原本狀態不變——若原本已套用篩選則立即改篩選新日期，若原本未套用則仍顯示全部。
     const dateFilterValue = ref(ALD.todayStr());
     const dateFilterActive = ref(false);
-    const dateFilterInput = ref(null);
 
     // 以本地年/月/日組出 Date 物件做位移，避免用 `new Date("YYYY-MM-DD")`（會被當 UTC 解析）
     // 或 toISOString() 造成日期偏移一天的問題。
@@ -234,37 +279,19 @@ const TabDetail = {
       dateFilterActive.value = !dateFilterActive.value;
     }
 
-    // 前一天／後一天：切換顯示日期後立即套用篩選
+    // 前一天／後一天：只切換顯示日期，不改變是否套用篩選（dateFilterActive 維持原狀）
     function goPrevDay() {
       dateFilterValue.value = shiftDateStr(dateFilterValue.value, -1);
-      dateFilterActive.value = true;
     }
     function goNextDay() {
       dateFilterValue.value = shiftDateStr(dateFilterValue.value, 1);
-      dateFilterActive.value = true;
     }
 
-    // 日曆入口：直接開啟原生 date input 選擇日期，不再依賴長按。
-    // showPicker() 並非所有瀏覽器/裝置都支援，故先做功能檢測並包 try/catch，
-    // 失敗時 fallback 為直接觸發 input 的 click（多數手機瀏覽器點擊 date input 即會跳出原生選擇器）。
-    function openDatePicker() {
-      const el = dateFilterInput.value;
-      if (!el) return;
-      try {
-        if (typeof el.showPicker === "function") {
-          el.showPicker();
-          return;
-        }
-      } catch (e) {
-        // 部分瀏覽器（如需使用者手勢觸發）showPicker 可能拋出例外，改用 fallback
-      }
-      el.click();
-    }
-
-    // 使用者透過日曆選好日期並確認後，原生 input 觸發 change，立即套用篩選
-    // （若使用者按「取消」，change 不會觸發，日期與篩選條件維持不變）
+    // 使用者透過原生 date input（真實尺寸、可直接點擊，非隱藏元素）選好日期後，
+    // 只更新顯示日期，是否套用篩選維持原狀（不強制開啟，也不會被關閉）；
+    // 若使用者取消選擇，原生 input 不會觸發 change，日期與篩選條件皆維持不變。
     function onDateFilterInputChange() {
-      dateFilterActive.value = true;
+      // 不改變 dateFilterActive；v-model 已同步 dateFilterValue，此函式保留供後續擴充。
     }
 
     // 套用帳戶/幣別（多選 OR）、不計入、日期三種篩選後，實際顯示於下方明細的資料。
@@ -605,10 +632,8 @@ const TabDetail = {
       exposure,
       dateFilterValue,
       dateFilterActive,
-      dateFilterInput,
       goPrevDay,
       goNextDay,
-      openDatePicker,
       onDateFilterClick,
       onDateFilterInputChange,
       num: (v) => (Number(v) || 0).toLocaleString("zh-TW"),
