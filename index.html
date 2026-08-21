@@ -276,18 +276,37 @@
       <div class="card">
         <div class="detail-toolbar">
           <button class="btn" @click="addRow">＋新增一筆</button>
-          <button
-            class="btn secondary date-filter-btn"
-            :class="{ active: dateFilterActive }"
-            @click="onDateFilterClick"
-            @pointerdown="startLongPress"
-            @pointerup="cancelLongPress"
-            @pointerleave="cancelLongPress"
-            @pointercancel="cancelLongPress"
-            :aria-pressed="dateFilterActive"
-            :aria-label="'日期篩選：' + dateFilterValue + (dateFilterActive ? '（篩選中）' : '') + '。點一下套用或取消此日期篩選，長按可修改要篩選的日期'"
-            title="點一下：篩選此日期／長按：修改日期"
-          >{{ dateFilterValue }}<span class="date-filter-hint-icon" aria-hidden="true">✎</span></button>
+          <div class="date-filter-group" role="group" aria-label="日期篩選">
+            <button
+              type="button"
+              class="btn secondary date-nav-btn"
+              @click="goPrevDay"
+              aria-label="前一天"
+              title="前一天"
+            >‹</button>
+            <button
+              class="btn secondary date-filter-btn"
+              :class="{ active: dateFilterActive }"
+              @click="onDateFilterClick"
+              :aria-pressed="dateFilterActive"
+              :aria-label="'日期篩選：' + dateFilterValue + (dateFilterActive ? '（篩選中）' : '') + '。點一下套用或取消此日期篩選'"
+              title="點一下：套用或取消此日期篩選"
+            >{{ dateFilterValue }}</button>
+            <button
+              type="button"
+              class="btn secondary date-nav-btn"
+              @click="goNextDay"
+              aria-label="後一天"
+              title="後一天"
+            >›</button>
+            <button
+              type="button"
+              class="btn secondary date-cal-btn"
+              @click="openDatePicker"
+              aria-label="開啟日曆選擇日期"
+              title="開啟日曆選擇日期"
+            >📅</button>
+          </div>
           <input
             type="date"
             ref="dateFilterInput"

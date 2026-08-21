@@ -486,20 +486,31 @@ table.detail-table input, table.detail-table select {
   color: var(--accent-2);
 }
 
-/* ---------- 明細：日期篩選按鈕（點一下篩選，長按修改日期） ---------- */
+/* ---------- 明細：日期篩選（顯示日期／是否套用篩選分開管理；前後一天＋日曆入口） ---------- */
 .date-filter-btn.active {
   background: var(--accent);
   color: #fff;
   border-color: var(--accent);
 }
 
-/* 長按可發現性提示：小鉛筆符號，暗示此按鈕除了點按還支援長按修改 */
-.date-filter-hint-icon {
-  margin-left: 4px;
-  font-size: 0.85em;
-  opacity: 0.6;
+.date-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  justify-content: flex-end;
 }
 
+.date-nav-btn,
+.date-cal-btn {
+  padding: 6px 10px;
+  flex: 0 0 auto;
+}
+
+.date-filter-btn {
+  flex: 0 1 auto;
+  white-space: nowrap;
+}
 
 .tab-bar {
   position: fixed;

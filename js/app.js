@@ -191,41 +191,58 @@ const TabDetail = {
       store.records.filter((r) => r.type === activeType.value)
     );
 
-    // 日期篩選：預設當天。點一下切換是否套用篩選；長按開啟日期選擇器修改要篩選的日期。
+    // 日期篩選：「顯示日期」(dateFilterValue) 與「是否套用篩選」(dateFilterActive) 分開管理。
+    // 短按日期按鈕：切換是否套用篩選；前一天/後一天按鈕：切換顯示日期並立即套用篩選；
+    // 日曆按鈕：開啟原生 date input 選擇日期，選定後立即套用，取消則維持原狀。
     const dateFilterValue = ref(ALD.todayStr());
     const dateFilterActive = ref(false);
     const dateFilterInput = ref(null);
-    let longPressTimer = null;
-    let longPressTriggered = false;
 
-    function startLongPress() {
-      longPressTriggered = false;
-      longPressTimer = setTimeout(() => {
-        longPressTriggered = true;
-        const el = dateFilterInput.value;
-        if (!el) return;
-        if (typeof el.showPicker === "function") el.showPicker();
-        else el.click();
-      }, 550);
+    // 以本地年/月/日組出 Date 物件做位移，避免用 `new Date("YYYY-MM-DD")`（會被當 UTC 解析）
+    // 或 toISOString() 造成日期偏移一天的問題。
+    function shiftDateStr(dateStr, deltaDays) {
+      const [y, m, d] = (dateStr || ALD.todayStr()).split("-").map(Number);
+      const dt = new Date(y, (m || 1) - 1, d || 1);
+      dt.setDate(dt.getDate() + deltaDays);
+      const yy = dt.getFullYear();
+      const mm = String(dt.getMonth() + 1).padStart(2, "0");
+      const dd = String(dt.getDate()).padStart(2, "0");
+      return `${yy}-${mm}-${dd}`;
     }
 
-    function cancelLongPress() {
-      if (longPressTimer) {
-        clearTimeout(longPressTimer);
-        longPressTimer = null;
-      }
-    }
-
-    // 短按：切換是否套用「篩選對應日期的資料」；長按觸發後的這次 click 不切換篩選狀態
+    // 短按：切換是否套用「篩選對應日期的資料」
     function onDateFilterClick() {
-      if (longPressTriggered) {
-        longPressTriggered = false;
-        return;
-      }
       dateFilterActive.value = !dateFilterActive.value;
     }
 
-    // 長按選好新日期、使用者按下「確認」後，原生 input 觸發 change，直接套用篩選
+    // 前一天／後一天：切換顯示日期後立即套用篩選
+    function goPrevDay() {
+      dateFilterValue.value = shiftDateStr(dateFilterValue.value, -1);
+      dateFilterActive.value = true;
+    }
+    function goNextDay() {
+      dateFilterValue.value = shiftDateStr(dateFilterValue.value, 1);
+      dateFilterActive.value = true;
+    }
+
+    // 日曆入口：直接開啟原生 date input 選擇日期，不再依賴長按。
+    // showPicker() 並非所有瀏覽器/裝置都支援，故先做功能檢測並包 try/catch，
+    // 失敗時 fallback 為直接觸發 input 的 click（多數手機瀏覽器點擊 date input 即會跳出原生選擇器）。
+    function openDatePicker() {
+      const el = dateFilterInput.value;
+      if (!el) return;
+      try {
+        if (typeof el.showPicker === "function") {
+          el.showPicker();
+          return;
+        }
+      } catch (e) {
+        // 部分瀏覽器（如需使用者手勢觸發）showPicker 可能拋出例外，改用 fallback
+      }
+      el.click();
+    }
+
+    // 使用者透過日曆選好日期並確認後，原生 input 觸發 change，立即套用篩選
     // （若使用者按「取消」，change 不會觸發，日期與篩選條件維持不變）
     function onDateFilterInputChange() {
       dateFilterActive.value = true;
@@ -451,8 +468,9 @@ const TabDetail = {
       dateFilterValue,
       dateFilterActive,
       dateFilterInput,
-      startLongPress,
-      cancelLongPress,
+      goPrevDay,
+      goNextDay,
+      openDatePicker,
       onDateFilterClick,
       onDateFilterInputChange,
       num: (v) => (Number(v) || 0).toLocaleString("zh-TW"),
