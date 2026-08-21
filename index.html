@@ -251,24 +251,20 @@
           </div>
           <!-- 第三層：帳戶/項目，可點選作為下方明細的篩選條件（依所屬幣別分組，
                篩選時同時比對「帳戶＋幣別」，避免不同幣別但同名帳戶互相混淆） -->
-          <div
-            v-for="a in g.accounts"
-            :key="a.key"
-            class="sum-acc-card"
-            :class="{ selected: isAccountSelected(a.account, a.currency) }"
-            @click="toggleAccountFilter(a.account, a.currency)"
-          >
-            <div class="sum-acc-row1">
+            <div
+              v-for="a in g.accounts"
+              :key="a.key"
+              class="sum-acc-card"
+              :class="{ selected: isAccountSelected(a.account, a.currency) }"
+              @click="toggleAccountFilter(a.account, a.currency)"
+            >
               <span class="sum-acc-name">{{ a.account }}</span>
-              <span class="sum-acc-cur">{{ isInvest ? (num(a.units) + ' 單位') : a.currency }}</span>
-            </div>
-            <div class="sum-acc-row2">
-              <span></span>
-              <span>
+              <span class="sum-acc-amt">
                 {{ fmt(a.amountTWD) }}<span v-if="a.isForeign" class="sum-orig"> ({{ num(a.amountOrig) }})</span>
+                <span class="sum-acc-cur">{{ a.currency }}</span>
+                <span v-if="isInvest" class="sum-acc-unit">（{{ num(a.units) }} 單位）</span>
               </span>
             </div>
-          </div>
         </div>
       </div>
 
@@ -415,69 +411,92 @@
         </div>
 
         <div v-for="rec in sortedRecords" :key="rec.id" class="rec-card" :class="{ 'rec-excluded': rec.excluded }">
+          <!-- 收合摘要列：預設收合，點擊展開/收合；日期僅顯示 MM-DD，rec.date 本身仍為 YYYY-MM-DD -->
+          <div class="rec-summary" @click="toggleExpand(rec.id)">
+            <span class="rec-summary-date">{{ dateMD(rec.date) }}</span>
+            <span class="rec-summary-account">{{ rec.account || '(未命名)' }}</span>
+            <span class="rec-summary-amount">{{ num(money(rec)) }}</span>
+            <span class="rec-toggle-arrow">{{ isExpanded(rec.id) ? '▾' : '▸' }}</span>
+          </div>
+
+          <template v-if="isExpanded(rec.id)">
           <div class="rec-grid">
-            <div class="rec-field">
-              <label>類別</label>
-              <select v-model="rec.type" @change="onTypeChange(rec)">
-                <option v-for="t in types" :key="t" :value="t">{{ catName(t) }}</option>
-              </select>
-            </div>
-            <div class="rec-field">
-              <label>帳戶/項目</label>
-              <select v-model="rec.account" @change="onAccountChange(rec)">
-                <option value="">（請選擇）</option>
-                <option v-for="a in accountOptions(rec)" :key="a" :value="a">{{ a }}</option>
-              </select>
-            </div>
-            <div class="rec-field">
-              <label>日期</label>
-              <input type="date" v-model="rec.date" />
-            </div>
-
-            <div class="rec-field">
-              <label>價格</label>
-              <input type="number" :value="rec.unitPrice" readonly />
-            </div>
-            <div class="rec-field">
-              <label>幣別</label>
-              <select v-model="rec.currency" @change="onCurrencyChange(rec)">
-                <option v-for="c in currencyOptions" :key="c" :value="c">{{ c }}</option>
-              </select>
-            </div>
-            <div class="rec-field">
-              <label>匯率</label>
-              <input type="number" :value="rec.fxRate" readonly />
-            </div>
-            <div class="rec-field">
-              <label>單位</label>
-              <input type="number" v-model.number="rec.units" @change="recalc(rec)" />
+            <div class="rec-row">
+              <div class="rec-field">
+                <label>日期</label>
+                <input type="date" v-model="rec.date" />
+              </div>
+              <div class="rec-field">
+                <label>帳戶/項目</label>
+                <select v-model="rec.account" @change="onAccountChange(rec)">
+                  <option value="">（請選擇）</option>
+                  <option v-for="a in accountOptions(rec)" :key="a" :value="a">{{ a }}</option>
+                </select>
+              </div>
+              <div class="rec-field">
+                <label>金額</label>
+                <input type="text" :value="num(money(rec))" readonly />
+              </div>
             </div>
 
-            <div class="rec-field">
-              <label>金額</label>
-              <input type="text" :value="num(money(rec))" readonly />
-            </div>
-            <div class="rec-field" v-if="rec.type === '投資'">
-              <label>槓桿倍數</label>
-              <input type="number" step="0.1" v-model.number="rec.leverage" />
-            </div>
-            <div class="rec-field" v-if="rec.type === '投資'">
-              <label>曝險金額</label>
-              <input type="text" :value="exposure(rec).toLocaleString()" readonly />
+            <div class="rec-row">
+              <div class="rec-field">
+                <label>類別</label>
+                <select v-model="rec.type" @change="onTypeChange(rec)">
+                  <option v-for="t in types" :key="t" :value="t">{{ catName(t) }}</option>
+                </select>
+              </div>
+              <div class="rec-field">
+                <label>價格</label>
+                <input type="number" :value="rec.unitPrice" readonly />
+              </div>
             </div>
 
-            <div class="rec-field rec-field-full">
-              <label>備註</label>
-              <input type="text" v-model="rec.note" placeholder="備註" />
+            <div class="rec-row" v-if="rec.type === '投資'">
+              <div class="rec-field">
+                <label>槓桿倍數</label>
+                <input type="number" step="0.1" v-model.number="rec.leverage" />
+              </div>
+              <div class="rec-field">
+                <label>曝險金額</label>
+                <input type="text" :value="exposure(rec).toLocaleString()" readonly />
+              </div>
+            </div>
+
+            <div class="rec-row">
+              <div class="rec-field">
+                <label>幣別</label>
+                <select v-model="rec.currency" @change="onCurrencyChange(rec)">
+                  <option v-for="c in currencyOptions" :key="c" :value="c">{{ c }}</option>
+                </select>
+              </div>
+              <div class="rec-field">
+                <label>匯率</label>
+                <input type="number" :value="rec.fxRate" readonly />
+              </div>
+              <div class="rec-field">
+                <label>單位</label>
+                <input type="number" v-model.number="rec.units" @change="recalc(rec)" />
+              </div>
+            </div>
+
+            <div class="rec-row">
+              <div class="rec-field rec-field-shrink">
+                <label class="rec-exclude">
+                  <input type="checkbox" v-model="rec.excluded" :true-value="1" :false-value="0" />
+                  <span>不計入</span>
+                </label>
+              </div>
+              <div class="rec-field rec-field-grow">
+                <label>備註</label>
+                <input type="text" v-model="rec.note" placeholder="備註" />
+              </div>
             </div>
           </div>
           <div class="rec-actions">
-            <label class="rec-exclude">
-              <input type="checkbox" v-model="rec.excluded" :true-value="1" :false-value="0" />
-              <span>不計入</span>
-            </label>
             <button class="btn small danger" @click="removeRow(rec.id)">刪除</button>
           </div>
+          </template>
         </div>
       </div>
     </div>

@@ -532,8 +532,8 @@ table.detail-table input, table.detail-table select {
   position: fixed;
   left: 20px;
   bottom: calc(90px + var(--safe-bottom));
-  width: 52px;
-  height: 52px;
+  width: 39px;
+  height: 39px;
   border-radius: 50%;
   background: var(--tabbar-bg);
   -webkit-backdrop-filter: blur(6px);
@@ -541,7 +541,7 @@ table.detail-table input, table.detail-table select {
   color: var(--text-main);
   border: 1px solid var(--border);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
-  font-size: calc(17px * var(--font-scale, 1));
+  font-size: calc(13px * var(--font-scale, 1));
   font-weight: 700;
   cursor: pointer;
   display: flex;
@@ -790,32 +790,45 @@ table.detail-table input, table.detail-table select {
 }
 
 .sum-acc-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   background: var(--card-bg-2);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 10px 12px;
-  margin-bottom: 8px;
+  border-radius: 10px;
+  padding: 6px 10px;
+  margin-bottom: 4px;
   cursor: pointer;
-}
-
-.sum-acc-row1 {
-  display: flex;
-  justify-content: space-between;
-  font-size: calc(13px * var(--font-scale, 1));
-  color: var(--text-sub);
-  margin-bottom: 6px;
 }
 
 .sum-acc-name {
   color: var(--text-main);
   font-weight: 600;
+  font-size: calc(13px * var(--font-scale, 1));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.sum-acc-row2 {
-  display: flex;
-  justify-content: space-between;
+.sum-acc-amt {
   font-size: calc(14px * var(--font-scale, 1));
   font-weight: 600;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.sum-acc-cur {
+  font-size: calc(12px * var(--font-scale, 1));
+  font-weight: 600;
+  color: var(--text-sub);
+  margin-left: 2px;
+}
+
+.sum-acc-unit {
+  font-size: calc(11px * var(--font-scale, 1));
+  font-weight: 400;
+  color: var(--text-sub);
 }
 
 /* ---------- 明細：卡片式明細列 ---------- */
@@ -844,9 +857,53 @@ table.detail-table input, table.detail-table select {
   margin-bottom: 12px;
 }
 
+/* 收合摘要列：預設收合時唯一可見的內容，點擊可展開/收合 */
+.rec-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.rec-summary-date {
+  font-size: calc(12px * var(--font-scale, 1));
+  color: var(--text-sub);
+  flex: 0 0 auto;
+}
+
+.rec-summary-account {
+  font-size: calc(13px * var(--font-scale, 1));
+  font-weight: 600;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rec-summary-amount {
+  font-size: calc(14px * var(--font-scale, 1));
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+
+.rec-toggle-arrow {
+  color: var(--text-sub);
+  flex: 0 0 auto;
+  font-size: calc(12px * var(--font-scale, 1));
+}
+
 .rec-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+/* 展開內容每一列為獨立 flex row，依需求固定每列欄位數（2 或 3 欄），
+   不依賴通用格柵欄數，避免欄位順序隨螢幕寬度重排 */
+.rec-row {
+  display: flex;
   gap: 10px;
 }
 
@@ -855,6 +912,15 @@ table.detail-table input, table.detail-table select {
   flex-direction: column;
   gap: 3px;
   min-width: 0;
+  flex: 1;
+}
+
+.rec-field-shrink {
+  flex: 0 0 auto;
+}
+
+.rec-field-grow {
+  flex: 1;
 }
 
 .rec-field-full {
@@ -890,7 +956,7 @@ table.detail-table input, table.detail-table select {
 
 .rec-actions {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   margin-top: 10px;
 }
@@ -916,13 +982,6 @@ table.detail-table input, table.detail-table select {
 
 .rec-card.rec-excluded .rec-field label {
   text-decoration: line-through;
-}
-
-/* 窄螢幕（手機直向）欄位改 2 欄，備註仍滿版 */
-@media (max-width: 430px) {
-  .rec-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
 }
 
 /* ===== 設定 > 帳戶：設定表格 ===== */
