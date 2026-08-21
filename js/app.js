@@ -288,6 +288,110 @@ const TabDetail = {
       dateFilterValue.value = ALD.todayStr();
     }
 
+    // ---------- 排序（帳戶／幣別／日期，最多三層優先順序） ----------
+    // 排序條件為陣列，索引即優先順序（先比對 index 0，相同才比對下一層）。
+    // 每個欄位只能出現一次；帳戶/幣別支援升冪/降冪，日期支援新到舊/舊到新。
+    // 預設排序為「日期新到舊」，符合既有頁面慣例（最新一筆在最上面）。
+    const SORT_FIELDS = ["date", "account", "currency"];
+    const sortRules = ref([{ field: "date", order: "desc" }]);
+
+    const availableSortFields = computed(() =>
+      SORT_FIELDS.filter((f) => !sortRules.value.some((r) => r.field === f))
+    );
+
+    function sortFieldLabel(field) {
+      return { date: "日期", account: "帳戶", currency: "幣別" }[field] || field;
+    }
+
+    function sortOrderLabel(rule) {
+      if (rule.field === "date") return rule.order === "desc" ? "新到舊" : "舊到新";
+      return rule.order === "desc" ? "降冪" : "升冪";
+    }
+
+    // 新增排序條件：日期預設「新到舊」，帳戶/幣別預設「升冪」；最多三層（欄位僅 3 種，無需額外上限判斷）
+    function addSortRule(field) {
+      if (!field || sortRules.value.some((r) => r.field === field)) return;
+      sortRules.value.push({ field, order: field === "date" ? "desc" : "asc" });
+    }
+
+    // 供排序條件新增下拉選單使用：選定後立即新增，並重置下拉選項避免殘留選取值
+    function onAddSortField(event) {
+      const field = event.target.value;
+      if (field) addSortRule(field);
+      event.target.value = "";
+    }
+
+    function removeSortRule(index) {
+      sortRules.value.splice(index, 1);
+    }
+
+    function toggleSortOrder(index) {
+      const rule = sortRules.value[index];
+      if (!rule) return;
+      rule.order = rule.order === "desc" ? "asc" : "desc";
+    }
+
+    // 調整排序條件優先順序：與相鄰一筆互換位置
+    function moveSortRule(index, delta) {
+      const arr = sortRules.value;
+      const target = index + delta;
+      if (target < 0 || target >= arr.length) return;
+      const tmp = arr[index];
+      arr[index] = arr[target];
+      arr[target] = tmp;
+    }
+
+    function resetSort() {
+      sortRules.value = [{ field: "date", order: "desc" }];
+    }
+
+    // 日期格式檢查（嚴格檢查年月日組合是否為真實存在的日期，避免如 2026-02-30 誤判為有效）
+    function isValidDateStr(s) {
+      if (!s || typeof s !== "string") return false;
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+      if (!m) return false;
+      const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+      const dt = new Date(y, mo - 1, d);
+      return dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d;
+    }
+
+    // 依單一排序條件比較兩筆資料；空值/無效日期一律排在最後（不論升冪或降冪）
+    function compareByRule(a, b, rule) {
+      if (rule.field === "date") {
+        const va = a.date, vb = b.date;
+        const validA = isValidDateStr(va), validB = isValidDateStr(vb);
+        if (!validA && !validB) return 0;
+        if (!validA) return 1;
+        if (!validB) return -1;
+        const cmp = va < vb ? -1 : va > vb ? 1 : 0;
+        return rule.order === "desc" ? -cmp : cmp;
+      }
+      const va = a[rule.field] || "";
+      const vb = b[rule.field] || "";
+      const emptyA = va === "", emptyB = vb === "";
+      if (emptyA && emptyB) return 0;
+      if (emptyA) return 1;
+      if (emptyB) return -1;
+      const cmp = va.localeCompare(vb, "zh-Hant");
+      return rule.order === "desc" ? -cmp : cmp;
+    }
+
+    // 先套用既有篩選（visibleRecords），再依排序條件排序；用 slice() 複製陣列後排序，
+    // 不直接對原始資料呼叫 sort()，故不會影響 store.records 與 localStorage 的儲存順序。
+    const sortedRecords = computed(() => {
+      const rules = sortRules.value;
+      const arr = visibleRecords.value.slice();
+      if (rules.length === 0) return arr;
+      arr.sort((a, b) => {
+        for (const rule of rules) {
+          const cmp = compareByRule(a, b, rule);
+          if (cmp !== 0) return cmp;
+        }
+        return 0;
+      });
+      return arr;
+    });
+
     // 幣別分組標籤：投資用「台股/美股」，非投資用「台幣合計/美元合計」
     function groupLabel(type, currency) {
       if (type === "投資") {
@@ -455,6 +559,16 @@ const TabDetail = {
       excludedStatus,
       hasActiveFilter,
       clearFilters,
+      sortRules,
+      availableSortFields,
+      sortFieldLabel,
+      sortOrderLabel,
+      onAddSortField,
+      removeSortRule,
+      toggleSortOrder,
+      moveSortRule,
+      resetSort,
+      sortedRecords,
       addRow,
       removeRow,
       recalc,

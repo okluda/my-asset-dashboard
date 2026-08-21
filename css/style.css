@@ -731,6 +731,51 @@ table.detail-table input, table.detail-table select {
   border-color: var(--accent);
 }
 
+/* 排序設定列：以可調整順序、可個別移除的 Chip 呈現目前排序條件（帳戶/幣別/日期），
+   最多三層優先順序，僅影響顯示排序，不修改原始資料 */
+.sort-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.sort-label {
+  font-size: calc(12px * var(--font-scale, 1));
+  color: var(--text-sub);
+  font-weight: 600;
+}
+
+.sort-chip {
+  padding: 3px 6px;
+}
+
+.sort-chip-move,
+.sort-chip-order {
+  background: transparent;
+  border: none;
+  color: var(--text-main);
+  font-weight: 600;
+  font-size: calc(12px * var(--font-scale, 1));
+  padding: 2px 3px;
+  cursor: pointer;
+}
+
+.sort-chip-move:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.sort-add-select {
+  background: var(--card-bg-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-main);
+  padding: 4px 10px;
+  font-size: calc(12px * var(--font-scale, 1));
+}
+
 .sum-group {
   margin-top: 12px;
 }
