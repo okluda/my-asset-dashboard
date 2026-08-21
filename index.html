@@ -276,12 +276,17 @@
               :class="{ selected: isAccountSelected(a.account, a.currency) }"
               @click="toggleAccountFilter(a.account, a.currency)"
             >
-              <span class="sum-acc-name">{{ a.account }}</span>
-              <span class="sum-acc-amt">
-                {{ fmt(a.amountTWD) }}<span v-if="a.isForeign" class="sum-orig"> ({{ num(a.amountOrig) }})</span>
-                <span class="sum-acc-cur">{{ a.currency }}</span>
-                <span v-if="isInvest" class="sum-acc-unit">（{{ num(a.units) }} 單位）</span>
-              </span>
+              <div class="sum-acc-row1">
+                <span class="sum-acc-name">{{ a.account }}</span>
+                <span class="sum-acc-amt">{{ fmt(a.amountTWD) }}</span>
+              </div>
+              <div v-if="isInvest || a.isForeign" class="sum-acc-row2">
+                <span class="sum-acc-sub">
+                  <template v-if="isInvest && a.isForeign">{{ num(a.units) }} 單位 ({{ num(a.amountOrig) }})</template>
+                  <template v-else-if="isInvest">{{ num(a.units) }} 單位</template>
+                  <template v-else>({{ num(a.amountOrig) }})</template>
+                </span>
+              </div>
             </div>
         </div>
       </div>
@@ -313,14 +318,17 @@
               aria-label="後一天"
               title="後一天"
             >›</button>
-            <input
-              type="date"
-              class="date-cal-input"
-              v-model="dateFilterValue"
-              @change="onDateFilterInputChange"
-              aria-label="開啟日曆選擇日期"
-              title="開啟日曆選擇日期"
-            />
+            <div class="date-cal-wrap">
+              <span class="date-cal-icon" aria-hidden="true">📅</span>
+              <input
+                type="date"
+                class="date-cal-input"
+                v-model="dateFilterValue"
+                @change="onDateFilterInputChange"
+                aria-label="開啟日曆選擇日期"
+                title="開啟日曆選擇日期"
+              />
+            </div>
           </div>
         </div>
 
