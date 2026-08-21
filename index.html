@@ -359,14 +359,62 @@
           <button class="btn small" @click="clearFilters">清除全部</button>
         </div>
 
-        <div v-if="visibleRecords.length === 0" class="empty-hint">
+        <!-- 排序：帳戶／幣別／日期，最多三層優先順序（陣列索引＝優先順序）。
+             僅改變顯示順序，不影響 store.records 原始順序，也不影響上方篩選結果。 -->
+        <div class="sort-row" role="group" aria-label="排序設定">
+          <span class="sort-label">排序：</span>
+          <span
+            v-for="(rule, idx) in sortRules"
+            :key="rule.field"
+            class="filter-chip sort-chip"
+          >
+            <button
+              type="button"
+              class="sort-chip-move"
+              :disabled="idx === 0"
+              @click="moveSortRule(idx, -1)"
+              aria-label="提高優先順序"
+            >↑</button>
+            <button
+              type="button"
+              class="sort-chip-move"
+              :disabled="idx === sortRules.length - 1"
+              @click="moveSortRule(idx, 1)"
+              aria-label="降低優先順序"
+            >↓</button>
+            <button
+              type="button"
+              class="sort-chip-order"
+              @click="toggleSortOrder(idx)"
+              :aria-label="'切換' + sortFieldLabel(rule.field) + '排序方向'"
+            >{{ sortFieldLabel(rule.field) }} {{ sortOrderLabel(rule) }}</button>
+            <button
+              type="button"
+              class="filter-chip-x"
+              @click="removeSortRule(idx)"
+              aria-label="移除此排序條件"
+            >×</button>
+          </span>
+          <select
+            v-if="availableSortFields.length"
+            class="sort-add-select"
+            @change="onAddSortField($event)"
+            aria-label="新增排序條件"
+          >
+            <option value="">＋新增排序條件</option>
+            <option v-for="f in availableSortFields" :key="f" :value="f">{{ sortFieldLabel(f) }}</option>
+          </select>
+          <button type="button" class="btn small" @click="resetSort">重設排序</button>
+        </div>
+
+        <div v-if="sortedRecords.length === 0" class="empty-hint">
           此類別尚無明細
           <template v-if="hasActiveFilter">（符合目前篩選條件）</template>
           <template v-else>，點「＋新增一筆」開始</template>
           <button v-if="hasActiveFilter" class="btn small" @click="clearFilters">清除篩選</button>
         </div>
 
-        <div v-for="rec in visibleRecords" :key="rec.id" class="rec-card" :class="{ 'rec-excluded': rec.excluded }">
+        <div v-for="rec in sortedRecords" :key="rec.id" class="rec-card" :class="{ 'rec-excluded': rec.excluded }">
           <div class="rec-grid">
             <div class="rec-field">
               <label>類別</label>
