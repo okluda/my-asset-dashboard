@@ -405,6 +405,10 @@ table.detail-table input, table.detail-table select {
   font-size: calc(16px * var(--font-scale, 1));
 }
 
+.reb-ratio-label {
+  font-size: calc(13px * var(--font-scale, 1));
+}
+
 .reb-sub-row {
   display: flex;
   justify-content: space-between;
@@ -501,10 +505,23 @@ table.detail-table input, table.detail-table select {
   justify-content: flex-end;
 }
 
-.date-nav-btn,
-.date-cal-btn {
+.date-nav-btn {
   padding: 6px 10px;
   flex: 0 0 auto;
+}
+
+/* 真實尺寸、可直接點擊的原生 date input（不隱藏、不靠 showPicker()/click() 代理觸發） */
+.date-cal-input {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 32px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-bg-2);
+  color: var(--text-main);
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .date-filter-btn {

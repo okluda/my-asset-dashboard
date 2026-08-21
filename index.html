@@ -182,8 +182,12 @@
       <div class="card">
         <div class="section-title">配置概況及再平衡</div>
         <div class="reb-ratio-row">
-          <span>曝險比</span>
+          <span class="reb-ratio-label">曝險比</span>
           <span class="reb-ratio-value">{{ pct(exposureRatio) }}</span>
+        </div>
+        <div class="reb-ratio-row">
+          <span class="reb-ratio-label">曝險比（槓桿）</span>
+          <span class="reb-ratio-value">{{ pct(exposureLeveragedRatio) }}</span>
         </div>
         <div class="summary-group"><span>曝險金額</span><span>{{ fmt(exposureTotal) }}</span></div>
         <div class="summary-group"><span>資金部位</span><span>{{ fmt(pool) }}</span></div>
@@ -208,6 +212,20 @@
             <div class="rebalance-advice-text">
               <div class="rebalance-advice-title">再平衡建議</div>
               <div class="rebalance-advice-amount">{{ action.label }} {{ fmt(action.amount) }}</div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <div class="card rebalance-result">
+        <div v-if="pool <= 0" class="empty-hint">尚無流動資金或投資資料</div>
+        <template v-else>
+          <div v-if="actionLeveraged.type === 'hold'" class="rebalance-hold">{{ actionLeveraged.label }}</div>
+          <div v-else class="rebalance-advice-box" :class="actionLeveraged.type">
+            <div class="reb-icon-circle" :class="actionLeveraged.type">{{ actionLeveraged.type === 'buy' ? '↓' : '↑' }}</div>
+            <div class="rebalance-advice-text">
+              <div class="rebalance-advice-title">槓桿再平衡建議</div>
+              <div class="rebalance-advice-amount">{{ actionLeveraged.label }} {{ fmt(actionLeveraged.amount) }}</div>
             </div>
           </div>
         </template>
@@ -271,7 +289,7 @@
       <!-- 明細卡片列表 -->
       <div class="card">
         <div class="detail-toolbar">
-          <button class="btn" @click="addRow">＋新增一筆</button>
+          <button class="btn" @click="addRow">＋新增</button>
           <div class="date-filter-group" role="group" aria-label="日期篩選">
             <button
               type="button"
@@ -295,21 +313,15 @@
               aria-label="後一天"
               title="後一天"
             >›</button>
-            <button
-              type="button"
-              class="btn secondary date-cal-btn"
-              @click="openDatePicker"
+            <input
+              type="date"
+              class="date-cal-input"
+              v-model="dateFilterValue"
+              @change="onDateFilterInputChange"
               aria-label="開啟日曆選擇日期"
               title="開啟日曆選擇日期"
-            >📅</button>
+            />
           </div>
-          <input
-            type="date"
-            ref="dateFilterInput"
-            v-model="dateFilterValue"
-            @change="onDateFilterInputChange"
-            style="position:absolute; opacity:0; width:0; height:0; pointer-events:none;"
-          />
         </div>
 
         <!-- 不計入三態篩選：全部／已勾選不計入／未勾選不計入。僅影響顯示，不修改原始資料 -->
@@ -406,7 +418,7 @@
         <div v-if="sortedRecords.length === 0" class="empty-hint">
           此類別尚無明細
           <template v-if="hasActiveFilter">（符合目前篩選條件）</template>
-          <template v-else>，點「＋新增一筆」開始</template>
+          <template v-else>，點「＋新增」開始</template>
           <button v-if="hasActiveFilter" class="btn small" @click="clearFilters">清除篩選</button>
         </div>
 
