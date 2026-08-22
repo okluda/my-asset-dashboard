@@ -458,13 +458,6 @@
                 </div>
               </div>
               <div class="rec-field">
-                <label>帳戶/項目</label>
-                <select v-model="rec.account" @change="onAccountChange(rec)">
-                  <option value="">（請選擇）</option>
-                  <option v-for="a in accountOptions(rec)" :key="a" :value="a">{{ a }}</option>
-                </select>
-              </div>
-              <div class="rec-field">
                 <label>金額</label>
                 <input type="text" :value="num(money(rec))" readonly />
               </div>
@@ -475,6 +468,13 @@
                 <label>類別</label>
                 <select v-model="rec.type" @change="onTypeChange(rec)">
                   <option v-for="t in types" :key="t" :value="t">{{ catName(t) }}</option>
+                </select>
+              </div>
+                <div class="rec-field">
+                <label>帳戶/項目</label>
+                <select v-model="rec.account" @change="onAccountChange(rec)">
+                  <option value="">（請選擇）</option>
+                  <option v-for="a in accountOptions(rec)" :key="a" :value="a">{{ a }}</option>
                 </select>
               </div>
               <div class="rec-field">
@@ -496,6 +496,10 @@
 
             <div class="rec-row">
               <div class="rec-field">
+                <label>單位</label>
+                <input type="number" v-model.number="rec.units" @change="recalc(rec)" />
+              </div>
+              <div class="rec-field">
                 <label>幣別</label>
                 <select v-model="rec.currency" @change="onCurrencyChange(rec)">
                   <option v-for="c in currencyOptions" :key="c" :value="c">{{ c }}</option>
@@ -504,10 +508,6 @@
               <div class="rec-field">
                 <label>匯率</label>
                 <input type="number" :value="rec.fxRate" readonly />
-              </div>
-              <div class="rec-field">
-                <label>單位</label>
-                <input type="number" v-model.number="rec.units" @change="recalc(rec)" />
               </div>
             </div>
 
