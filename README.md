@@ -1,4 +1,4 @@
-# 資產負債看板（Asset & Liability Dashboard）
+# Asset & Liability Dashboard
 
 個人資產負債總覽網頁 App，專為手機（iPhone Safari）瀏覽設計，資料完全儲存於瀏覽器本地（`localStorage`），不上傳至任何伺服器。
 
