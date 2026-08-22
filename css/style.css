@@ -1021,26 +1021,32 @@ table.detail-table input, table.detail-table select {
 .date-field-wrap {
   position: relative;
   width: 100%;
+  /* 1 行文字 + 上下 padding 12px + 上下 border 2 px */
+  height: calc(1lh + 12px + 2px);
+  font-size: calc(13px * var(--font-scale, 1));
   background: var(--card-bg-2);
   border: 1px solid var(--border);
   border-radius: 8px;
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 /* 選擇器改用 input[type="date"].date-native-input（屬性+類別），
    優先度須高於全域 input[type="date"] 規則（第 302 行），
    否則其 background/color 會覆蓋此處的 transparent 設定，導致文字層被蓋住看不見。 */
 input[type="date"].date-native-input {
-  position: relative;
+  position: absolute;
+  inset:0;
   z-index: 1;
   width: 100%;
+  height: 100%;
   margin: 0;
-  padding: 2px 8px;
+  padding: 6px 8px;
   border: none;
   background: transparent;
   color: transparent;
   box-sizing: border-box;
-  font-size: calc(13px * var(--font-scale, 1));
+  font: inherit;
 }
 
 /* 隱藏 WebKit 日期欄位內部各段文字（月/日/年），避免 color:transparent 之外仍洩漏文字 */
