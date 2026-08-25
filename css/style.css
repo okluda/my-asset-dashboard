@@ -1184,3 +1184,21 @@ input[type="date"].date-native-input::-webkit-datetime-edit-year-field {
   border-top: 1px solid var(--border);
   margin: 14px 0 10px;
 }
+
+/* IndexedDB 初始化載入/錯誤狀態（掛載主要 App 前顯示，見 app.js 的 showInitLoading/showInitError） */
+.app-init-status {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-sub);
+  font-size: 15px;
+  line-height: 1.6;
+}
+.app-init-status.app-init-error {
+  color: var(--danger);
+  white-space: pre-line;
+}
+

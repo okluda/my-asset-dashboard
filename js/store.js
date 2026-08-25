@@ -140,6 +140,7 @@ const ALD = (() => {
     return rec;
   }
 
+  // [階段二起不再供正式流程使用；App 已改用 js/db.js 的 ALD_DB 讀取，留待階段三清理]
   function loadRecords() {
     try {
       const raw = localStorage.getItem(RECORDS_KEY);
@@ -155,10 +156,12 @@ const ALD = (() => {
     }
   }
 
+  // [階段二起不再供正式流程使用；App 已改用 js/db.js 的 ALD_DB 保存，留待階段三清理]
   function saveRecords(records) {
     localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
   }
 
+  // [階段二起不再供正式流程使用；App 已改用 js/db.js 的 ALD_DB 讀取，留待階段三清理]
   function loadSettings() {
     try {
       const raw = localStorage.getItem(SETTINGS_KEY);
@@ -207,6 +210,7 @@ const ALD = (() => {
     return { code: "", rate: 0 };
   }
 
+  // [階段二起不再供正式流程使用；App 已改用 js/db.js 的 ALD_DB 保存，留待階段三清理]
   function saveSettings(settings) {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   }
@@ -251,6 +255,7 @@ const ALD = (() => {
     return raw.map((r) => ({ id: uid(), ...r }));
   }
 
+  // [階段二起不再供正式流程使用；App 已改用 js/db.js 的 ALD_DB 讀取，留待階段三清理]
   function loadAccounts() {
     try {
       const rawStr = localStorage.getItem(ACCOUNTS_KEY);
@@ -274,6 +279,7 @@ const ALD = (() => {
     }
   }
 
+  // [階段二起不再供正式流程使用；App 已改用 js/db.js 的 ALD_DB 保存，留待階段三清理]
   function saveAccounts(accounts) {
     localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
   }
