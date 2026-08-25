@@ -1,8 +1,7 @@
 /*
  * db.js
- * 階段一：建立 IndexedDB 儲存層（獨立模組，本階段尚未接入 App 正式資料流程）。
- * 提供 records / settings / accounts 三個 object store 的統一非同步存取 API。
- * 注意：本模組目前僅供獨立測試使用，App 仍以 localStorage（store.js）為正式資料來源。
+ * IndexedDB 儲存層：提供 records / settings / accounts 三個 object store 的
+ * 統一非同步存取 API，是 App 目前唯一的正式資料讀寫來源（見 app.js 的初始化與 watch 保存流程）。
  */
 
 const ALD_DB = (() => {
