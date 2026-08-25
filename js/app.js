@@ -1,7 +1,10 @@
 /*
  * app.js
- * Vue 3 應用進入點：定義共用 store（reactive，含 localStorage 自動存檔）、
+ * Vue 3 應用進入點：定義共用 store（reactive，含 IndexedDB 自動存檔，見 js/db.js 的 ALD_DB）、
  * 4 個分頁元件（總覽/再平衡/明細/設定），以及底部分頁列。
+ * 階段二：正式資料來源已由 localStorage 切換為 IndexedDB，store.js 內的 localStorage
+ * load/save 函式（loadRecords/saveRecords/loadSettings/saveSettings/loadAccounts/saveAccounts）
+ * 保留於階段三清理，正式啟動與保存流程皆不再呼叫。
  */
 
 // 內部網路可能無法連到 unpkg.com，導致 Vue CDN 載入失敗。
@@ -17,33 +20,93 @@ if (typeof Vue === "undefined") {
 
 const { createApp, reactive, computed, watch, ref, onMounted, onUnmounted, nextTick } = Vue;
 
+// ---------- IndexedDB 初始化輔助（階段二：App 正式資料來源改為 IndexedDB） ----------
+
+// settings 合併規則：與 store.js 內 loadSettings() 對 localStorage 讀值的合併規則一致，
+// 確保 IndexedDB 讀到的 settings 缺少新欄位時，仍套用目前的預設值與正規化規則。
+function mergeSettings(raw) {
+  const s = { ...ALD.DEFAULT_SETTINGS, ...(raw || {}) };
+  ALD.normalizeCurrencies(s);
+  return s;
+}
+
+// 帳戶設定正規化規則：與 store.js 內 loadAccounts() 對 localStorage 讀值的正規化規則一致。
+function normalizeAccount(a) {
+  const category = ALD.TYPES.includes(a.category) ? a.category : "流動資金";
+  return {
+    id: a.id || ALD.uid(),
+    category,
+    account: String(a.account == null ? "" : a.account),
+    price: Number(a.price) || 0,
+    leverage: a.leverage == null ? (category === "投資" ? 1 : 0) : Number(a.leverage) || 0,
+  };
+}
+
+// 「清除所有本地資料」用：就地把 settings 重設為最小必要設定，
+// 不可整個替換 store.settings 物件參考（元件於 setup() 已持有舊物件參考，整個替換會失去響應）。
+function applyDefaultSettingsInPlace(settingsObj) {
+  const fresh = JSON.parse(JSON.stringify(ALD.DEFAULT_SETTINGS));
+  Object.keys(settingsObj).forEach((k) => {
+    if (!(k in fresh)) delete settingsObj[k];
+  });
+  Object.assign(settingsObj, fresh);
+  ALD.normalizeCurrencies(settingsObj);
+}
+
+// 初始化載入/錯誤畫面：掛載主要 App 前尚無 Vue 元件可用，直接操作 #app 的 DOM。
+function showInitLoading(msg) {
+  const el = document.getElementById("app");
+  if (el) el.innerHTML = '<div class="app-init-status">' + msg + "</div>";
+}
+function showInitError(msg) {
+  const el = document.getElementById("app");
+  if (el) {
+    el.innerHTML =
+      '<div class="app-init-status app-init-error">' + String(msg).replace(/\n/g, "<br>") + "</div>";
+  }
+  if (window.__showAppError) window.__showAppError(msg);
+  console.error(msg);
+}
+
+// 依資料種類（records/settings/accounts）各自 debounce 後才寫回 IndexedDB，避免每個字元
+// 輸入都建立一次 transaction；同一種資料的實際寫入以 Promise 串接（chain）依呼叫順序執行，
+// 確保較舊的寫入不會晚於較新的寫入完成而覆蓋新狀態。寫入失敗只顯示錯誤，不中斷 App，
+// 且錯誤一律於 saveFn 的 .catch 內處理，不會產生未處理的 Promise rejection。
+function createDebouncedSaver(saveFn, label, delay) {
+  let timer = null;
+  let pending = null;
+  let hasPending = false;
+  let chain = Promise.resolve();
+  function flush() {
+    if (!hasPending) return;
+    const snapshot = pending;
+    pending = null;
+    hasPending = false;
+    chain = chain.then(() => saveFn(snapshot)).catch((e) => {
+      const detail = e && e.stack ? e.stack : e && e.message ? e.message : String(e);
+      console.error(label + " 寫入 IndexedDB 失敗：", e);
+      if (window.__showAppError) {
+        window.__showAppError(label + " 寫入 IndexedDB 失敗：\n" + detail);
+      }
+    });
+  }
+  return function schedule(value) {
+    pending = value;
+    hasPending = true;
+    clearTimeout(timer);
+    timer = setTimeout(flush, delay);
+  };
+}
+
+const SAVE_DEBOUNCE_MS = 500;
+const saveRecordsDebounced = createDebouncedSaver((v) => ALD_DB.replaceRecords(v), "明細", SAVE_DEBOUNCE_MS);
+const saveSettingsDebounced = createDebouncedSaver((v) => ALD_DB.saveSettings(v), "系統設定", SAVE_DEBOUNCE_MS);
+const saveAccountsDebounced = createDebouncedSaver((v) => ALD_DB.replaceAccounts(v), "帳戶設定", SAVE_DEBOUNCE_MS);
+
 // ---------- 共用 reactive store ----------
-const store = reactive({
-  records: ALD.loadRecords(),
-  settings: ALD.loadSettings(),
-  accounts: ALD.loadAccounts(),
-});
-
-watch(
-  () => store.records,
-  (val) => ALD.saveRecords(val),
-  { deep: true }
-);
-
-watch(
-  () => store.settings,
-  (val) => ALD.saveSettings(val),
-  { deep: true }
-);
-
-watch(
-  () => store.accounts,
-  (val) => ALD.saveAccounts(val),
-  { deep: true }
-);
-
-// 外觀主題（配色/字型/字型大小）：載入時立即套用，設定變更時即時反映
-watch(() => store.settings, (val) => ALD.applyTheme(val), { deep: true, immediate: true });
+// 於非同步初始化流程（openDatabase -> 讀取三個 store -> 判斷首次使用 -> 建立 store）
+// 完成後才會賦值；元件的 setup() 只在 app.mount() 之後才會實際執行，屆時 store 已就緒。
+let store;
 
 // ---------- 總覽 ----------
 const TabOverview = {
@@ -883,12 +946,18 @@ const TabSettings = {
       }
     }
 
-    function resetData() {
+    // 清除所有本地資料：清空 records、accounts，settings 重設為最小必要設定（不可整個
+    // 替換物件參考）。除了讓 watch 之後自動 debounce 回寫，這裡也立即明確寫回 IndexedDB，
+    // 避免使用者在防抖時間內就重新整理，導致清除結果尚未真正持久化。
+    async function resetData() {
+      if (!confirm("確定要清除所有本地資料嗎？此動作無法復原，建議先匯出 CSV 備份。")) return;
       try {
-        if (!confirm("確定要清除所有本地資料嗎？此動作無法復原，建議先匯出 CSV 備份。")) return;
         store.records.splice(0, store.records.length);
-        // 明確寫入空陣列，避免 deep watch 之後又蓋回，且下次載入不會重新種入模擬資料
-        ALD.saveRecords([]);
+        store.accounts.splice(0, store.accounts.length);
+        applyDefaultSettingsInPlace(store.settings);
+        await ALD_DB.replaceRecords([]);
+        await ALD_DB.replaceAccounts([]);
+        await ALD_DB.saveSettings(JSON.parse(JSON.stringify(store.settings)));
         alert("已清除本地資料");
       } catch (e) {
         reportError("清除資料失敗：", e);
@@ -896,19 +965,23 @@ const TabSettings = {
       }
     }
 
-    // 強制清除：用於一般清除按鈕因資料損毀（例如 localStorage 內容非合法 JSON）而失效時。
-    // 修正：不可用 removeItem 直接移除金鑰——那會讓 loadRecords() 誤判為「App 從未初始化」
-    // 而自動重新種入模擬資料，造成「看起來沒清除成功」的假象。改為明確寫入空陣列/預設設定。
-    function forceReset() {
+    // 強制清除並重新載入：清空 IndexedDB 三個 store，重新建立預設 records/settings/accounts，
+    // 等寫入全部完成後才 reload，避免在 transaction 尚未完成前就重新整理頁面。
+    async function forceReset() {
       if (!confirm("強制清除會移除所有本地資料與設定並重新載入頁面，確定嗎？")) return;
       try {
-        localStorage.setItem("ald_records_v1", "[]");
-        localStorage.setItem("ald_settings_v1", JSON.stringify(ALD.DEFAULT_SETTINGS));
+        await ALD_DB.clearAllData();
+        const defaultRecords = ALD.seedRecords();
+        const defaultSettings = mergeSettings(null);
+        const defaultAccounts = ALD.seedAccounts();
+        await ALD_DB.replaceRecords(defaultRecords);
+        await ALD_DB.saveSettings(defaultSettings);
+        await ALD_DB.replaceAccounts(defaultAccounts);
+        location.reload();
       } catch (e) {
-        // 寫入也失敗（例如 localStorage 損毀無法存取）時，才退回整體清空
-        try { localStorage.clear(); } catch (_) {}
+        reportError("強制清除失敗：", e);
+        alert("強制清除失敗：" + (e && e.message ? e.message : e));
       }
-      location.reload();
     }
 
     return {
@@ -1073,8 +1146,91 @@ app.config.errorHandler = (err, instance, info) => {
     window.__showAppError("Vue 元件錯誤（" + info + "）：\n" + detail);
   }
 };
-app.mount("#app");
-// 明確標記「App 已成功掛載」，供錯誤橫幅判斷健康狀態使用；
-// 避免用 DOM 子節點數量判斷（掛載前一瞬間會誤判為不健康）。
-window.__appMounted = true;
-if (window.__refreshErrorBanner) window.__refreshErrorBanner();
+
+// ---------- 非同步初始化 ----------
+// 順序：顯示載入狀態 -> 開啟 IndexedDB -> 讀取 records/settings/accounts -> 判斷是否首次使用
+// -> （首次才）建立並寫入預設資料 -> 建立 reactive store -> 設定 watch -> 最後才 mount()。
+// 任何一步失敗都會顯示明確錯誤並中止初始化，不會建立預設資料覆蓋既有狀態，也不會掛載 App。
+(async function initApp() {
+  showInitLoading("資料載入中…");
+
+  let db;
+  try {
+    db = await ALD_DB.openDatabase();
+  } catch (e) {
+    showInitError("IndexedDB 開啟失敗，App 無法啟動：\n" + (e && e.message ? e.message : String(e)));
+    return;
+  }
+  void db; // 僅需確認開啟成功，實際讀寫透過 ALD_DB 的其他 API 呼叫
+
+  let rawRecords, rawSettings, rawAccounts;
+  try {
+    rawRecords = await ALD_DB.loadRecords();
+    rawSettings = await ALD_DB.loadSettings();
+    rawAccounts = await ALD_DB.loadAccounts();
+  } catch (e) {
+    showInitError("讀取本地資料失敗，App 無法啟動：\n" + (e && e.message ? e.message : String(e)));
+    return;
+  }
+
+  // 首次使用判斷：settings 為固定 key 單筆記錄，從未寫入時 loadSettings() 回傳 null；
+  // 不可用 records/accounts 陣列長度判斷——已初始化但清空為 [] 屬合法狀態，重新整理仍須維持空白。
+  const isFirstRun = rawSettings === null;
+
+  let initialRecords, initialSettings, initialAccounts;
+  if (isFirstRun) {
+    initialSettings = mergeSettings(null);
+    initialRecords = ALD.seedRecords();
+    initialAccounts = ALD.seedAccounts();
+    try {
+      await ALD_DB.replaceRecords(initialRecords);
+      await ALD_DB.saveSettings(initialSettings);
+      await ALD_DB.replaceAccounts(initialAccounts);
+    } catch (e) {
+      showInitError(
+        "首次初始化寫入 IndexedDB 失敗，App 無法啟動：\n" + (e && e.message ? e.message : String(e))
+      );
+      return;
+    }
+  } else {
+    initialSettings = mergeSettings(rawSettings);
+    initialRecords = Array.isArray(rawRecords) ? rawRecords.map(ALD.normalizeRec) : [];
+    initialAccounts = Array.isArray(rawAccounts) ? rawAccounts.map(normalizeAccount) : [];
+  }
+
+  // ---------- 建立 reactive store ----------
+  store = reactive({
+    records: initialRecords,
+    settings: initialSettings,
+    accounts: initialAccounts,
+  });
+
+  // ---------- 設定 watch（初始化完成、store 已有正確資料後才註冊，避免載入期間回寫空資料） ----------
+  watch(
+    () => store.records,
+    (val) => saveRecordsDebounced(JSON.parse(JSON.stringify(val))),
+    { deep: true }
+  );
+  watch(
+    () => store.settings,
+    (val) => saveSettingsDebounced(JSON.parse(JSON.stringify(val))),
+    { deep: true }
+  );
+  watch(
+    () => store.accounts,
+    (val) => saveAccountsDebounced(JSON.parse(JSON.stringify(val))),
+    { deep: true }
+  );
+  // 外觀主題（配色/字型/字型大小）：載入時立即套用，設定變更時即時反映（純畫面效果，非資料寫入）
+  watch(() => store.settings, (val) => ALD.applyTheme(val), { deep: true, immediate: true });
+
+  // ---------- 最後才 mount() ----------
+  app.mount("#app");
+  // 明確標記「App 已成功掛載」，供錯誤橫幅判斷健康狀態使用；
+  // 避免用 DOM 子節點數量判斷（掛載前一瞬間會誤判為不健康）。
+  window.__appMounted = true;
+  if (window.__refreshErrorBanner) window.__refreshErrorBanner();
+})().catch((e) => {
+  // 保底：理論上以上流程皆已個別 try/catch，此處僅防止遺漏情境造成未處理的 Promise rejection。
+  showInitError("App 初始化發生未預期錯誤：\n" + (e && e.message ? e.message : String(e)));
+});
