@@ -1,15 +1,11 @@
 /*
  * store.js
- * 負責資料持久化（localStorage）、資料 schema 定義、CSV 匯入匯出、
- * 以及跨頁面共用的計算工具函式。
- * 資料完全存放於瀏覽器本地（localStorage），不會上傳到任何伺服器。
+ * 負責資料 schema 定義、CSV 匯入匯出，以及跨頁面共用的計算工具函式。
+ * 資料持久化已改由 js/db.js 的 ALD_DB（IndexedDB）負責，本檔案不再讀寫任何儲存媒介；
+ * 資料完全存放於使用者本機瀏覽器（IndexedDB），不會上傳到任何伺服器。
  */
 
 const ALD = (() => {
-  const RECORDS_KEY = "ald_records_v1";
-  const SETTINGS_KEY = "ald_settings_v1";
-  const ACCOUNTS_KEY = "ald_accounts_v1";
-
   // 資料來源類型（依規格固定五種）
   const TYPES = ["流動資金", "投資", "固定資產", "應收款", "負債"];
 
@@ -140,42 +136,7 @@ const ALD = (() => {
     return rec;
   }
 
-  // [階段二起不再供正式流程使用；App 已改用 js/db.js 的 ALD_DB 讀取，留待階段三清理]
-  function loadRecords() {
-    try {
-      const raw = localStorage.getItem(RECORDS_KEY);
-      // 只有「從未初始化」（null）時才載入模擬資料；
-      // 已明確清空（[]）時應維持空白，避免清除後又被重新種入資料
-      if (raw === null) return seedRecords();
-      const arr = JSON.parse(raw);
-      if (!Array.isArray(arr)) return seedRecords();
-      return arr.map(normalizeRec);
-    } catch (e) {
-      console.error("讀取本地資料失敗", e);
-      return seedRecords();
-    }
-  }
 
-  // [階段二起不再供正式流程使用；App 已改用 js/db.js 的 ALD_DB 保存，留待階段三清理]
-  function saveRecords(records) {
-    localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
-  }
-
-  // [階段二起不再供正式流程使用；App 已改用 js/db.js 的 ALD_DB 讀取，留待階段三清理]
-  function loadSettings() {
-    try {
-      const raw = localStorage.getItem(SETTINGS_KEY);
-      const s = raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : { ...DEFAULT_SETTINGS };
-      normalizeCurrencies(s);
-      return s;
-    } catch (e) {
-      const s = { ...DEFAULT_SETTINGS };
-      normalizeCurrencies(s);
-      return s;
-    }
-  }
-
-  // 正規化幣別設定：確保為陣列、baseCurrency 一定存在且匯率固定為 1、去除重複與空白代碼。
   function normalizeCurrencies(settings) {
     const base = settings.baseCurrency || "TWD";
     let list = Array.isArray(settings.currencies) ? settings.currencies : [];
@@ -208,11 +169,6 @@ const ALD = (() => {
 
   function emptyCurrency() {
     return { code: "", rate: 0 };
-  }
-
-  // [階段二起不再供正式流程使用；App 已改用 js/db.js 的 ALD_DB 保存，留待階段三清理]
-  function saveSettings(settings) {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   }
 
   // ---------- 資產子類別顯示名稱 ----------
@@ -253,35 +209,6 @@ const ALD = (() => {
       { category: "負債", account: "房屋貸款", price: 1, leverage: 0 },
     ];
     return raw.map((r) => ({ id: uid(), ...r }));
-  }
-
-  // [階段二起不再供正式流程使用；App 已改用 js/db.js 的 ALD_DB 讀取，留待階段三清理]
-  function loadAccounts() {
-    try {
-      const rawStr = localStorage.getItem(ACCOUNTS_KEY);
-      // 只有「從未初始化」（null）時才種入預設帳戶；已明確清空（[]）時維持空白
-      if (rawStr === null) return seedAccounts();
-      const arr = JSON.parse(rawStr);
-      if (!Array.isArray(arr)) return seedAccounts();
-      return arr.map((a) => {
-        const category = TYPES.includes(a.category) ? a.category : "流動資金";
-        return {
-          id: a.id || uid(),
-          category,
-          account: String(a.account == null ? "" : a.account),
-          price: Number(a.price) || 0,
-          // 槓桿倍數：缺值時依類別帶預設（投資=1，其餘=0）
-          leverage: a.leverage == null ? (category === "投資" ? 1 : 0) : (Number(a.leverage) || 0),
-        };
-      });
-    } catch (e) {
-      return seedAccounts();
-    }
-  }
-
-  // [階段二起不再供正式流程使用；App 已改用 js/db.js 的 ALD_DB 保存，留待階段三清理]
-  function saveAccounts(accounts) {
-    localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
   }
 
   // 依「類別 + 帳戶/項目」查對應帳戶設定物件；找不到回傳 null
@@ -630,12 +557,6 @@ const ALD = (() => {
     THEME_COLORS,
     FONT_FAMILIES,
     FONT_SIZES,
-    loadRecords,
-    saveRecords,
-    loadSettings,
-    saveSettings,
-    loadAccounts,
-    saveAccounts,
     seedAccounts,
     emptyAccount,
     lookupAccount,

@@ -2,9 +2,8 @@
  * app.js
  * Vue 3 應用進入點：定義共用 store（reactive，含 IndexedDB 自動存檔，見 js/db.js 的 ALD_DB）、
  * 4 個分頁元件（總覽/再平衡/明細/設定），以及底部分頁列。
- * 階段二：正式資料來源已由 localStorage 切換為 IndexedDB，store.js 內的 localStorage
- * load/save 函式（loadRecords/saveRecords/loadSettings/saveSettings/loadAccounts/saveAccounts）
- * 保留於階段三清理，正式啟動與保存流程皆不再呼叫。
+ * 正式資料來源為 IndexedDB：App 啟動時透過 ALD_DB 讀取，並於 store 變更時 debounce 回寫；
+ * store.js 僅保留 schema 定義、CSV 匯入匯出與計算工具函式，不再負責任何資料持久化。
  */
 
 // 內部網路可能無法連到 unpkg.com，導致 Vue CDN 載入失敗。
@@ -22,15 +21,16 @@ const { createApp, reactive, computed, watch, ref, onMounted, onUnmounted, nextT
 
 // ---------- IndexedDB 初始化輔助（階段二：App 正式資料來源改為 IndexedDB） ----------
 
-// settings 合併規則：與 store.js 內 loadSettings() 對 localStorage 讀值的合併規則一致，
-// 確保 IndexedDB 讀到的 settings 缺少新欄位時，仍套用目前的預設值與正規化規則。
+// settings 合併規則：確保 IndexedDB 讀到的 settings 缺少新欄位時，仍套用目前的預設值
+// 與正規化規則（與 ALD.DEFAULT_SETTINGS / ALD.normalizeCurrencies 的定義保持一致）。
 function mergeSettings(raw) {
   const s = { ...ALD.DEFAULT_SETTINGS, ...(raw || {}) };
   ALD.normalizeCurrencies(s);
   return s;
 }
 
-// 帳戶設定正規化規則：與 store.js 內 loadAccounts() 對 localStorage 讀值的正規化規則一致。
+// 帳戶設定正規化規則：確保 IndexedDB 讀到的帳戶資料型別正確、缺值時帶入合理預設值
+// （與 ALD.emptyAccount 的預設規則一致：投資類別槓桿倍數預設 1，其餘為 0）。
 function normalizeAccount(a) {
   const category = ALD.TYPES.includes(a.category) ? a.category : "流動資金";
   return {
@@ -486,7 +486,7 @@ const TabDetail = {
     }
 
     // 先套用既有篩選（visibleRecords），再依排序條件排序；用 slice() 複製陣列後排序，
-    // 不直接對原始資料呼叫 sort()，故不會影響 store.records 與 localStorage 的儲存順序。
+    // 不直接對原始資料呼叫 sort()，故不會影響 store.records 與 IndexedDB 的儲存順序。
     const sortedRecords = computed(() => {
       const rules = sortRules.value;
       const arr = visibleRecords.value.slice();
@@ -861,6 +861,9 @@ const TabSettings = {
         }
         const skipped = imported.__skipped || 0;
         store.accounts.splice(0, store.accounts.length, ...imported);
+        // 明確等待 IndexedDB 保存完成後才顯示「匯入成功」，避免寫入失敗卻誤報成功；
+        // watch 之後仍會 debounce 回寫同一份資料，屬冪等操作，不影響正確性。
+        await ALD_DB.replaceAccounts(JSON.parse(JSON.stringify(store.accounts)));
         alert(
           "已匯入 " + imported.length + " 筆帳戶/項目設定" +
             (skipped > 0 ? "\n（略過 " + skipped + " 筆：類別空白或不符值域）" : "")
@@ -916,6 +919,9 @@ const TabSettings = {
       try {
         const imported = await ALD.parseCSV(file, store.settings, store.accounts);
         store.records.push(...imported);
+        // 明確等待 IndexedDB 保存完成後才顯示「匯入成功」，避免寫入失敗卻誤報成功；
+        // watch 之後仍會 debounce 回寫同一份資料，屬冪等操作，不影響正確性。
+        await ALD_DB.replaceRecords(JSON.parse(JSON.stringify(store.records)));
         const skipped = imported.__skipped || 0;
         alert(
           "已匯入 " + imported.length + " 筆資料" +
