@@ -16,7 +16,7 @@ const ALD = (() => {
     unit: "yuan", // 'yuan' = 元, 'wan' = 萬元
     baseCurrency: "TWD",
     // 股價資料來源（見 js/services.js）：
-    //   台股 stockProviderTW：'twse'（官方 OpenAPI，免 proxy，預設） | 'yahooProxy' | 'manual'（略過自動查詢）
+    //   台股 stockProviderTW：'twse'（官方 OpenAPI，實測仍需 proxy，預設） | 'yahooProxy' | 'manual'（略過自動查詢）
     //   美股 stockProviderUS：'finnhub'（需自行申請 API Key） | 'yahooProxy' | 'manual'（預設，因需自行申請 Key）
     stockProviderTW: "twse",
     stockProviderUS: "manual",

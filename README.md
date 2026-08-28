@@ -57,19 +57,20 @@ python -m http.server 8765
 
   | 市場 | Provider | 是否需 proxy | 是否需申請 Key | 說明 |
   |------|----------|:---:|:---:|------|
-  | 台股（預設） | TWSE OpenAPI | 否 | 否 | 官方開放資料，原生支援 CORS；為當日週期性快照，非逐筆即時 |
+  | 台股（預設） | TWSE OpenAPI | 是 | 否 | 官方開放資料；實測其回應**沒有** CORS 標頭，瀏覽器無法直連，仍需搭配下方 CORS Proxy 才能查詢，為當日週期性快照，非逐筆即時 |
   | 台股 | Yahoo Finance | 是 | 否 | 經 CORS proxy 轉發，準即時，屬非官方管道 |
   | 美股（預設） | 手動輸入 | - | - | 需自行申請 Finnhub Key 才能改用自動查詢 |
-  | 美股 | Finnhub | 否 | 是（免費註冊） | 原生支援 CORS，免費層限每分鐘 60 次查詢 |
+  | 美股 | Finnhub | 否 | 是（免費註冊） | 原生支援 CORS，免 proxy，免費層限每分鐘 60 次查詢 |
   | 美股/台股 | 手動輸入 | - | - | 完全略過該市場的自動查詢 |
 
-  選擇 Yahoo Finance 時，另需於「CORS Proxy 提供者」選擇轉發服務：`corsproxy.io`、`api.allorigins.win`、
-  `thingproxy.freeboard.io`（皆為第三方免費服務，可能隨時限流或關閉，穩定性無法保證），或填入「自訂 Proxy URL」
-  使用自建的 proxy（例如自建 Cloudflare Workers，見 [`docs/cloudflare-worker-proxy-佈建手冊.md`](docs/cloudflare-worker-proxy-佈建手冊.md)）。
+  台股選 TWSE OpenAPI 或 Yahoo Finance、美股選 Yahoo Finance 時，皆需於「CORS Proxy 提供者」選擇轉發服務：
+  `corsproxy.io`、`api.allorigins.win`、`thingproxy.freeboard.io`（皆為第三方免費服務，可能隨時限流或關閉，
+  穩定性無法保證），或填入「自訂 Proxy URL」使用自建的 proxy（例如自建 Cloudflare Workers，
+  見 [`docs/cloudflare-worker-proxy-佈建手冊.md`](docs/cloudflare-worker-proxy-佈建手冊.md)）。
 
   > **已知現況**：`corsproxy.io` 目前已改為需付費 API Key，匿名用法會回應 `401 A valid API key is required`。
-  > 若查詢持續失敗，請優先改選 `thingproxy.freeboard.io` 或 `api.allorigins.win`，或改用免 proxy 的
-  > `TWSE OpenAPI`（台股）/ `Finnhub`（美股）選項。
+  > 若查詢持續失敗，請優先改選 `thingproxy.freeboard.io` 或 `api.allorigins.win`。美股 `Finnhub` 是唯一
+  > 完全免 proxy 的選項；台股 `TWSE OpenAPI` 雖為官方資料，但仍需搭配 proxy 才能在瀏覽器端使用。
 
 於「帳戶」頁可按「同步匯率」「同步價格」按鈕依上述設定一次更新，查詢失敗時請改回手動輸入。
 

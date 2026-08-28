@@ -9,7 +9,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="theme-color" content="#1c1c2e" />
   <title>fishbubble</title>
-  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/style.css?v=20260829b" />
 </head>
 <body>
   <!-- 錯誤顯示橫幅：手機上沒有開發者工具可看 console，發生例外時直接顯示在畫面上。
@@ -621,22 +621,22 @@
         <div class="field-stack">
           <span class="field-chip-label">台股報價來源</span>
           <select v-model="settings.stockProviderTW">
-            <option value="twse">TWSE OpenAPI（官方、免 proxy，當日快照）</option>
-            <option value="yahooProxy">Yahoo Finance（需 CORS proxy，準即時）</option>
-            <option value="manual">手動輸入（不自動查詢）</option>
+            <option value="twse">TWSE OpenAPI（需 proxy，快照）</option>
+            <option value="yahooProxy">Yahoo Finance（需 proxy）</option>
+            <option value="manual">手動輸入</option>
           </select>
         </div>
         <div class="field-stack">
           <span class="field-chip-label">美股報價來源</span>
           <select v-model="settings.stockProviderUS">
-            <option value="finnhub">Finnhub（需自行申請 API Key）</option>
-            <option value="yahooProxy">Yahoo Finance（需 CORS proxy，準即時）</option>
-            <option value="manual">手動輸入（不自動查詢）</option>
+            <option value="finnhub">Finnhub（需申請 Key）</option>
+            <option value="yahooProxy">Yahoo Finance（需 proxy）</option>
+            <option value="manual">手動輸入</option>
           </select>
         </div>
         <template v-if="settings.stockProviderUS === 'finnhub'">
-          <div class="form-row">
-            <label>Finnhub API Key</label>
+          <div class="field-stack">
+            <span class="field-chip-label">Finnhub API Key</span>
             <input type="text" v-model="settings.finnhubApiKey" placeholder="於 finnhub.io 免費申請後填入" />
           </div>
           <div class="empty-hint" style="text-align:left">
@@ -644,19 +644,19 @@
             免費層限制每分鐘 60 次查詢，帳戶數量多時請留意查詢速率。Key 僅存於本機瀏覽器，不會上傳。
           </div>
         </template>
-        <template v-if="settings.stockProviderTW === 'yahooProxy' || settings.stockProviderUS === 'yahooProxy'">
+        <template v-if="settings.stockProviderTW === 'twse' || settings.stockProviderTW === 'yahooProxy' || settings.stockProviderUS === 'yahooProxy'">
           <div class="field-stack">
             <span class="field-chip-label">CORS Proxy 提供者</span>
             <select v-model="settings.stockProxyProvider">
               <option value="corsproxy">corsproxy.io</option>
               <option value="allorigins">api.allorigins.win</option>
               <option value="thingproxy">thingproxy.freeboard.io</option>
-              <option value="custom">自訂（自建 Cloudflare Workers 等）</option>
+              <option value="custom">自訂 Proxy</option>
             </select>
           </div>
           <template v-if="settings.stockProxyProvider === 'custom'">
-            <div class="form-row">
-              <label>自訂 Proxy URL</label>
+            <div class="field-stack">
+              <span class="field-chip-label">自訂 Proxy URL</span>
               <input type="text" v-model="settings.customProxyUrl" placeholder="例：https://your-worker.example.workers.dev/?url=" />
             </div>
             <div class="empty-hint" style="text-align:left">
@@ -667,8 +667,9 @@
           <div class="empty-hint" style="text-align:left">
             公開 CORS proxy（corsproxy.io / allorigins.win / thingproxy.freeboard.io）皆為第三方免費服務，
             可能隨時限流或關閉，穩定性無法保證；<strong>corsproxy.io 目前已改為需付費 API Key</strong>，
-            匿名用法會回應 401 錯誤，建議優先改選 thingproxy.freeboard.io、allorigins.win，
-            或改用「台股 = TWSE OpenAPI」「美股 = Finnhub」等免 proxy 選項，長期使用建議改用自建 Cloudflare Workers。
+            匿名用法會回應 401 錯誤，建議優先改選 thingproxy.freeboard.io、allorigins.win。
+            台股 TWSE OpenAPI 官方端點實測不支援瀏覽器 CORS，仍需搭配此處的 proxy 才能查詢；
+            美股 Finnhub 為真正免 proxy 的選項。長期使用建議改用自建 Cloudflare Workers。
           </div>
         </template>
         <div class="empty-hint" style="text-align:left">
