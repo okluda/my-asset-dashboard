@@ -18,6 +18,7 @@ const ALD = (() => {
     autoStock: false, // 是否自動抓取股票市值
     baseCurrency: "TWD",
     rebalanceRatio: 70, // 再平衡：投資目標佔比(%)，預設 70% -> 流動:投資 = 3:7
+    lastTab: "overview", // 上次所在主分頁（overview/rebalance/detail/settings），重新整理後用於還原
     themeMode: "dark", // 'dark' | 'light'
     themeColor: "grayBlue", // 主題配色（見 THEME_COLORS）；'custom' 時改用 customColor
     customColor: "#5b8cff", // 自訂配色（themeColor === 'custom' 時生效）
@@ -191,11 +192,20 @@ const ALD = (() => {
   }
 
   // ---------- 帳戶/項目設定 ----------
-  // 每筆：{ id, category(內部類別鍵), account(帳戶/項目名稱), price(價格), leverage(槓桿倍數) }
+  // 每筆：{ id, category(內部類別鍵), account(帳戶/項目名稱), price(價格), leverage(槓桿倍數), sortOrder(顯示順序) }
   // 槓桿倍數預設：類別為「投資」時為 1，其餘為 0。
-  function emptyAccount(category) {
+  // sortOrder 由呼叫端指派（例如新增帳戶時取目前最大值 + 1），此函式不自行依陣列長度計算，
+  // 避免呼叫端尚未把新帳戶塞入陣列時算出重複或錯誤的順序。
+  function emptyAccount(category, sortOrder) {
     const cat = category || "流動資金";
-    return { id: uid(), category: cat, account: "", price: 1, leverage: cat === "投資" ? 1 : 0 };
+    return {
+      id: uid(),
+      category: cat,
+      account: "",
+      price: 1,
+      leverage: cat === "投資" ? 1 : 0,
+      sortOrder: Number(sortOrder) || 0,
+    };
   }
 
   function seedAccounts() {
@@ -208,7 +218,7 @@ const ALD = (() => {
       { category: "應收款", account: "親友借款", price: 1, leverage: 0 },
       { category: "負債", account: "房屋貸款", price: 1, leverage: 0 },
     ];
-    return raw.map((r) => ({ id: uid(), ...r }));
+    return raw.map((r, i) => ({ id: uid(), ...r, sortOrder: i + 1 }));
   }
 
   // 依「類別 + 帳戶/項目」查對應帳戶設定物件；找不到回傳 null
@@ -516,7 +526,9 @@ const ALD = (() => {
               const price = numOr(get("價格"), 1);
               // 槓桿倍數：空值預設依類別（投資=1，其餘=0）
               const leverage = numOr(get("槓桿倍數"), category === "投資" ? 1 : 0);
-              accounts.push({ id: uid(), category, account, price, leverage });
+              // CSV 格式不含 sortOrder 欄位，依匯入（解析）順序補上 1,2,3...，
+              // 確保重新整理後帳戶順序與匯入時一致。
+              accounts.push({ id: uid(), category, account, price, leverage, sortOrder: accounts.length + 1 });
             });
             accounts.__skipped = skipped;
             resolve(accounts);
