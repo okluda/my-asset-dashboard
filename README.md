@@ -36,18 +36,30 @@ python -m http.server 8765
 | 總覽 | 資產／負債／淨資產 KPI、負債比、各資產子項目金額與佔比條 |
 | 再平衡 | 曝險金額／曝險比、資金再平衡率設定、買入/賣出建議金額 |
 | 明細 | 分類彙總、逐筆資料表格（新增/編輯/刪除）、CSV 匯入/匯出 |
-| 設定 | 顯示單位（元/萬元）、即時匯率/股價自動更新開關、清除本地資料 |
+| 設定 | 顯示單位（元/萬元）、股價資料來源（台股/美股 provider）、清除本地資料 |
 
 ### 資料欄位（明細）
 
 類型、帳戶/項目、日期、備註、單價、幣別、匯率、單位數、金額、槓桿率（曝險金額為計算欄位）。
 
-### 即時資料來源（選用，預設關閉，手動輸入為預設）
+### 即時資料來源（選用，預設多數為手動輸入）
 
-- **匯率**：[Frankfurter API](https://frankfurter.dev/)（免費、支援瀏覽器 CORS、無需 API Key）
-- **股價**：透過公開 CORS proxy 轉發 Yahoo Finance chart API，屬非官方管道，穩定性無法保證，失敗時請改回手動輸入單價。
+- **匯率**：[open.er-api.com](https://www.exchangerate-api.com/)（免費、支援瀏覽器 CORS、無需 API Key）
+- **股價**：於「設定 > 股價資料來源」可分別為**台股**與**美股**選擇 provider：
 
-於「設定」頁開啟後，「明細」頁的匯率/單價欄位會出現「抓」按鈕可個別更新。
+  | 市場 | Provider | 是否需 proxy | 是否需申請 Key | 說明 |
+  |------|----------|:---:|:---:|------|
+  | 台股（預設） | TWSE OpenAPI | 否 | 否 | 官方開放資料，原生支援 CORS；為當日週期性快照，非逐筆即時 |
+  | 台股 | Yahoo Finance | 是 | 否 | 經 CORS proxy 轉發，準即時，屬非官方管道 |
+  | 美股（預設） | 手動輸入 | - | - | 需自行申請 Finnhub Key 才能改用自動查詢 |
+  | 美股 | Finnhub | 否 | 是（免費註冊） | 原生支援 CORS，免費層限每分鐘 60 次查詢 |
+  | 美股/台股 | 手動輸入 | - | - | 完全略過該市場的自動查詢 |
+
+  選擇 Yahoo Finance 時，另需於「CORS Proxy 提供者」選擇轉發服務：`corsproxy.io`、`api.allorigins.win`、
+  `thingproxy.freeboard.io`（皆為第三方免費服務，可能隨時限流或關閉，穩定性無法保證），或填入「自訂 Proxy URL」
+  使用自建的 proxy（例如自建 Cloudflare Workers，見 [`docs/cloudflare-worker-proxy-佈建手冊.md`](docs/cloudflare-worker-proxy-佈建手冊.md)）。
+
+於「帳戶」頁可按「同步匯率」「同步價格」按鈕依上述設定一次更新，查詢失敗時請改回手動輸入。
 
 ## 部署到 GitHub Pages
 
@@ -82,7 +94,7 @@ python -m http.server 8765
 - 投資配置比（再平衡目標比例）
 - 幣別清單與各幣別匯率、基準幣別
 - 資產子類別顯示名稱（自訂類別名稱）
-- 即時匯率／股價自動更新開關
+- 股價資料來源設定（台股/美股 provider、Finnhub API Key、CORS Proxy 提供者、自訂 Proxy URL）
 
 ## iPhone 使用注意事項
 

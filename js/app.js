@@ -947,17 +947,25 @@ const TabSettings = {
       }
     }
 
-    // 同步「投資」類別帳戶的即時價格（市值），完成後套回明細
+    // 同步「投資」類別帳戶的即時價格（市值），完成後套回明細。
+    // 依「設定 > 股價資料來源」分台股/美股 provider 查詢；provider 為「手動輸入」的帳戶會被略過，
+    // 不計入成功/失敗筆數。同一批次共用 twseCache，避免台股 provider 為 TWSE 時重複下載整份清單。
     async function syncPrices() {
       if (syncing.value) return;
       syncing.value = true;
       let ok = 0;
       let fail = 0;
+      let skipped = 0;
+      const twseCache = {};
       try {
         for (const acc of store.accounts) {
           if (acc.category === "投資" && acc.account) {
             try {
-              const result = await ALD_SERVICE.fetchStockPrice(acc.account);
+              const result = await ALD_SERVICE.fetchStockPrice(acc.account, store.settings, twseCache);
+              if (result === ALD_SERVICE.SKIP_MANUAL) {
+                skipped++;
+                continue;
+              }
               acc.price = ALD.round2(result.value);
               ok++;
               recordSyncLog("stockPrice", acc.account, true, "", result.requestUrl, result.responseText);
@@ -970,7 +978,8 @@ const TabSettings = {
         applyPricesToRecords();
         alert(
           "價格同步完成：成功 " + ok + " 筆，失敗 " + fail + " 筆" +
-            (fail > 0 ? "（失敗可能因無法連外，請改用手動輸入）" : "")
+            (skipped > 0 ? "，略過 " + skipped + " 筆（資料來源設為手動輸入）" : "") +
+            (fail > 0 ? "（失敗可能因無法連外或該來源查無此代號，請改用手動輸入）" : "")
         );
       } catch (e) {
         reportError("價格同步失敗：", e);

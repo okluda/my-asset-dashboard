@@ -14,9 +14,16 @@ const ALD = (() => {
 
   const DEFAULT_SETTINGS = {
     unit: "yuan", // 'yuan' = 元, 'wan' = 萬元
-    autoFx: false, // 是否自動抓取即時匯率
-    autoStock: false, // 是否自動抓取股票市值
     baseCurrency: "TWD",
+    // 股價資料來源（見 js/services.js）：
+    //   台股 stockProviderTW：'twse'（官方 OpenAPI，免 proxy，預設） | 'yahooProxy' | 'manual'（略過自動查詢）
+    //   美股 stockProviderUS：'finnhub'（需自行申請 API Key） | 'yahooProxy' | 'manual'（預設，因需自行申請 Key）
+    stockProviderTW: "twse",
+    stockProviderUS: "manual",
+    finnhubApiKey: "", // 美股 provider 為 'finnhub' 時使用，存於本機瀏覽器，不會上傳
+    // CORS proxy 提供者（stockProviderTW/US 任一為 'yahooProxy' 時生效）
+    stockProxyProvider: "corsproxy", // 'corsproxy' | 'allorigins' | 'thingproxy' | 'custom'
+    customProxyUrl: "", // stockProxyProvider === 'custom' 時使用，見設定頁說明或 docs/cloudflare-worker-proxy-佈建手冊.md
     rebalanceRatio: 70, // 再平衡：投資目標佔比(%)，預設 70% -> 流動:投資 = 3:7
     lastTab: "overview", // 上次所在主分頁（overview/rebalance/detail/settings），重新整理後用於還原
     syncLogEnabled: false, // 是否記錄「同步價格/匯率」的詳細執行資訊（含 API 請求/回應內容），預設關閉
