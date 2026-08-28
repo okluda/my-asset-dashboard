@@ -31,7 +31,9 @@ function mergeSettings(raw) {
 
 // 帳戶設定正規化規則：確保 IndexedDB 讀到的帳戶資料型別正確、缺值時帶入合理預設值
 // （與 ALD.emptyAccount 的預設規則一致：投資類別槓桿倍數預設 1，其餘為 0）。
-function normalizeAccount(a) {
+// fallbackOrder：舊資料（IndexedDB getAll() 讀出，不保證順序）若無 sortOrder，
+// 依目前載入順序補值（呼叫端傳入 1-based 索引），確保重新整理後仍有明確順序可排序。
+function normalizeAccount(a, fallbackOrder) {
   const category = ALD.TYPES.includes(a.category) ? a.category : "流動資金";
   return {
     id: a.id || ALD.uid(),
@@ -39,6 +41,7 @@ function normalizeAccount(a) {
     account: String(a.account == null ? "" : a.account),
     price: Number(a.price) || 0,
     leverage: a.leverage == null ? (category === "投資" ? 1 : 0) : Number(a.leverage) || 0,
+    sortOrder: a.sortOrder == null || isNaN(Number(a.sortOrder)) ? fallbackOrder : Number(a.sortOrder),
   };
 }
 
@@ -795,14 +798,41 @@ const TabSettings = {
       }
     }
 
-    // 新增一筆帳戶/項目設定，預設類別為第一個資產子類別
+    // 新增一筆帳戶/項目設定，預設類別為第一個資產子類別；sortOrder 由呼叫端指派為目前最大值 + 1，
+    // 確保新帳戶固定排在最後（Test 6：A、B、C 新增 D → A、B、C、D）。
     function addAccount() {
-      store.accounts.push(ALD.emptyAccount(assetCategoryKeys[0]));
+      const nextOrder =
+        store.accounts.reduce((max, a) => Math.max(max, Number(a.sortOrder) || 0), 0) + 1;
+      store.accounts.push(ALD.emptyAccount(assetCategoryKeys[0], nextOrder));
     }
 
     function removeAccount(id) {
       const idx = store.accounts.findIndex((a) => a.id === id);
       if (idx !== -1) store.accounts.splice(idx, 1);
+    }
+
+    // 帳戶排序：在 store.accounts 陣列中交換相鄰兩筆位置，並重新產生連續的 sortOrder（1,2,3...），
+    // 避免多次移動後 sortOrder 出現跳號（例如 1,5,9,20）。不實作拖曳，只支援上移/下移一格。
+    function moveAccount(id, direction) {
+      const idx = store.accounts.findIndex((a) => a.id === id);
+      if (idx === -1) return;
+      const targetIdx = idx + direction;
+      if (targetIdx < 0 || targetIdx >= store.accounts.length) return;
+      const arr = store.accounts;
+      const tmp = arr[idx];
+      arr[idx] = arr[targetIdx];
+      arr[targetIdx] = tmp;
+      arr.forEach((a, i) => {
+        a.sortOrder = i + 1;
+      });
+    }
+
+    function moveAccountUp(id) {
+      moveAccount(id, -1);
+    }
+
+    function moveAccountDown(id) {
+      moveAccount(id, 1);
     }
 
     // 帳戶類別變更時，若槓桿倍數仍為預設值則依新類別調整（投資=1，其餘=0）
@@ -1007,6 +1037,8 @@ const TabSettings = {
       syncFxRates,
       addAccount,
       removeAccount,
+      moveAccountUp,
+      moveAccountDown,
       onAccountCategoryChange,
       applyPricesToRecords,
       applyLeverageToRecords,
@@ -1040,7 +1072,7 @@ const App = {
         :key="tab.key"
         class="tab-btn"
         :class="{ active: activeTab === tab.key }"
-        @click="activeTab = tab.key"
+        @click="setActiveTab(tab.key)"
       >
         <span class="tab-icon">{{ tab.icon }}</span>
         <span>{{ tab.label }}</span>
@@ -1054,13 +1086,24 @@ const App = {
     >↑↓</button>
   `,
   setup() {
-    const activeTab = ref("overview");
     const tabs = [
       { key: "overview", label: "總覽", icon: "⬠", component: "TabOverview" },
       { key: "rebalance", label: "再平衡", icon: "⟠", component: "TabRebalance" },
       { key: "detail", label: "明細", icon: "≣", component: "TabDetail" },
       { key: "settings", label: "設定", icon: "⛯", component: "TabSettings" },
     ];
+    // 主分頁狀態改由 settings.lastTab 還原，重新整理頁面後可維持上次所在分頁；
+    // settings.lastTab 不存在（舊資料）或非上述四種合法值時，一律回退為 overview。
+    const validTabKeys = tabs.map((t) => t.key);
+    const initialTab = validTabKeys.includes(store.settings.lastTab)
+      ? store.settings.lastTab
+      : "overview";
+    const activeTab = ref(initialTab);
+    function setActiveTab(key) {
+      activeTab.value = key;
+      // 沿用既有 settings 機制回寫 IndexedDB（由既有的 store.settings watch 統一 debounce 儲存）。
+      store.settings.lastTab = key;
+    }
     const tabTitles = Object.fromEntries(tabs.map((t) => [t.key, t.label]));
     const activeComponent = computed(
       () => tabs.find((t) => t.key === activeTab.value).component
@@ -1133,6 +1176,7 @@ const App = {
 
     return {
       activeTab,
+      setActiveTab,
       tabs,
       tabTitles,
       activeComponent,
@@ -1201,8 +1245,14 @@ app.config.errorHandler = (err, instance, info) => {
   } else {
     initialSettings = mergeSettings(rawSettings);
     initialRecords = Array.isArray(rawRecords) ? rawRecords.map(ALD.normalizeRec) : [];
-    initialAccounts = Array.isArray(rawAccounts) ? rawAccounts.map(normalizeAccount) : [];
+    initialAccounts = Array.isArray(rawAccounts)
+      ? rawAccounts.map((a, i) => normalizeAccount(a, i + 1))
+      : [];
   }
+
+  // 帳戶顯示/儲存順序一律依 sortOrder ASC；IndexedDB getAll() 不保證回傳順序，
+  // 在建立 store.accounts 前先排序，確保 Safari / IndexedDB / CSV 匯入都得到一致順序。
+  initialAccounts.sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0));
 
   // ---------- 建立 reactive store ----------
   store = reactive({

@@ -719,7 +719,7 @@
           </button>
         </div>
         <div v-if="accounts.length === 0" class="empty-hint">尚無帳戶/項目，點「＋新增帳戶/項目」開始</div>
-        <div class="acc-cfg-card" v-for="acc in accounts" :key="acc.id">
+        <div class="acc-cfg-card" v-for="(acc, idx) in accounts" :key="acc.id">
           <div class="acc-cfg-grid">
             <div class="rec-field">
               <label>類別</label>
@@ -741,6 +741,8 @@
             </div>
           </div>
           <div class="acc-cfg-actions">
+            <button class="btn small" @click="moveAccountUp(acc.id)" :disabled="idx === 0" aria-label="上移">↑</button>
+            <button class="btn small" @click="moveAccountDown(acc.id)" :disabled="idx === accounts.length - 1" aria-label="下移">↓</button>
             <button class="btn small danger" @click="removeAccount(acc.id)">刪除</button>
           </div>
         </div>
