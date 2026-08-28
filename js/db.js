@@ -6,12 +6,14 @@
 
 const ALD_DB = (() => {
   const DB_NAME = "my_asset_dashboard";
-  const DB_VERSION = 1;
+  // v2：新增 syncLogs store（同步價格/匯率的執行記錄），既有 3 個 store 結構不變。
+  const DB_VERSION = 2;
 
   const STORE_RECORDS = "records";
   const STORE_SETTINGS = "settings";
   const STORE_ACCOUNTS = "accounts";
-  const ALL_STORES = [STORE_RECORDS, STORE_SETTINGS, STORE_ACCOUNTS];
+  const STORE_SYNC_LOGS = "syncLogs";
+  const ALL_STORES = [STORE_RECORDS, STORE_SETTINGS, STORE_ACCOUNTS, STORE_SYNC_LOGS];
 
   // settings 採「固定 key 的單筆設計」：整個 settings 物件以此固定 key 存成一筆記錄，
   // 不可拆成多筆，避免破壞其物件結構。
@@ -45,6 +47,9 @@ const ALD_DB = (() => {
         }
         if (!db.objectStoreNames.contains(STORE_ACCOUNTS)) {
           db.createObjectStore(STORE_ACCOUNTS, { keyPath: "id" });
+        }
+        if (!db.objectStoreNames.contains(STORE_SYNC_LOGS)) {
+          db.createObjectStore(STORE_SYNC_LOGS, { keyPath: "id" });
         }
       };
 
@@ -148,6 +153,15 @@ const ALD_DB = (() => {
 
   function replaceAccounts(accounts) {
     return replaceAll(STORE_ACCOUNTS, accounts);
+  }
+
+  // 同步記錄（同步價格/匯率的執行記錄，含 API 請求/回應內容）。
+  function loadSyncLogs() {
+    return getAll(STORE_SYNC_LOGS);
+  }
+
+  function replaceSyncLogs(logs) {
+    return replaceAll(STORE_SYNC_LOGS, logs);
   }
 
   // 讀取 settings（固定 key 單筆物件）。從未儲存過時回傳 null。
@@ -257,6 +271,7 @@ const ALD_DB = (() => {
     STORE_RECORDS,
     STORE_SETTINGS,
     STORE_ACCOUNTS,
+    STORE_SYNC_LOGS,
     openDatabase,
     loadRecords,
     replaceRecords,
@@ -264,6 +279,8 @@ const ALD_DB = (() => {
     saveSettings,
     loadAccounts,
     replaceAccounts,
+    loadSyncLogs,
+    replaceSyncLogs,
     clearStore,
     clearAllData,
   };

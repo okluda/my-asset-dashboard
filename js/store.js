@@ -19,6 +19,7 @@ const ALD = (() => {
     baseCurrency: "TWD",
     rebalanceRatio: 70, // 再平衡：投資目標佔比(%)，預設 70% -> 流動:投資 = 3:7
     lastTab: "overview", // 上次所在主分頁（overview/rebalance/detail/settings），重新整理後用於還原
+    syncLogEnabled: false, // 是否記錄「同步價格/匯率」的詳細執行資訊（含 API 請求/回應內容），預設關閉
     themeMode: "dark", // 'dark' | 'light'
     themeColor: "grayBlue", // 主題配色（見 THEME_COLORS）；'custom' 時改用 customColor
     customColor: "#5b8cff", // 自訂配色（themeColor === 'custom' 時生效）
@@ -541,6 +542,33 @@ const ALD = (() => {
     });
   }
 
+  // ---------- 同步記錄（同步價格/匯率的執行記錄） ----------
+  // 保留上限：僅保留最近 50 筆，避免 IndexedDB 無限成長。
+  const SYNC_LOG_MAX = 50;
+
+  // 附加一筆同步記錄（假設呼叫端依時間順序附加在陣列尾端＝最新）；
+  // 超過上限時從陣列開頭（最舊）裁掉多餘筆數，維持固定上限。
+  function appendSyncLog(logs, entry) {
+    if (!Array.isArray(logs)) return;
+    logs.push(entry);
+    const overflow = logs.length - SYNC_LOG_MAX;
+    if (overflow > 0) logs.splice(0, overflow);
+  }
+
+  // 匯出同步記錄為 JSON（內容含完整 API 請求 URL 與回應內容全文，適合結構化保留，不適合 CSV）。
+  function exportSyncLogsJSON(logs) {
+    const json = JSON.stringify(logs || [], null, 2);
+    const blob = new Blob([json], { type: "application/json;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `同步記錄_${todayStr()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   // 依設定套用外觀主題：設定 CSS 變數（配色/字型/字型大小）與淺色模式 class
   function applyTheme(settings) {
     if (typeof document === "undefined") return;
@@ -583,6 +611,9 @@ const ALD = (() => {
     emptyCurrency,
     exportAccountsCSV,
     parseAccountsCSV,
+    appendSyncLog,
+    exportSyncLogsJSON,
+    SYNC_LOG_MAX,
     emptyRecord,
     uid,
     todayStr,

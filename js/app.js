@@ -105,6 +105,7 @@ const SAVE_DEBOUNCE_MS = 500;
 const saveRecordsDebounced = createDebouncedSaver((v) => ALD_DB.replaceRecords(v), "明細", SAVE_DEBOUNCE_MS);
 const saveSettingsDebounced = createDebouncedSaver((v) => ALD_DB.saveSettings(v), "系統設定", SAVE_DEBOUNCE_MS);
 const saveAccountsDebounced = createDebouncedSaver((v) => ALD_DB.replaceAccounts(v), "帳戶設定", SAVE_DEBOUNCE_MS);
+const saveSyncLogsDebounced = createDebouncedSaver((v) => ALD_DB.replaceSyncLogs(v), "同步記錄", SAVE_DEBOUNCE_MS);
 
 // ---------- 共用 reactive store ----------
 // 於非同步初始化流程（openDatabase -> 讀取三個 store -> 判斷首次使用 -> 建立 store）
@@ -715,6 +716,7 @@ const TabSettings = {
   setup() {
     const settings = store.settings;
     const accounts = store.accounts;
+    const syncLogs = store.syncLogs;
     const settingsTab = ref("system");
     const assetCategoryKeys = ALD.ASSET_TYPES;
     const types = ALD.TYPES;
@@ -764,6 +766,44 @@ const TabSettings = {
       }
     }
 
+    // 記錄一筆同步執行資訊（僅在 settings.syncLogEnabled 開啟時才寫入，避免預設就累積資料）。
+    // syncType：'fxRate' | 'stockPrice'；target：幣別代碼或帳戶/項目名稱。
+    function recordSyncLog(syncType, target, success, errorMessage, requestUrl, responseText) {
+      if (!settings.syncLogEnabled) return;
+      ALD.appendSyncLog(syncLogs, {
+        id: ALD.uid(),
+        timestamp: new Date().toISOString(),
+        syncType,
+        target: target || "",
+        success: !!success,
+        errorMessage: success ? "" : String(errorMessage || ""),
+        requestUrl: requestUrl || "",
+        responseText: responseText || "",
+      });
+    }
+
+    // 匯出同步記錄為 JSON 檔
+    function exportSyncLogs() {
+      try {
+        ALD.exportSyncLogsJSON(syncLogs);
+      } catch (e) {
+        reportError("匯出同步記錄失敗：", e);
+      }
+    }
+
+    // 清除同步記錄（不影響 records/settings/accounts）
+    async function clearSyncLogs() {
+      if (syncLogs.length === 0) return;
+      if (!confirm("確定要清除所有同步記錄嗎？此動作無法復原。")) return;
+      try {
+        syncLogs.splice(0, syncLogs.length);
+        await ALD_DB.replaceSyncLogs([]);
+      } catch (e) {
+        reportError("清除同步記錄失敗：", e);
+        alert("清除同步記錄失敗：" + (e && e.message ? e.message : e));
+      }
+    }
+
     // 同步各幣別對基準幣別的即時匯率，完成後套回明細
     async function syncFxRates() {
       if (syncingFx.value) return;
@@ -778,12 +818,13 @@ const TabSettings = {
           }
           if (!cur.code) continue;
           try {
-            cur.rate = ALD.round2(
-              await ALD_SERVICE.fetchFxRate(cur.code, settings.baseCurrency)
-            );
+            const result = await ALD_SERVICE.fetchFxRate(cur.code, settings.baseCurrency);
+            cur.rate = ALD.round2(result.value);
             ok++;
+            recordSyncLog("fxRate", cur.code, true, "", result.requestUrl, result.responseText);
           } catch (e) {
             fail++;
+            recordSyncLog("fxRate", cur.code, false, e && e.message, e && e.requestUrl, e && e.responseText);
           }
         }
         applyFxToRecords();
@@ -916,10 +957,13 @@ const TabSettings = {
         for (const acc of store.accounts) {
           if (acc.category === "投資" && acc.account) {
             try {
-              acc.price = ALD.round2(await ALD_SERVICE.fetchStockPrice(acc.account));
+              const result = await ALD_SERVICE.fetchStockPrice(acc.account);
+              acc.price = ALD.round2(result.value);
               ok++;
+              recordSyncLog("stockPrice", acc.account, true, "", result.requestUrl, result.responseText);
             } catch (e) {
               fail++;
+              recordSyncLog("stockPrice", acc.account, false, e && e.message, e && e.requestUrl, e && e.responseText);
             }
           }
         }
@@ -990,9 +1034,11 @@ const TabSettings = {
       try {
         store.records.splice(0, store.records.length);
         store.accounts.splice(0, store.accounts.length);
+        store.syncLogs.splice(0, store.syncLogs.length);
         applyDefaultSettingsInPlace(store.settings);
         await ALD_DB.replaceRecords([]);
         await ALD_DB.replaceAccounts([]);
+        await ALD_DB.replaceSyncLogs([]);
         await ALD_DB.saveSettings(JSON.parse(JSON.stringify(store.settings)));
         alert("已清除本地資料");
       } catch (e) {
@@ -1023,6 +1069,8 @@ const TabSettings = {
     return {
       settings,
       accounts,
+      syncLogs,
+      syncLogMax: ALD.SYNC_LOG_MAX,
       settingsTab,
       assetCategoryKeys,
       types,
@@ -1046,6 +1094,8 @@ const TabSettings = {
       exportAccountsCsv,
       importAccountsCsv,
       syncPrices,
+      exportSyncLogs,
+      clearSyncLogs,
       exportCsv,
       importCsv,
       loadSample,
@@ -1213,11 +1263,12 @@ app.config.errorHandler = (err, instance, info) => {
   }
   void db; // 僅需確認開啟成功，實際讀寫透過 ALD_DB 的其他 API 呼叫
 
-  let rawRecords, rawSettings, rawAccounts;
+  let rawRecords, rawSettings, rawAccounts, rawSyncLogs;
   try {
     rawRecords = await ALD_DB.loadRecords();
     rawSettings = await ALD_DB.loadSettings();
     rawAccounts = await ALD_DB.loadAccounts();
+    rawSyncLogs = await ALD_DB.loadSyncLogs();
   } catch (e) {
     showInitError("讀取本地資料失敗，App 無法啟動：\n" + (e && e.message ? e.message : String(e)));
     return;
@@ -1227,11 +1278,12 @@ app.config.errorHandler = (err, instance, info) => {
   // 不可用 records/accounts 陣列長度判斷——已初始化但清空為 [] 屬合法狀態，重新整理仍須維持空白。
   const isFirstRun = rawSettings === null;
 
-  let initialRecords, initialSettings, initialAccounts;
+  let initialRecords, initialSettings, initialAccounts, initialSyncLogs;
   if (isFirstRun) {
     initialSettings = mergeSettings(null);
     initialRecords = ALD.seedRecords();
     initialAccounts = ALD.seedAccounts();
+    initialSyncLogs = [];
     try {
       await ALD_DB.replaceRecords(initialRecords);
       await ALD_DB.saveSettings(initialSettings);
@@ -1248,6 +1300,10 @@ app.config.errorHandler = (err, instance, info) => {
     initialAccounts = Array.isArray(rawAccounts)
       ? rawAccounts.map((a, i) => normalizeAccount(a, i + 1))
       : [];
+    // 依時間戳排序（舊到新），IndexedDB getAll() 不保證回傳順序，維持顯示/匯出時的時序一致。
+    initialSyncLogs = Array.isArray(rawSyncLogs)
+      ? rawSyncLogs.slice().sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)))
+      : [];
   }
 
   // 帳戶顯示/儲存順序一律依 sortOrder ASC；IndexedDB getAll() 不保證回傳順序，
@@ -1259,6 +1315,7 @@ app.config.errorHandler = (err, instance, info) => {
     records: initialRecords,
     settings: initialSettings,
     accounts: initialAccounts,
+    syncLogs: initialSyncLogs,
   });
 
   // ---------- 設定 watch（初始化完成、store 已有正確資料後才註冊，避免載入期間回寫空資料） ----------
@@ -1275,6 +1332,11 @@ app.config.errorHandler = (err, instance, info) => {
   watch(
     () => store.accounts,
     (val) => saveAccountsDebounced(JSON.parse(JSON.stringify(val))),
+    { deep: true }
+  );
+  watch(
+    () => store.syncLogs,
+    (val) => saveSyncLogsDebounced(JSON.parse(JSON.stringify(val))),
     { deep: true }
   );
   // 外觀主題（配色/字型/字型大小）：載入時立即套用，設定變更時即時反映（純畫面效果，非資料寫入）
