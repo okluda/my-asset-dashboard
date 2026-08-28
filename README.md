@@ -58,10 +58,12 @@ python -m http.server 8765
 
 ## 資料備份與風險提醒
 
-所有資料僅存在單一瀏覽器的 IndexedDB（資料庫 `my_asset_dashboard`，三個 object store：`records`、`settings`、`accounts`）：
+所有資料僅存在單一瀏覽器的 IndexedDB（資料庫 `my_asset_dashboard`，四個 object store：`records`、`settings`、`accounts`、`syncLogs`）：
 
 - 清除瀏覽器資料、換裝置、換瀏覽器（含 Safari 無痕模式）都會遺失資料
 - **請定期使用「明細」頁的「匯出 CSV」與「帳戶/項目設定」頁的「匯出帳戶設定」功能備份**
+- `syncLogs`（同步記錄）為選用性除錯資訊，需於「設定 > 帳戶」的「同步記錄」開關手動開啟才會寫入，
+  僅保留最近 50 筆，可另外「匯出記錄（JSON）」或「清除記錄」，不影響其餘資料備份/還原流程
 
 ### CSV 匯入模式（沿用既有行為，未變更）
 

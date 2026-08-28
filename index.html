@@ -749,6 +749,23 @@
       </div>
 
       <div class="card">
+        <div class="section-title">同步記錄</div>
+        <div class="form-row">
+          <label>記錄同步價格/匯率的詳細執行資訊（含 API 請求與回應內容）</label>
+          <input type="checkbox" v-model="settings.syncLogEnabled" />
+        </div>
+        <div class="toolbar">
+          <button class="btn secondary" @click="exportSyncLogs" :disabled="syncLogs.length === 0">匯出記錄（JSON）</button>
+          <button class="btn danger" @click="clearSyncLogs" :disabled="syncLogs.length === 0">清除記錄</button>
+        </div>
+        <div class="empty-hint" style="text-align:left">
+          目前筆數：{{ syncLogs.length }} / {{ syncLogMax }}（超過上限會自動捨棄最舊的記錄）。
+          開關預設關閉，僅在需要排查「同步價格」「同步匯率」失敗原因時再手動開啟；
+          記錄內容含完整 API 請求網址與回應內容，開啟後才會於每次同步時寫入。
+        </div>
+      </div>
+
+      <div class="card">
         <div class="section-title">套用至明細</div>
         <div class="empty-hint" style="text-align:left">依「類別 + 帳戶/項目」把設定值更新到現有明細資料並重算金額/曝險。</div>
         <div class="toolbar">
