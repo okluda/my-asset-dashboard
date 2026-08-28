@@ -12,6 +12,14 @@
 
 選擇免 build 方案的原因：避免本機/公司網路環境的憑證與套件安裝限制，同時降低維護成本（無需 `npm install`、無版本相依問題）。
 
+> **修改 `js/*.js` 後必讀**：`index.html` 以 `<script src="js/xxx.js?v=版本號">` 引入本地程式檔，
+> 每次修改 `js/store.js`、`js/db.js`、`js/services.js`、`js/app.js` 任何內容後，
+> **務必同步更新這 4 個 `<script>` 標籤的 `?v=` 版本號**（比照 CDN 的 `?cb=` 慣例），
+> 否則瀏覽器（尤其手機 Safari）或 GitHub Pages 邊緣 CDN 可能沿用舊版快取，
+> 導致「畫面（HTML）已更新、但實際執行邏輯仍是舊版」的不一致現象（例如設定頁選項已改變，
+> 但實際查詢行為看起來像沒套用新設定）。若懷疑遇到此情形，可請使用者先強制重新整理
+> （iOS Safari：長按重新整理鈕選「重新載入無快取內容的網頁」）排除快取因素再回報問題。
+
 ## 本地開發/預覽
 
 任何靜態檔案伺服器皆可，例如：
@@ -36,7 +44,7 @@ python -m http.server 8765
 | 總覽 | 資產／負債／淨資產 KPI、負債比、各資產子項目金額與佔比條 |
 | 再平衡 | 曝險金額／曝險比、資金再平衡率設定、買入/賣出建議金額 |
 | 明細 | 分類彙總、逐筆資料表格（新增/編輯/刪除）、CSV 匯入/匯出 |
-| 設定 | 顯示單位（元/萬元）、股價資料來源（台股/美股 provider）、清除本地資料 |
+| 設定 | 子分頁：系統（顯示單位、股價資料來源）／帳戶（幣別、資產類別、帳戶項目）／備份（CSV 匯出入、清除本地資料） |
 
 ### 資料欄位（明細）
 
@@ -58,6 +66,10 @@ python -m http.server 8765
   選擇 Yahoo Finance 時，另需於「CORS Proxy 提供者」選擇轉發服務：`corsproxy.io`、`api.allorigins.win`、
   `thingproxy.freeboard.io`（皆為第三方免費服務，可能隨時限流或關閉，穩定性無法保證），或填入「自訂 Proxy URL」
   使用自建的 proxy（例如自建 Cloudflare Workers，見 [`docs/cloudflare-worker-proxy-佈建手冊.md`](docs/cloudflare-worker-proxy-佈建手冊.md)）。
+
+  > **已知現況**：`corsproxy.io` 目前已改為需付費 API Key，匿名用法會回應 `401 A valid API key is required`。
+  > 若查詢持續失敗，請優先改選 `thingproxy.freeboard.io` 或 `api.allorigins.win`，或改用免 proxy 的
+  > `TWSE OpenAPI`（台股）/ `Finnhub`（美股）選項。
 
 於「帳戶」頁可按「同步匯率」「同步價格」按鈕依上述設定一次更新，查詢失敗時請改回手動輸入。
 
