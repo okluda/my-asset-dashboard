@@ -612,18 +612,61 @@
       </div>
 
       <div class="card">
-        <div class="section-title">資料來源自動更新</div>
+        <div class="section-title">股價資料來源</div>
         <div class="form-row">
-          <label>自動抓取即時匯率（Frankfurter）</label>
-          <input type="checkbox" v-model="settings.autoFx" />
+          <label>台股報價來源</label>
+          <select v-model="settings.stockProviderTW">
+            <option value="twse">TWSE OpenAPI（官方、免 proxy，當日快照）</option>
+            <option value="yahooProxy">Yahoo Finance（需 CORS proxy，準即時）</option>
+            <option value="manual">手動輸入（不自動查詢）</option>
+          </select>
         </div>
         <div class="form-row">
-          <label>自動抓取股票市值（best-effort，可能失敗）</label>
-          <input type="checkbox" v-model="settings.autoStock" />
+          <label>美股報價來源</label>
+          <select v-model="settings.stockProviderUS">
+            <option value="finnhub">Finnhub（需自行申請 API Key）</option>
+            <option value="yahooProxy">Yahoo Finance（需 CORS proxy，準即時）</option>
+            <option value="manual">手動輸入（不自動查詢）</option>
+          </select>
         </div>
+        <template v-if="settings.stockProviderUS === 'finnhub'">
+          <div class="form-row">
+            <label>Finnhub API Key</label>
+            <input type="text" v-model="settings.finnhubApiKey" placeholder="於 finnhub.io 免費申請後填入" />
+          </div>
+          <div class="empty-hint" style="text-align:left">
+            請至 <a href="https://finnhub.io/register" target="_blank" rel="noopener">finnhub.io</a> 免費註冊取得 API Key，貼上即可使用；
+            免費層限制每分鐘 60 次查詢，帳戶數量多時請留意查詢速率。Key 僅存於本機瀏覽器，不會上傳。
+          </div>
+        </template>
+        <template v-if="settings.stockProviderTW === 'yahooProxy' || settings.stockProviderUS === 'yahooProxy'">
+          <div class="form-row">
+            <label>CORS Proxy 提供者</label>
+            <select v-model="settings.stockProxyProvider">
+              <option value="corsproxy">corsproxy.io</option>
+              <option value="allorigins">api.allorigins.win</option>
+              <option value="thingproxy">thingproxy.freeboard.io</option>
+              <option value="custom">自訂（自建 Cloudflare Workers 等）</option>
+            </select>
+          </div>
+          <template v-if="settings.stockProxyProvider === 'custom'">
+            <div class="form-row">
+              <label>自訂 Proxy URL</label>
+              <input type="text" v-model="settings.customProxyUrl" placeholder="例：https://your-worker.example.workers.dev/?url=" />
+            </div>
+            <div class="empty-hint" style="text-align:left">
+              可填「前綴字串」（直接在後方附加目標網址）或含 <code>{url}</code> 佔位字的樣板（會替換成編碼後的目標網址）。
+              自建教學請見 docs/cloudflare-worker-proxy-佈建手冊.md。
+            </div>
+          </template>
+          <div class="empty-hint" style="text-align:left">
+            公開 CORS proxy（corsproxy.io / allorigins.win / thingproxy.freeboard.io）皆為第三方免費服務，
+            可能隨時限流或關閉，穩定性無法保證；建議長期使用者改用自建 Cloudflare Workers 或申請 Finnhub Key。
+          </div>
+        </template>
         <div class="empty-hint" style="text-align:left">
-          預設為手動輸入。於「設定 &gt; 帳戶」的「同步價格」按鈕可一次更新所有帳戶/項目的價格（投資取即時市價）；
-          股價來源非官方 API，若查詢失敗請改回手動輸入。內部網路無法連外時更新會失敗，屬正常現象。
+          預設為手動輸入。於「設定 &gt; 帳戶」的「同步價格」按鈕可一次更新所有帳戶/項目的價格（投資取即時市價），
+          查詢失敗請改回手動輸入。內部網路無法連外時更新會失敗，屬正常現象。
         </div>
       </div>
 
