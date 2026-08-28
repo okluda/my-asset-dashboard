@@ -254,20 +254,18 @@ select, input, button {
   margin-bottom: 10px;
 }
 
-.field-stack select {
+.field-stack select,
+.field-stack input {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
-/* 綠框膠囊標籤：獨立一行顯示欄位名稱，寬度依文字內容自動，不撐滿版面 */
+/* 欄位堆疊版面的標籤：比照 .form-row label 的樣式（灰色純文字），
+   僅版面上獨立一行顯示，不做膠囊/邊框裝飾，與其他卡片的標籤風格一致 */
 .field-chip-label {
-  display: inline-block;
-  align-self: flex-start;
-  border: 1px solid var(--accent-2);
-  color: var(--accent-2);
-  border-radius: 999px;
-  padding: 2px 10px;
-  font-size: calc(13px * var(--font-scale, 1));
-  font-weight: 600;
+  color: var(--text-sub);
+  font-size: calc(14px * var(--font-scale, 1));
 }
 
 /* ---------- 設定：外觀主題配色選色器 ---------- */

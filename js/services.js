@@ -6,7 +6,7 @@
  * 匯率來源：open.er-api.com（免金鑰、支援新台幣 TWD、支援瀏覽器 CORS）。
  *
  * 股價來源依「設定 > 股價資料來源」分別為台股／美股選擇 provider：
- *   - 台股：TWSE OpenAPI（官方、原生支援 CORS、免 proxy，但為當日週期性快照非逐筆即時）
+ *   - 台股：TWSE OpenAPI（當日週期性快照非逐筆即時；實測不支援瀏覽器 CORS，仍需經 CORS Proxy 轉發）
  *           或 Yahoo Finance（經 CORS proxy 轉發，準即時但需依賴第三方 proxy 穩定性）
  *   - 美股：Finnhub（免費層，需使用者自行申請 API Key，原生支援 CORS）
  *           或 Yahoo Finance（同上，經 CORS proxy 轉發）
@@ -114,32 +114,37 @@ const ALD_SERVICE = (() => {
     }
   }
 
-  // 台股來源：TWSE OpenAPI（openapi.twse.com.tw），官方原生支援 CORS，免 proxy。
+  // 台股來源：TWSE OpenAPI（openapi.twse.com.tw）。
+  // 注意：實測確認此端點的回應「沒有」Access-Control-Allow-Origin 標頭，
+  // 瀏覽器端無法直接跨網域 fetch（並非官方文件所述原生支援 CORS），
+  // 因此仍需與 Yahoo Finance 路徑一樣經由 buildProxyUrl 轉發的 CORS Proxy 才能查詢。
   // 一次回傳「當日全部上市股票」收盤價快照（非逐筆即時，屬盤中週期性更新），
   // 呼叫端應在同一批次同步時共用同一份清單（透過 cache 參數），避免重複下載整份清單。
   const TWSE_STOCK_DAY_ALL_URL = "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL";
 
-  async function loadTwseDailyList() {
+  async function loadTwseDailyList(settings) {
+    let proxied = "";
     let responseText = "";
     try {
-      const res = await fetch(TWSE_STOCK_DAY_ALL_URL);
+      proxied = buildProxyUrl(TWSE_STOCK_DAY_ALL_URL, settings);
+      const res = await fetch(proxied);
       responseText = await res.text();
       if (!res.ok) throw new Error("TWSE 股價清單查詢失敗 (" + res.status + ")");
       const data = JSON.parse(responseText);
       if (!Array.isArray(data)) throw new Error("TWSE 股價清單格式異常");
-      return { list: data, requestUrl: TWSE_STOCK_DAY_ALL_URL, responseText };
+      return { list: data, requestUrl: proxied, responseText };
     } catch (e) {
-      e.requestUrl = TWSE_STOCK_DAY_ALL_URL;
+      e.requestUrl = proxied;
       e.responseText = responseText;
       throw e;
     }
   }
 
-  async function fetchStockPriceTWSE(symbol, cache) {
+  async function fetchStockPriceTWSE(symbol, cache, settings) {
     const code = symbol.replace(/\.(TW|TWO)$/i, "");
     if (!cache) throw new Error("缺少 TWSE 股價清單快取");
     if (!cache.promise) {
-      cache.promise = loadTwseDailyList();
+      cache.promise = loadTwseDailyList(settings);
     }
     const { list, requestUrl, responseText } = await cache.promise;
     const row = list.find((r) => r && r.Code === code);
@@ -185,7 +190,7 @@ const ALD_SERVICE = (() => {
       : (settings && settings.stockProviderUS) || "manual";
 
     if (provider === "manual") return SKIP_MANUAL;
-    if (isTW && provider === "twse") return fetchStockPriceTWSE(symbol, cache || {});
+    if (isTW && provider === "twse") return fetchStockPriceTWSE(symbol, cache || {}, settings);
     if (!isTW && provider === "finnhub") {
       return fetchStockPriceFinnhub(symbol, settings && settings.finnhubApiKey);
     }
