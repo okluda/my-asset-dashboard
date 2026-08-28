@@ -244,6 +244,32 @@ select, input, button {
   font-size: calc(14px * var(--font-scale, 1));
 }
 
+/* ---------- 欄位堆疊版面（標籤獨立一行 + 下方滿版控制項） ----------
+   用於選項文字較長（如「股價資料來源」的下拉選單）、side-by-side 版面會被
+   撐開超出畫面寬度、或標籤因被壓縮到極窄而逐字換行的欄位。 */
+.field-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.field-stack select {
+  width: 100%;
+}
+
+/* 綠框膠囊標籤：獨立一行顯示欄位名稱，寬度依文字內容自動，不撐滿版面 */
+.field-chip-label {
+  display: inline-block;
+  align-self: flex-start;
+  border: 1px solid var(--accent-2);
+  color: var(--accent-2);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: calc(13px * var(--font-scale, 1));
+  font-weight: 600;
+}
+
 /* ---------- 設定：外觀主題配色選色器 ---------- */
 .theme-swatch-row {
   display: flex;
@@ -579,6 +605,10 @@ table.detail-table input, table.detail-table select {
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
   border: 1px solid var(--border);
   z-index: 20;
+  /* 強制獨立合成層：緩解 iOS Safari 網址列收合/展開動畫期間，
+     position:fixed 元素短暫跳動到畫面中間再歸位的已知現象。 */
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 /* 明細浮動捲動鈕：獨立浮動於左下、選單條上方；正圓、透明底、邊框隨深/淺色模式變化 */
@@ -604,6 +634,9 @@ table.detail-table input, table.detail-table select {
   line-height: 1;
   letter-spacing: -1px;
   z-index: 21;
+  /* 理由同 .tab-bar：強制獨立合成層，緩解捲動時的跳動 */
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 .scroll-fab:active {

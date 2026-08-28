@@ -545,6 +545,11 @@
           :class="{ active: settingsTab === 'account' }"
           @click="settingsTab = 'account'"
         >帳戶</button>
+        <button
+          class="subtab-btn"
+          :class="{ active: settingsTab === 'data' }"
+          @click="settingsTab = 'data'"
+        >備份</button>
       </div>
 
       <!-- ===== 系統子分頁 ===== -->
@@ -613,16 +618,16 @@
 
       <div class="card">
         <div class="section-title">股價資料來源</div>
-        <div class="form-row">
-          <label>台股報價來源</label>
+        <div class="field-stack">
+          <span class="field-chip-label">台股報價來源</span>
           <select v-model="settings.stockProviderTW">
             <option value="twse">TWSE OpenAPI（官方、免 proxy，當日快照）</option>
             <option value="yahooProxy">Yahoo Finance（需 CORS proxy，準即時）</option>
             <option value="manual">手動輸入（不自動查詢）</option>
           </select>
         </div>
-        <div class="form-row">
-          <label>美股報價來源</label>
+        <div class="field-stack">
+          <span class="field-chip-label">美股報價來源</span>
           <select v-model="settings.stockProviderUS">
             <option value="finnhub">Finnhub（需自行申請 API Key）</option>
             <option value="yahooProxy">Yahoo Finance（需 CORS proxy，準即時）</option>
@@ -640,8 +645,8 @@
           </div>
         </template>
         <template v-if="settings.stockProviderTW === 'yahooProxy' || settings.stockProviderUS === 'yahooProxy'">
-          <div class="form-row">
-            <label>CORS Proxy 提供者</label>
+          <div class="field-stack">
+            <span class="field-chip-label">CORS Proxy 提供者</span>
             <select v-model="settings.stockProxyProvider">
               <option value="corsproxy">corsproxy.io</option>
               <option value="allorigins">api.allorigins.win</option>
@@ -661,7 +666,9 @@
           </template>
           <div class="empty-hint" style="text-align:left">
             公開 CORS proxy（corsproxy.io / allorigins.win / thingproxy.freeboard.io）皆為第三方免費服務，
-            可能隨時限流或關閉，穩定性無法保證；建議長期使用者改用自建 Cloudflare Workers 或申請 Finnhub Key。
+            可能隨時限流或關閉，穩定性無法保證；<strong>corsproxy.io 目前已改為需付費 API Key</strong>，
+            匿名用法會回應 401 錯誤，建議優先改選 thingproxy.freeboard.io、allorigins.win，
+            或改用「台股 = TWSE OpenAPI」「美股 = Finnhub」等免 proxy 選項，長期使用建議改用自建 Cloudflare Workers。
           </div>
         </template>
         <div class="empty-hint" style="text-align:left">
@@ -669,7 +676,10 @@
           查詢失敗請改回手動輸入。內部網路無法連外時更新會失敗，屬正常現象。
         </div>
       </div>
+      </template>
 
+      <!-- ===== 備份子分頁 ===== -->
+      <template v-else-if="settingsTab === 'data'">
       <div class="card">
         <div class="section-title">資料管理</div>
         <div class="toolbar">
@@ -828,9 +838,12 @@
   <!-- PapaParse：處理 CSV 匯入/匯出 -->
   <script src="https://unpkg.com/papaparse@5/papaparse.min.js?cb=20260818" crossorigin="anonymous" onerror="window.__cdnLoadError && window.__cdnLoadError('PapaParse')"></script>
 
-  <script src="js/store.js"></script>
-  <script src="js/db.js"></script>
-  <script src="js/services.js"></script>
-  <script src="js/app.js"></script>
+  <!-- 本地程式檔（store/db/services/app）：?v= 為快取破壞參數，比照上方 CDN 的 ?cb= 慣例。
+       修改這 4 個檔案任何內容後，務必同步更新此版本號，避免瀏覽器/CDN 快取舊版程式碼，
+       導致「畫面（index.html）看起來是新版、但實際執行邏輯是舊版」的不一致問題。 -->
+  <script src="js/store.js?v=20260829"></script>
+  <script src="js/db.js?v=20260829"></script>
+  <script src="js/services.js?v=20260829"></script>
+  <script src="js/app.js?v=20260829"></script>
 </body>
 </html>
