@@ -268,6 +268,39 @@ select, input, button {
   font-size: calc(14px * var(--font-scale, 1));
 }
 
+/* ---------- 連線測試中心：警告提示與測試結果顯示 ---------- */
+.field-warning {
+  color: var(--warn);
+}
+
+.test-result {
+  margin-top: 10px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--card-bg-2);
+  font-size: calc(13px * var(--font-scale, 1));
+  line-height: 1.6;
+  word-break: break-all;
+}
+
+.test-result.ok {
+  border-color: var(--accent-2);
+}
+
+.test-result.fail {
+  border-color: var(--danger);
+}
+
+.test-preview {
+  margin-top: 6px;
+  color: var(--text-sub);
+  white-space: pre-wrap;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
 /* ---------- 設定：外觀主題配色選色器 ---------- */
 .theme-swatch-row {
   display: flex;
