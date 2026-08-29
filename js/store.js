@@ -15,15 +15,23 @@ const ALD = (() => {
   const DEFAULT_SETTINGS = {
     unit: "yuan", // 'yuan' = 元, 'wan' = 萬元
     baseCurrency: "TWD",
-    // 股價資料來源（見 js/services.js）：
-    //   台股 stockProviderTW：'twse'（官方 OpenAPI，實測仍需 proxy，預設） | 'yahooProxy' | 'manual'（略過自動查詢）
-    //   美股 stockProviderUS：'finnhub'（需自行申請 API Key） | 'yahooProxy' | 'manual'（預設，因需自行申請 Key）
+    // 股價資料來源（見 js/services.js）：Provider / Connection / Proxy 互相解耦，
+    // 不內建任何公開 CORS proxy，僅使用使用者自行配置的 proxyUrlTW/US（如自建 Cloudflare Workers）。
+    //   台股 stockProviderTW：'twse'（官方 OpenAPI，預設） | 'yahoo' | 'custom' | 'manual'（略過自動查詢）
+    //   美股 stockProviderUS：'finnhub'（需自行申請 API Key） | 'yahoo' | 'custom' | 'manual'（預設）
+    //   connectionModeTW/US：'direct'（瀏覽器直接連線） | 'proxy'（經 proxyUrlTW/US 轉發）
+    //     台股 TWSE OpenAPI 官方端點實測不支援瀏覽器 CORS，預設須經 proxy 才能查詢。
     stockProviderTW: "twse",
     stockProviderUS: "manual",
+    connectionModeTW: "proxy",
+    connectionModeUS: "direct",
+    proxyUrlTW: "", // connectionModeTW === 'proxy' 時使用，格式如 https://example.workers.dev/?url={url}
+    proxyUrlUS: "", // connectionModeUS === 'proxy' 時使用，格式同上
+    customStockApiTW: "", // stockProviderTW === 'custom' 時使用，URL 樣板，含 {symbol} 佔位字
+    customStockApiUS: "", // stockProviderUS === 'custom' 時使用，同上
+    customPricePathTW: "", // stockProviderTW === 'custom' 時使用，JSON Path，如 data.quote.close
+    customPricePathUS: "", // stockProviderUS === 'custom' 時使用，同上
     finnhubApiKey: "", // 美股 provider 為 'finnhub' 時使用，存於本機瀏覽器，不會上傳
-    // CORS proxy 提供者（stockProviderTW/US 任一為 'yahooProxy' 時生效）
-    stockProxyProvider: "corsproxy", // 'corsproxy' | 'allorigins' | 'thingproxy' | 'custom'
-    customProxyUrl: "", // stockProxyProvider === 'custom' 時使用，見設定頁說明或 docs/cloudflare-worker-proxy-佈建手冊.md
     rebalanceRatio: 70, // 再平衡：投資目標佔比(%)，預設 70% -> 流動:投資 = 3:7
     lastTab: "overview", // 上次所在主分頁（overview/rebalance/detail/settings），重新整理後用於還原
     syncLogEnabled: false, // 是否記錄「同步價格/匯率」的詳細執行資訊（含 API 請求/回應內容），預設關閉
@@ -549,17 +557,33 @@ const ALD = (() => {
     });
   }
 
-  // ---------- 同步記錄（同步價格/匯率的執行記錄） ----------
-  // 保留上限：僅保留最近 50 筆，避免 IndexedDB 無限成長。
-  const SYNC_LOG_MAX = 50;
+  // ---------- 同步記錄（同步價格/匯率/連線測試的執行記錄，沿用既有 syncLogs store，不新增 store） ----------
+  // 保留上限：僅保留最近 500 筆，避免 IndexedDB 無限成長。
+  const SYNC_LOG_MAX = 500;
+  // 單筆記錄的 responseText preview 上限（字元數）；js/services.js 的 requestRaw 已先行截斷，
+  // 這裡再次防禦性裁切，避免任何非經 services.js 產生的記錄（例如未來擴充）超出上限。
+  const SYNC_LOG_PREVIEW_MAX = 5000;
+  // 所有記錄的 responseText 總字元數上限；超過時從最舊的記錄開始移除，直到符合上限為止
+  // （即使尚未達到 SYNC_LOG_MAX 筆數上限也會提前裁減，兩個上限同時生效）。
+  const SYNC_LOG_TOTAL_PREVIEW_MAX = 500000;
 
   // 附加一筆同步記錄（假設呼叫端依時間順序附加在陣列尾端＝最新）；
-  // 超過上限時從陣列開頭（最舊）裁掉多餘筆數，維持固定上限。
+  // entry.logKind：'sync'（正式同步） | 'connectionTest'（連線測試中心），呼叫端未提供時預設 'sync'。
+  // 超過筆數上限時從陣列開頭（最舊）裁掉多餘筆數；超過總 preview 字數上限時同樣從最舊開始移除。
   function appendSyncLog(logs, entry) {
     if (!Array.isArray(logs)) return;
-    logs.push(entry);
+    const capped = Object.assign({}, entry, { logKind: (entry && entry.logKind) || "sync" });
+    if (typeof capped.responseText === "string" && capped.responseText.length > SYNC_LOG_PREVIEW_MAX) {
+      capped.responseText = capped.responseText.slice(0, SYNC_LOG_PREVIEW_MAX) + "…（已截斷）";
+    }
+    logs.push(capped);
     const overflow = logs.length - SYNC_LOG_MAX;
     if (overflow > 0) logs.splice(0, overflow);
+    let total = logs.reduce((sum, l) => sum + (l.responseText ? l.responseText.length : 0), 0);
+    while (total > SYNC_LOG_TOTAL_PREVIEW_MAX && logs.length > 0) {
+      const removed = logs.shift();
+      total -= removed.responseText ? removed.responseText.length : 0;
+    }
   }
 
   // 匯出同步記錄為 JSON（內容含完整 API 請求 URL 與回應內容全文，適合結構化保留，不適合 CSV）。
@@ -621,6 +645,8 @@ const ALD = (() => {
     appendSyncLog,
     exportSyncLogsJSON,
     SYNC_LOG_MAX,
+    SYNC_LOG_PREVIEW_MAX,
+    SYNC_LOG_TOTAL_PREVIEW_MAX,
     emptyRecord,
     uid,
     todayStr,

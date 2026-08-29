@@ -21,10 +21,36 @@ const { createApp, reactive, computed, watch, ref, onMounted, onUnmounted, nextT
 
 // ---------- IndexedDB 初始化輔助（階段二：App 正式資料來源改為 IndexedDB） ----------
 
+// 舊版股價來源設定 → 新版 Provider/Connection 解耦架構 的遷移規則：
+//   - 舊 stockProviderTW/US === 'yahooProxy' → provider = 'yahoo'，connection 補為 'proxy'
+//   - 舊 customProxyUrl（單一欄位，台美共用）→ 分別種入 proxyUrlTW / proxyUrlUS（尚未設定時才填入）
+//   - 舊 stockProxyProvider（公開 proxy 選擇：corsproxy/allorigins/thingproxy）不保留，
+//     因本次移除所有內建公開 CORS proxy；但保留「proxy 模式」本身（見上一點的 connectionMode 補值）
+// 僅在讀到舊版 raw 設定時才動作，全新使用者（raw 為 null）不受影響。
+function migrateLegacySettings(raw) {
+  if (!raw) return raw;
+  const s = { ...raw };
+  ["TW", "US"].forEach((mkt) => {
+    const providerKey = "stockProvider" + mkt;
+    const connKey = "connectionMode" + mkt;
+    if (s[providerKey] === "yahooProxy") {
+      s[providerKey] = "yahoo";
+      if (!s[connKey]) s[connKey] = "proxy";
+    }
+    const proxyUrlKey = "proxyUrl" + mkt;
+    if (s.customProxyUrl && !s[proxyUrlKey]) {
+      s[proxyUrlKey] = s.customProxyUrl;
+    }
+  });
+  delete s.customProxyUrl;
+  delete s.stockProxyProvider;
+  return s;
+}
+
 // settings 合併規則：確保 IndexedDB 讀到的 settings 缺少新欄位時，仍套用目前的預設值
 // 與正規化規則（與 ALD.DEFAULT_SETTINGS / ALD.normalizeCurrencies 的定義保持一致）。
 function mergeSettings(raw) {
-  const s = { ...ALD.DEFAULT_SETTINGS, ...(raw || {}) };
+  const s = { ...ALD.DEFAULT_SETTINGS, ...migrateLegacySettings(raw) };
   ALD.normalizeCurrencies(s);
   return s;
 }
@@ -766,14 +792,19 @@ const TabSettings = {
       }
     }
 
-    // 記錄一筆同步執行資訊（僅在 settings.syncLogEnabled 開啟時才寫入，避免預設就累積資料）。
-    // syncType：'fxRate' | 'stockPrice'；target：幣別代碼或帳戶/項目名稱。
-    function recordSyncLog(syncType, target, success, errorMessage, requestUrl, responseText) {
-      if (!settings.syncLogEnabled) return;
+    // 記錄一筆同步執行資訊（僅在 settings.syncLogEnabled 開啟時才寫入，避免預設就累積資料；
+    // 但 logKind === 'connectionTest' 時一律寫入，因為那是使用者於「連線測試中心」明確觸發的
+    // 診斷動作，需要保留結果供排查，不受一般同步記錄開關影響）。
+    // syncType：'fxRate' | 'stockPrice' | 'endpoint'；target：幣別代碼或帳戶/項目名稱或測試網址。
+    // logKind：'sync'（預設，正式同步） | 'connectionTest'（連線測試中心）。
+    function recordSyncLog(syncType, target, success, errorMessage, requestUrl, responseText, logKind) {
+      const kind = logKind || "sync";
+      if (!settings.syncLogEnabled && kind !== "connectionTest") return;
       ALD.appendSyncLog(syncLogs, {
         id: ALD.uid(),
         timestamp: new Date().toISOString(),
         syncType,
+        logKind: kind,
         target: target || "",
         success: !!success,
         errorMessage: success ? "" : String(errorMessage || ""),
@@ -988,6 +1019,95 @@ const TabSettings = {
       }
     }
 
+    // ---------- 連線測試中心 ----------
+    // 與正式「同步價格」共用同一個 request executor（ALD_SERVICE.testMarketConfig /
+    // testEndpoint 內部皆呼叫與 fetchStockPrice 相同的底層 requestRaw/executeRequestForUrl）。
+    // 僅用於診斷，測試過程「不會」更新 acc.price 或任何明細資料；結果一律為真實請求結果，不假造成功。
+    const testingTW = ref(false);
+    const testingUS = ref(false);
+    const testResultTW = ref(null);
+    const testResultUS = ref(null);
+    const testSymbolTW = ref("2330.TW");
+    const testSymbolUS = ref("AAPL");
+
+    const testEndpointUrl = ref("");
+    const testEndpointConnection = ref("direct");
+    const testEndpointProxyUrl = ref("");
+    const testEndpointPricePath = ref("");
+    const testingEndpoint = ref(false);
+    const testEndpointResult = ref(null);
+
+    async function testMarketConfigTW() {
+      if (testingTW.value) return;
+      testingTW.value = true;
+      try {
+        const result = await ALD_SERVICE.testMarketConfig("TW", settings, testSymbolTW.value);
+        testResultTW.value = result;
+        recordSyncLog(
+          "stockPrice",
+          testSymbolTW.value || "(台股設定測試)",
+          result.ok,
+          result.errorMessage,
+          result.requestUrl,
+          result.responseText,
+          "connectionTest"
+        );
+      } catch (e) {
+        reportError("台股設定測試失敗：", e);
+      } finally {
+        testingTW.value = false;
+      }
+    }
+
+    async function testMarketConfigUS() {
+      if (testingUS.value) return;
+      testingUS.value = true;
+      try {
+        const result = await ALD_SERVICE.testMarketConfig("US", settings, testSymbolUS.value);
+        testResultUS.value = result;
+        recordSyncLog(
+          "stockPrice",
+          testSymbolUS.value || "(美股設定測試)",
+          result.ok,
+          result.errorMessage,
+          result.requestUrl,
+          result.responseText,
+          "connectionTest"
+        );
+      } catch (e) {
+        reportError("美股設定測試失敗：", e);
+      } finally {
+        testingUS.value = false;
+      }
+    }
+
+    async function runTestEndpoint() {
+      if (testingEndpoint.value) return;
+      testingEndpoint.value = true;
+      try {
+        const result = await ALD_SERVICE.testEndpoint({
+          url: testEndpointUrl.value,
+          connection: testEndpointConnection.value,
+          proxyUrl: testEndpointProxyUrl.value,
+          pricePath: testEndpointPricePath.value,
+        });
+        testEndpointResult.value = result;
+        recordSyncLog(
+          "endpoint",
+          testEndpointUrl.value || "(任意 Endpoint 測試)",
+          result.ok,
+          result.errorMessage,
+          result.requestUrl,
+          result.responseText,
+          "connectionTest"
+        );
+      } catch (e) {
+        reportError("Endpoint 測試失敗：", e);
+      } finally {
+        testingEndpoint.value = false;
+      }
+    }
+
     function exportCsv() {
       try {
         ALD.exportCSV(store.records, store.settings);
@@ -1103,6 +1223,21 @@ const TabSettings = {
       exportAccountsCsv,
       importAccountsCsv,
       syncPrices,
+      testingTW,
+      testingUS,
+      testResultTW,
+      testResultUS,
+      testSymbolTW,
+      testSymbolUS,
+      testMarketConfigTW,
+      testMarketConfigUS,
+      testEndpointUrl,
+      testEndpointConnection,
+      testEndpointProxyUrl,
+      testEndpointPricePath,
+      testingEndpoint,
+      testEndpointResult,
+      runTestEndpoint,
       exportSyncLogs,
       clearSyncLogs,
       exportCsv,
