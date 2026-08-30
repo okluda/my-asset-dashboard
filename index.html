@@ -9,7 +9,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="theme-color" content="#1c1c2e" />
   <title>fishbubble</title>
-  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/style.css?v=20260901" />
 </head>
 <body>
   <!-- 錯誤顯示橫幅：手機上沒有開發者工具可看 console，發生例外時直接顯示在畫面上。
@@ -458,6 +458,13 @@
                 </div>
               </div>
               <div class="rec-field">
+                <label>帳戶/項目</label>
+                <select v-model="rec.account" @change="onAccountChange(rec)">
+                  <option value="">（請選擇）</option>
+                  <option v-for="a in accountOptions(rec)" :key="a" :value="a">{{ a }}</option>
+                </select>
+              </div>
+              <div class="rec-field">
                 <label>金額</label>
                 <input type="text" :value="num(money(rec))" readonly />
               </div>
@@ -468,13 +475,6 @@
                 <label>類別</label>
                 <select v-model="rec.type" @change="onTypeChange(rec)">
                   <option v-for="t in types" :key="t" :value="t">{{ catName(t) }}</option>
-                </select>
-              </div>
-                <div class="rec-field">
-                <label>帳戶/項目</label>
-                <select v-model="rec.account" @change="onAccountChange(rec)">
-                  <option value="">（請選擇）</option>
-                  <option v-for="a in accountOptions(rec)" :key="a" :value="a">{{ a }}</option>
                 </select>
               </div>
               <div class="rec-field">
@@ -496,10 +496,6 @@
 
             <div class="rec-row">
               <div class="rec-field">
-                <label>單位</label>
-                <input type="number" v-model.number="rec.units" @change="recalc(rec)" />
-              </div>
-              <div class="rec-field">
                 <label>幣別</label>
                 <select v-model="rec.currency" @change="onCurrencyChange(rec)">
                   <option v-for="c in currencyOptions" :key="c" :value="c">{{ c }}</option>
@@ -508,6 +504,10 @@
               <div class="rec-field">
                 <label>匯率</label>
                 <input type="number" :value="rec.fxRate" readonly />
+              </div>
+              <div class="rec-field">
+                <label>單位</label>
+                <input type="number" v-model.number="rec.units" @change="recalc(rec)" />
               </div>
             </div>
 
@@ -545,6 +545,16 @@
           :class="{ active: settingsTab === 'account' }"
           @click="settingsTab = 'account'"
         >帳戶</button>
+        <button
+          class="subtab-btn"
+          :class="{ active: settingsTab === 'data' }"
+          @click="settingsTab = 'data'"
+        >備份</button>
+        <button
+          class="subtab-btn"
+          :class="{ active: settingsTab === 'test' }"
+          @click="settingsTab = 'test'"
+        >連線測試</button>
       </div>
 
       <!-- ===== 系統子分頁 ===== -->
@@ -612,21 +622,193 @@
       </div>
 
       <div class="card">
-        <div class="section-title">資料來源自動更新</div>
-        <div class="form-row">
-          <label>自動抓取即時匯率（Frankfurter）</label>
-          <input type="checkbox" v-model="settings.autoFx" />
+        <div class="section-title">股價資料來源（台股）</div>
+        <div class="field-stack">
+          <span class="field-chip-label">台股 Provider</span>
+          <select v-model="settings.stockProviderTW">
+            <option value="twse">TWSE OpenAPI（官方，快照）</option>
+            <option value="yahoo">Yahoo Finance</option>
+            <option value="custom">自訂 API</option>
+            <option value="manual">手動輸入</option>
+          </select>
         </div>
-        <div class="form-row">
-          <label>自動抓取股票市值（best-effort，可能失敗）</label>
-          <input type="checkbox" v-model="settings.autoStock" />
-        </div>
+        <template v-if="settings.stockProviderTW !== 'manual'">
+          <div class="field-stack">
+            <span class="field-chip-label">連線模式</span>
+            <select v-model="settings.connectionModeTW">
+              <option value="direct">直接連線</option>
+              <option value="proxy">經 Proxy 轉發</option>
+            </select>
+          </div>
+          <div class="empty-hint field-warning" style="text-align:left" v-if="settings.stockProviderTW === 'twse' && settings.connectionModeTW === 'direct'">
+            ⚠️ TWSE OpenAPI 官方端點實測不支援瀏覽器跨網域請求（無 CORS 標頭），直接連線必定失敗，請改選「經 Proxy 轉發」。
+          </div>
+          <template v-if="settings.connectionModeTW === 'proxy'">
+            <div class="field-stack">
+              <span class="field-chip-label">Proxy URL</span>
+              <input type="text" v-model="settings.proxyUrlTW" placeholder="例：https://your-worker.example.workers.dev/?url={url}" />
+            </div>
+          </template>
+          <template v-if="settings.stockProviderTW === 'custom'">
+            <div class="field-stack">
+              <span class="field-chip-label">自訂 API URL</span>
+              <input type="text" v-model="settings.customStockApiTW" placeholder="例：https://example.com/api/quote?symbol={symbol}" />
+            </div>
+            <div class="field-stack">
+              <span class="field-chip-label">價格 JSON Path</span>
+              <input type="text" v-model="settings.customPricePathTW" placeholder="例：data.quote.close" />
+            </div>
+          </template>
+        </template>
         <div class="empty-hint" style="text-align:left">
-          預設為手動輸入。於「設定 &gt; 帳戶」的「同步價格」按鈕可一次更新所有帳戶/項目的價格（投資取即時市價）；
-          股價來源非官方 API，若查詢失敗請改回手動輸入。內部網路無法連外時更新會失敗，屬正常現象。
+          不內建任何公開 CORS proxy，需自行配置 Proxy URL（建議自建 Cloudflare Workers，
+          詳見 docs/cloudflare-worker-proxy-佈建手冊.md）。設定完成後請至「連線測試」子分頁驗證。
         </div>
       </div>
 
+      <div class="card">
+        <div class="section-title">股價資料來源（美股）</div>
+        <div class="field-stack">
+          <span class="field-chip-label">美股 Provider</span>
+          <select v-model="settings.stockProviderUS">
+            <option value="finnhub">Finnhub（需申請 Key）</option>
+            <option value="yahoo">Yahoo Finance</option>
+            <option value="custom">自訂 API</option>
+            <option value="manual">手動輸入</option>
+          </select>
+        </div>
+        <template v-if="settings.stockProviderUS === 'finnhub'">
+          <div class="field-stack">
+            <span class="field-chip-label">Finnhub API Key</span>
+            <input type="text" v-model="settings.finnhubApiKey" placeholder="於 finnhub.io 免費申請後填入" />
+          </div>
+          <div class="empty-hint" style="text-align:left">
+            請至 <a href="https://finnhub.io/register" target="_blank" rel="noopener">finnhub.io</a> 免費註冊取得 API Key，貼上即可使用；
+            免費層限制每分鐘 60 次查詢，帳戶數量多時請留意查詢速率。Key 僅存於本機瀏覽器，不會上傳，
+            且不會出現於畫面、Log 或匯出檔案中（一律顯示為 ******）。
+          </div>
+        </template>
+        <template v-if="settings.stockProviderUS !== 'manual'">
+          <div class="field-stack">
+            <span class="field-chip-label">連線模式</span>
+            <select v-model="settings.connectionModeUS">
+              <option value="direct">直接連線</option>
+              <option value="proxy">經 Proxy 轉發</option>
+            </select>
+          </div>
+          <template v-if="settings.connectionModeUS === 'proxy'">
+            <div class="field-stack">
+              <span class="field-chip-label">Proxy URL</span>
+              <input type="text" v-model="settings.proxyUrlUS" placeholder="例：https://your-worker.example.workers.dev/?url={url}" />
+            </div>
+          </template>
+          <template v-if="settings.stockProviderUS === 'custom'">
+            <div class="field-stack">
+              <span class="field-chip-label">自訂 API URL</span>
+              <input type="text" v-model="settings.customStockApiUS" placeholder="例：https://example.com/api/quote?symbol={symbol}" />
+            </div>
+            <div class="field-stack">
+              <span class="field-chip-label">價格 JSON Path</span>
+              <input type="text" v-model="settings.customPricePathUS" placeholder="例：chart.result.0.meta.regularMarketPrice" />
+            </div>
+          </template>
+        </template>
+        <div class="empty-hint" style="text-align:left">
+          預設為手動輸入。於「設定 &gt; 帳戶」的「同步價格」按鈕可一次更新所有帳戶/項目的價格（投資取即時市價），
+          查詢失敗請改回手動輸入。內部網路無法連外時更新會失敗，屬正常現象。
+        </div>
+      </div>
+      </template>
+
+      <!-- ===== 連線測試子分頁 ===== -->
+      <template v-else-if="settingsTab === 'test'">
+      <div class="card">
+        <div class="section-title">市場設定測試</div>
+        <div class="empty-hint" style="text-align:left">
+          依目前「系統」子分頁的台股/美股設定，實際發出一次請求驗證連線是否成功；僅供診斷，
+          不會更新任何帳戶價格或明細資料。
+        </div>
+        <div class="field-stack">
+          <span class="field-chip-label">台股測試代號</span>
+          <input type="text" v-model="testSymbolTW" placeholder="例：2330.TW" />
+        </div>
+        <div class="toolbar">
+          <button class="btn warn" @click="testMarketConfigTW" :disabled="testingTW">
+            {{ testingTW ? '測試中…' : '測試台股設定' }}
+          </button>
+        </div>
+        <div v-if="testResultTW" class="test-result" :class="{ ok: testResultTW.ok, fail: !testResultTW.ok }">
+          <div>Provider：{{ testResultTW.provider }}　Connection：{{ testResultTW.connection }}</div>
+          <div>Request URL：{{ testResultTW.requestUrl || '（無）' }}</div>
+          <div>HTTP Status：{{ testResultTW.httpStatus ?? '（無）' }}　Latency：{{ testResultTW.latencyMs }}ms</div>
+          <div v-if="testResultTW.ok">價格：{{ testResultTW.value }}</div>
+          <div v-else>Error Code：{{ testResultTW.errorCode }}　{{ testResultTW.errorMessage }}</div>
+          <div class="test-preview">Response Preview：{{ testResultTW.responseText || '（無）' }}</div>
+        </div>
+
+        <div class="field-stack">
+          <span class="field-chip-label">美股測試代號</span>
+          <input type="text" v-model="testSymbolUS" placeholder="例：AAPL" />
+        </div>
+        <div class="toolbar">
+          <button class="btn warn" @click="testMarketConfigUS" :disabled="testingUS">
+            {{ testingUS ? '測試中…' : '測試美股設定' }}
+          </button>
+        </div>
+        <div v-if="testResultUS" class="test-result" :class="{ ok: testResultUS.ok, fail: !testResultUS.ok }">
+          <div>Provider：{{ testResultUS.provider }}　Connection：{{ testResultUS.connection }}</div>
+          <div>Request URL：{{ testResultUS.requestUrl || '（無）' }}</div>
+          <div>HTTP Status：{{ testResultUS.httpStatus ?? '（無）' }}　Latency：{{ testResultUS.latencyMs }}ms</div>
+          <div v-if="testResultUS.ok">價格：{{ testResultUS.value }}</div>
+          <div v-else>Error Code：{{ testResultUS.errorCode }}　{{ testResultUS.errorMessage }}</div>
+          <div class="test-preview">Response Preview：{{ testResultUS.responseText || '（無）' }}</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">任意 Endpoint 測試</div>
+        <div class="empty-hint" style="text-align:left">
+          自行輸入任意網址測試連線（可選擇是否經 Proxy 轉發、選填 JSON Path 驗證解析），
+          僅供診斷，不會更新任何帳戶價格或明細資料。
+        </div>
+        <div class="field-stack">
+          <span class="field-chip-label">測試網址</span>
+          <input type="text" v-model="testEndpointUrl" placeholder="例：https://query1.finance.yahoo.com/v8/finance/chart/AAPL" />
+        </div>
+        <div class="field-stack">
+          <span class="field-chip-label">連線模式</span>
+          <select v-model="testEndpointConnection">
+            <option value="direct">直接連線</option>
+            <option value="proxy">經 Proxy 轉發</option>
+          </select>
+        </div>
+        <template v-if="testEndpointConnection === 'proxy'">
+          <div class="field-stack">
+            <span class="field-chip-label">Proxy URL</span>
+            <input type="text" v-model="testEndpointProxyUrl" placeholder="例：https://your-worker.example.workers.dev/?url={url}" />
+          </div>
+        </template>
+        <div class="field-stack">
+          <span class="field-chip-label">價格 JSON Path（選填）</span>
+          <input type="text" v-model="testEndpointPricePath" placeholder="例：chart.result.0.meta.regularMarketPrice" />
+        </div>
+        <div class="toolbar">
+          <button class="btn warn" @click="runTestEndpoint" :disabled="testingEndpoint">
+            {{ testingEndpoint ? '測試中…' : '測試 Endpoint' }}
+          </button>
+        </div>
+        <div v-if="testEndpointResult" class="test-result" :class="{ ok: testEndpointResult.ok, fail: !testEndpointResult.ok }">
+          <div>Request URL：{{ testEndpointResult.requestUrl || '（無）' }}</div>
+          <div>HTTP Status：{{ testEndpointResult.httpStatus ?? '（無）' }}　Latency：{{ testEndpointResult.latencyMs }}ms</div>
+          <div v-if="testEndpointPricePath">解析結果：{{ testEndpointResult.parsedValue ?? '（無）' }}</div>
+          <div v-if="!testEndpointResult.ok || testEndpointResult.errorCode">Error Code：{{ testEndpointResult.errorCode }}　{{ testEndpointResult.errorMessage }}</div>
+          <div class="test-preview">Response Preview：{{ testEndpointResult.responseText || '（無）' }}</div>
+        </div>
+      </div>
+      </template>
+
+      <!-- ===== 備份子分頁 ===== -->
+      <template v-else-if="settingsTab === 'data'">
       <div class="card">
         <div class="section-title">資料管理</div>
         <div class="toolbar">
@@ -644,7 +826,7 @@
           <button class="btn secondary" @click="$refs.accFileInput.click()">匯入帳戶設定</button>
           <input type="file" ref="accFileInput" accept=".csv" style="display:none" @change="importAccountsCsv" />
         </div>
-        <div class="empty-hint" style="text-align:left">所有資料僅儲存在本機瀏覽器 localStorage，清除瀏覽器資料或更換裝置/瀏覽器將會遺失，請定期使用「匯出 CSV」備份。匯入 CSV 與載入模擬資料皆為「附加」至現有資料。若一般清除無效或資料異常，可用「強制清除並重新載入」。iOS Safari 中「設定 > Safari > 清除瀏覽記錄與網站資料」或「清除 Cookie」也會一併清除本 App 的資料，請務必先備份再操作。</div>
+        <div class="empty-hint" style="text-align:left">所有資料僅儲存在目前瀏覽器的 IndexedDB，清除瀏覽器資料或更換裝置/瀏覽器將會遺失，請定期使用「匯出 CSV」備份。明細「匯入 CSV」與「載入模擬資料」皆為「附加」至現有資料，重複匯入會產生重複資料；若要用備份 CSV 還原改版前資料，建議先按「清除所有本地資料」清空後再匯入。帳戶/項目設定的「匯入帳戶設定」則是「取代」現有設定（匯入前會另外跳出確認）。若一般清除無效或資料異常，可用「強制清除並重新載入」。iOS Safari 中「設定 > Safari > 清除瀏覽記錄與網站資料」或「清除 Cookie」也會一併清除本 App 的資料，請務必先備份再操作。</div>
         <div class="empty-hint" style="text-align:left">Web Inspector 疑難排解：若畫面出現「Script error.」等看不到細節的錯誤，可用 Mac 連接 iPhone，於 iPhone「設定 > Safari > 進階」開啟「網頁檢閱器」，再於 Mac Safari「開發」選單中開啟本頁面即可看到完整錯誤堆疊。</div>
       </div>
       </template>
@@ -719,7 +901,7 @@
           </button>
         </div>
         <div v-if="accounts.length === 0" class="empty-hint">尚無帳戶/項目，點「＋新增帳戶/項目」開始</div>
-        <div class="acc-cfg-card" v-for="acc in accounts" :key="acc.id">
+        <div class="acc-cfg-card" v-for="(acc, idx) in accounts" :key="acc.id">
           <div class="acc-cfg-grid">
             <div class="rec-field">
               <label>類別</label>
@@ -741,8 +923,27 @@
             </div>
           </div>
           <div class="acc-cfg-actions">
+            <button class="btn small" @click="moveAccountUp(acc.id)" :disabled="idx === 0" aria-label="上移">↑</button>
+            <button class="btn small" @click="moveAccountDown(acc.id)" :disabled="idx === accounts.length - 1" aria-label="下移">↓</button>
             <button class="btn small danger" @click="removeAccount(acc.id)">刪除</button>
           </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">同步記錄</div>
+        <div class="form-row">
+          <label>記錄同步價格/匯率的詳細執行資訊（含 API 請求與回應內容）</label>
+          <input type="checkbox" v-model="settings.syncLogEnabled" />
+        </div>
+        <div class="toolbar">
+          <button class="btn secondary" @click="exportSyncLogs" :disabled="syncLogs.length === 0">匯出記錄（JSON）</button>
+          <button class="btn danger" @click="clearSyncLogs" :disabled="syncLogs.length === 0">清除記錄</button>
+        </div>
+        <div class="empty-hint" style="text-align:left">
+          目前筆數：{{ syncLogs.length }} / {{ syncLogMax }}（超過上限會自動捨棄最舊的記錄）。
+          開關預設關閉，僅在需要排查「同步價格」「同步匯率」失敗原因時再手動開啟；
+          記錄內容含完整 API 請求網址與回應內容，開啟後才會於每次同步時寫入。
         </div>
       </div>
 
@@ -766,8 +967,12 @@
   <!-- PapaParse：處理 CSV 匯入/匯出 -->
   <script src="https://unpkg.com/papaparse@5/papaparse.min.js?cb=20260818" crossorigin="anonymous" onerror="window.__cdnLoadError && window.__cdnLoadError('PapaParse')"></script>
 
-  <script src="js/store.js"></script>
-  <script src="js/services.js"></script>
-  <script src="js/app.js"></script>
+  <!-- 本地程式檔（store/db/services/app）：?v= 為快取破壞參數，比照上方 CDN 的 ?cb= 慣例。
+       修改這 4 個檔案任何內容後，務必同步更新此版本號，避免瀏覽器/CDN 快取舊版程式碼，
+       導致「畫面（index.html）看起來是新版、但實際執行邏輯是舊版」的不一致問題。 -->
+  <script src="js/store.js?v=20260901"></script>
+  <script src="js/db.js?v=20260901"></script>
+  <script src="js/services.js?v=20260901"></script>
+  <script src="js/app.js?v=20260901"></script>
 </body>
 </html>

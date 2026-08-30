@@ -1,7 +1,9 @@
 /*
  * app.js
- * Vue 3 應用進入點：定義共用 store（reactive，含 localStorage 自動存檔）、
+ * Vue 3 應用進入點：定義共用 store（reactive，含 IndexedDB 自動存檔，見 js/db.js 的 ALD_DB）、
  * 4 個分頁元件（總覽/再平衡/明細/設定），以及底部分頁列。
+ * 正式資料來源為 IndexedDB：App 啟動時透過 ALD_DB 讀取，並於 store 變更時 debounce 回寫；
+ * store.js 僅保留 schema 定義、CSV 匯入匯出與計算工具函式，不再負責任何資料持久化。
  */
 
 // 內部網路可能無法連到 unpkg.com，導致 Vue CDN 載入失敗。
@@ -17,33 +19,124 @@ if (typeof Vue === "undefined") {
 
 const { createApp, reactive, computed, watch, ref, onMounted, onUnmounted, nextTick } = Vue;
 
+// ---------- IndexedDB 初始化輔助（階段二：App 正式資料來源改為 IndexedDB） ----------
+
+// 舊版股價來源設定 → 新版 Provider/Connection 解耦架構 的遷移規則：
+//   - 舊 stockProviderTW/US === 'yahooProxy' → provider = 'yahoo'，connection 補為 'proxy'
+//   - 舊 customProxyUrl（單一欄位，台美共用）→ 分別種入 proxyUrlTW / proxyUrlUS（尚未設定時才填入）
+//   - 舊 stockProxyProvider（公開 proxy 選擇：corsproxy/allorigins/thingproxy）不保留，
+//     因本次移除所有內建公開 CORS proxy；但保留「proxy 模式」本身（見上一點的 connectionMode 補值）
+// 僅在讀到舊版 raw 設定時才動作，全新使用者（raw 為 null）不受影響。
+function migrateLegacySettings(raw) {
+  if (!raw) return raw;
+  const s = { ...raw };
+  ["TW", "US"].forEach((mkt) => {
+    const providerKey = "stockProvider" + mkt;
+    const connKey = "connectionMode" + mkt;
+    if (s[providerKey] === "yahooProxy") {
+      s[providerKey] = "yahoo";
+      if (!s[connKey]) s[connKey] = "proxy";
+    }
+    const proxyUrlKey = "proxyUrl" + mkt;
+    if (s.customProxyUrl && !s[proxyUrlKey]) {
+      s[proxyUrlKey] = s.customProxyUrl;
+    }
+  });
+  delete s.customProxyUrl;
+  delete s.stockProxyProvider;
+  return s;
+}
+
+// settings 合併規則：確保 IndexedDB 讀到的 settings 缺少新欄位時，仍套用目前的預設值
+// 與正規化規則（與 ALD.DEFAULT_SETTINGS / ALD.normalizeCurrencies 的定義保持一致）。
+function mergeSettings(raw) {
+  const s = { ...ALD.DEFAULT_SETTINGS, ...migrateLegacySettings(raw) };
+  ALD.normalizeCurrencies(s);
+  return s;
+}
+
+// 帳戶設定正規化規則：確保 IndexedDB 讀到的帳戶資料型別正確、缺值時帶入合理預設值
+// （與 ALD.emptyAccount 的預設規則一致：投資類別槓桿倍數預設 1，其餘為 0）。
+// fallbackOrder：舊資料（IndexedDB getAll() 讀出，不保證順序）若無 sortOrder，
+// 依目前載入順序補值（呼叫端傳入 1-based 索引），確保重新整理後仍有明確順序可排序。
+function normalizeAccount(a, fallbackOrder) {
+  const category = ALD.TYPES.includes(a.category) ? a.category : "流動資金";
+  return {
+    id: a.id || ALD.uid(),
+    category,
+    account: String(a.account == null ? "" : a.account),
+    price: Number(a.price) || 0,
+    leverage: a.leverage == null ? (category === "投資" ? 1 : 0) : Number(a.leverage) || 0,
+    sortOrder: a.sortOrder == null || isNaN(Number(a.sortOrder)) ? fallbackOrder : Number(a.sortOrder),
+  };
+}
+
+// 「清除所有本地資料」用：就地把 settings 重設為最小必要設定，
+// 不可整個替換 store.settings 物件參考（元件於 setup() 已持有舊物件參考，整個替換會失去響應）。
+function applyDefaultSettingsInPlace(settingsObj) {
+  const fresh = JSON.parse(JSON.stringify(ALD.DEFAULT_SETTINGS));
+  Object.keys(settingsObj).forEach((k) => {
+    if (!(k in fresh)) delete settingsObj[k];
+  });
+  Object.assign(settingsObj, fresh);
+  ALD.normalizeCurrencies(settingsObj);
+}
+
+// 初始化載入/錯誤畫面：掛載主要 App 前尚無 Vue 元件可用，直接操作 #app 的 DOM。
+function showInitLoading(msg) {
+  const el = document.getElementById("app");
+  if (el) el.innerHTML = '<div class="app-init-status">' + msg + "</div>";
+}
+function showInitError(msg) {
+  const el = document.getElementById("app");
+  if (el) {
+    el.innerHTML =
+      '<div class="app-init-status app-init-error">' + String(msg).replace(/\n/g, "<br>") + "</div>";
+  }
+  if (window.__showAppError) window.__showAppError(msg);
+  console.error(msg);
+}
+
+// 依資料種類（records/settings/accounts）各自 debounce 後才寫回 IndexedDB，避免每個字元
+// 輸入都建立一次 transaction；同一種資料的實際寫入以 Promise 串接（chain）依呼叫順序執行，
+// 確保較舊的寫入不會晚於較新的寫入完成而覆蓋新狀態。寫入失敗只顯示錯誤，不中斷 App，
+// 且錯誤一律於 saveFn 的 .catch 內處理，不會產生未處理的 Promise rejection。
+function createDebouncedSaver(saveFn, label, delay) {
+  let timer = null;
+  let pending = null;
+  let hasPending = false;
+  let chain = Promise.resolve();
+  function flush() {
+    if (!hasPending) return;
+    const snapshot = pending;
+    pending = null;
+    hasPending = false;
+    chain = chain.then(() => saveFn(snapshot)).catch((e) => {
+      const detail = e && e.stack ? e.stack : e && e.message ? e.message : String(e);
+      console.error(label + " 寫入 IndexedDB 失敗：", e);
+      if (window.__showAppError) {
+        window.__showAppError(label + " 寫入 IndexedDB 失敗：\n" + detail);
+      }
+    });
+  }
+  return function schedule(value) {
+    pending = value;
+    hasPending = true;
+    clearTimeout(timer);
+    timer = setTimeout(flush, delay);
+  };
+}
+
+const SAVE_DEBOUNCE_MS = 500;
+const saveRecordsDebounced = createDebouncedSaver((v) => ALD_DB.replaceRecords(v), "明細", SAVE_DEBOUNCE_MS);
+const saveSettingsDebounced = createDebouncedSaver((v) => ALD_DB.saveSettings(v), "系統設定", SAVE_DEBOUNCE_MS);
+const saveAccountsDebounced = createDebouncedSaver((v) => ALD_DB.replaceAccounts(v), "帳戶設定", SAVE_DEBOUNCE_MS);
+const saveSyncLogsDebounced = createDebouncedSaver((v) => ALD_DB.replaceSyncLogs(v), "同步記錄", SAVE_DEBOUNCE_MS);
+
 // ---------- 共用 reactive store ----------
-const store = reactive({
-  records: ALD.loadRecords(),
-  settings: ALD.loadSettings(),
-  accounts: ALD.loadAccounts(),
-});
-
-watch(
-  () => store.records,
-  (val) => ALD.saveRecords(val),
-  { deep: true }
-);
-
-watch(
-  () => store.settings,
-  (val) => ALD.saveSettings(val),
-  { deep: true }
-);
-
-watch(
-  () => store.accounts,
-  (val) => ALD.saveAccounts(val),
-  { deep: true }
-);
-
-// 外觀主題（配色/字型/字型大小）：載入時立即套用，設定變更時即時反映
-watch(() => store.settings, (val) => ALD.applyTheme(val), { deep: true, immediate: true });
+// 於非同步初始化流程（openDatabase -> 讀取三個 store -> 判斷首次使用 -> 建立 store）
+// 完成後才會賦值；元件的 setup() 只在 app.mount() 之後才會實際執行，屆時 store 已就緒。
+let store;
 
 // ---------- 總覽 ----------
 const TabOverview = {
@@ -423,7 +516,7 @@ const TabDetail = {
     }
 
     // 先套用既有篩選（visibleRecords），再依排序條件排序；用 slice() 複製陣列後排序，
-    // 不直接對原始資料呼叫 sort()，故不會影響 store.records 與 localStorage 的儲存順序。
+    // 不直接對原始資料呼叫 sort()，故不會影響 store.records 與 IndexedDB 的儲存順序。
     const sortedRecords = computed(() => {
       const rules = sortRules.value;
       const arr = visibleRecords.value.slice();
@@ -649,6 +742,7 @@ const TabSettings = {
   setup() {
     const settings = store.settings;
     const accounts = store.accounts;
+    const syncLogs = store.syncLogs;
     const settingsTab = ref("system");
     const assetCategoryKeys = ALD.ASSET_TYPES;
     const types = ALD.TYPES;
@@ -698,6 +792,49 @@ const TabSettings = {
       }
     }
 
+    // 記錄一筆同步執行資訊（僅在 settings.syncLogEnabled 開啟時才寫入，避免預設就累積資料；
+    // 但 logKind === 'connectionTest' 時一律寫入，因為那是使用者於「連線測試中心」明確觸發的
+    // 診斷動作，需要保留結果供排查，不受一般同步記錄開關影響）。
+    // syncType：'fxRate' | 'stockPrice' | 'endpoint'；target：幣別代碼或帳戶/項目名稱或測試網址。
+    // logKind：'sync'（預設，正式同步） | 'connectionTest'（連線測試中心）。
+    function recordSyncLog(syncType, target, success, errorMessage, requestUrl, responseText, logKind) {
+      const kind = logKind || "sync";
+      if (!settings.syncLogEnabled && kind !== "connectionTest") return;
+      ALD.appendSyncLog(syncLogs, {
+        id: ALD.uid(),
+        timestamp: new Date().toISOString(),
+        syncType,
+        logKind: kind,
+        target: target || "",
+        success: !!success,
+        errorMessage: success ? "" : String(errorMessage || ""),
+        requestUrl: requestUrl || "",
+        responseText: responseText || "",
+      });
+    }
+
+    // 匯出同步記錄為 JSON 檔
+    function exportSyncLogs() {
+      try {
+        ALD.exportSyncLogsJSON(syncLogs);
+      } catch (e) {
+        reportError("匯出同步記錄失敗：", e);
+      }
+    }
+
+    // 清除同步記錄（不影響 records/settings/accounts）
+    async function clearSyncLogs() {
+      if (syncLogs.length === 0) return;
+      if (!confirm("確定要清除所有同步記錄嗎？此動作無法復原。")) return;
+      try {
+        syncLogs.splice(0, syncLogs.length);
+        await ALD_DB.replaceSyncLogs([]);
+      } catch (e) {
+        reportError("清除同步記錄失敗：", e);
+        alert("清除同步記錄失敗：" + (e && e.message ? e.message : e));
+      }
+    }
+
     // 同步各幣別對基準幣別的即時匯率，完成後套回明細
     async function syncFxRates() {
       if (syncingFx.value) return;
@@ -712,12 +849,13 @@ const TabSettings = {
           }
           if (!cur.code) continue;
           try {
-            cur.rate = ALD.round2(
-              await ALD_SERVICE.fetchFxRate(cur.code, settings.baseCurrency)
-            );
+            const result = await ALD_SERVICE.fetchFxRate(cur.code, settings.baseCurrency);
+            cur.rate = ALD.round2(result.value);
             ok++;
+            recordSyncLog("fxRate", cur.code, true, "", result.requestUrl, result.responseText);
           } catch (e) {
             fail++;
+            recordSyncLog("fxRate", cur.code, false, e && e.message, e && e.requestUrl, e && e.responseText);
           }
         }
         applyFxToRecords();
@@ -732,14 +870,41 @@ const TabSettings = {
       }
     }
 
-    // 新增一筆帳戶/項目設定，預設類別為第一個資產子類別
+    // 新增一筆帳戶/項目設定，預設類別為第一個資產子類別；sortOrder 由呼叫端指派為目前最大值 + 1，
+    // 確保新帳戶固定排在最後（Test 6：A、B、C 新增 D → A、B、C、D）。
     function addAccount() {
-      store.accounts.push(ALD.emptyAccount(assetCategoryKeys[0]));
+      const nextOrder =
+        store.accounts.reduce((max, a) => Math.max(max, Number(a.sortOrder) || 0), 0) + 1;
+      store.accounts.push(ALD.emptyAccount(assetCategoryKeys[0], nextOrder));
     }
 
     function removeAccount(id) {
       const idx = store.accounts.findIndex((a) => a.id === id);
       if (idx !== -1) store.accounts.splice(idx, 1);
+    }
+
+    // 帳戶排序：在 store.accounts 陣列中交換相鄰兩筆位置，並重新產生連續的 sortOrder（1,2,3...），
+    // 避免多次移動後 sortOrder 出現跳號（例如 1,5,9,20）。不實作拖曳，只支援上移/下移一格。
+    function moveAccount(id, direction) {
+      const idx = store.accounts.findIndex((a) => a.id === id);
+      if (idx === -1) return;
+      const targetIdx = idx + direction;
+      if (targetIdx < 0 || targetIdx >= store.accounts.length) return;
+      const arr = store.accounts;
+      const tmp = arr[idx];
+      arr[idx] = arr[targetIdx];
+      arr[targetIdx] = tmp;
+      arr.forEach((a, i) => {
+        a.sortOrder = i + 1;
+      });
+    }
+
+    function moveAccountUp(id) {
+      moveAccount(id, -1);
+    }
+
+    function moveAccountDown(id) {
+      moveAccount(id, 1);
     }
 
     // 帳戶類別變更時，若槓桿倍數仍為預設值則依新類別調整（投資=1，其餘=0）
@@ -798,6 +963,9 @@ const TabSettings = {
         }
         const skipped = imported.__skipped || 0;
         store.accounts.splice(0, store.accounts.length, ...imported);
+        // 明確等待 IndexedDB 保存完成後才顯示「匯入成功」，避免寫入失敗卻誤報成功；
+        // watch 之後仍會 debounce 回寫同一份資料，屬冪等操作，不影響正確性。
+        await ALD_DB.replaceAccounts(JSON.parse(JSON.stringify(store.accounts)));
         alert(
           "已匯入 " + imported.length + " 筆帳戶/項目設定" +
             (skipped > 0 ? "\n（略過 " + skipped + " 筆：類別空白或不符值域）" : "")
@@ -810,32 +978,133 @@ const TabSettings = {
       }
     }
 
-    // 同步「投資」類別帳戶的即時價格（市值），完成後套回明細
+    // 同步「投資」類別帳戶的即時價格（市值），完成後套回明細。
+    // 依「設定 > 股價資料來源」分台股/美股 provider 查詢；provider 為「手動輸入」的帳戶會被略過，
+    // 不計入成功/失敗筆數。同一批次共用 twseCache，避免台股 provider 為 TWSE 時重複下載整份清單。
     async function syncPrices() {
       if (syncing.value) return;
       syncing.value = true;
       let ok = 0;
       let fail = 0;
+      let skipped = 0;
+      const twseCache = {};
       try {
         for (const acc of store.accounts) {
           if (acc.category === "投資" && acc.account) {
             try {
-              acc.price = ALD.round2(await ALD_SERVICE.fetchStockPrice(acc.account));
+              const result = await ALD_SERVICE.fetchStockPrice(acc.account, store.settings, twseCache);
+              if (result === ALD_SERVICE.SKIP_MANUAL) {
+                skipped++;
+                continue;
+              }
+              acc.price = ALD.round2(result.value);
               ok++;
+              recordSyncLog("stockPrice", acc.account, true, "", result.requestUrl, result.responseText);
             } catch (e) {
               fail++;
+              recordSyncLog("stockPrice", acc.account, false, e && e.message, e && e.requestUrl, e && e.responseText);
             }
           }
         }
         applyPricesToRecords();
         alert(
           "價格同步完成：成功 " + ok + " 筆，失敗 " + fail + " 筆" +
-            (fail > 0 ? "（失敗可能因無法連外，請改用手動輸入）" : "")
+            (skipped > 0 ? "，略過 " + skipped + " 筆（資料來源設為手動輸入）" : "") +
+            (fail > 0 ? "（失敗可能因無法連外或該來源查無此代號，請改用手動輸入）" : "")
         );
       } catch (e) {
         reportError("價格同步失敗：", e);
       } finally {
         syncing.value = false;
+      }
+    }
+
+    // ---------- 連線測試中心 ----------
+    // 與正式「同步價格」共用同一個 request executor（ALD_SERVICE.testMarketConfig /
+    // testEndpoint 內部皆呼叫與 fetchStockPrice 相同的底層 requestRaw/executeRequestForUrl）。
+    // 僅用於診斷，測試過程「不會」更新 acc.price 或任何明細資料；結果一律為真實請求結果，不假造成功。
+    const testingTW = ref(false);
+    const testingUS = ref(false);
+    const testResultTW = ref(null);
+    const testResultUS = ref(null);
+    const testSymbolTW = ref("2330.TW");
+    const testSymbolUS = ref("AAPL");
+
+    const testEndpointUrl = ref("");
+    const testEndpointConnection = ref("direct");
+    const testEndpointProxyUrl = ref("");
+    const testEndpointPricePath = ref("");
+    const testingEndpoint = ref(false);
+    const testEndpointResult = ref(null);
+
+    async function testMarketConfigTW() {
+      if (testingTW.value) return;
+      testingTW.value = true;
+      try {
+        const result = await ALD_SERVICE.testMarketConfig("TW", settings, testSymbolTW.value);
+        testResultTW.value = result;
+        recordSyncLog(
+          "stockPrice",
+          testSymbolTW.value || "(台股設定測試)",
+          result.ok,
+          result.errorMessage,
+          result.requestUrl,
+          result.responseText,
+          "connectionTest"
+        );
+      } catch (e) {
+        reportError("台股設定測試失敗：", e);
+      } finally {
+        testingTW.value = false;
+      }
+    }
+
+    async function testMarketConfigUS() {
+      if (testingUS.value) return;
+      testingUS.value = true;
+      try {
+        const result = await ALD_SERVICE.testMarketConfig("US", settings, testSymbolUS.value);
+        testResultUS.value = result;
+        recordSyncLog(
+          "stockPrice",
+          testSymbolUS.value || "(美股設定測試)",
+          result.ok,
+          result.errorMessage,
+          result.requestUrl,
+          result.responseText,
+          "connectionTest"
+        );
+      } catch (e) {
+        reportError("美股設定測試失敗：", e);
+      } finally {
+        testingUS.value = false;
+      }
+    }
+
+    async function runTestEndpoint() {
+      if (testingEndpoint.value) return;
+      testingEndpoint.value = true;
+      try {
+        const result = await ALD_SERVICE.testEndpoint({
+          url: testEndpointUrl.value,
+          connection: testEndpointConnection.value,
+          proxyUrl: testEndpointProxyUrl.value,
+          pricePath: testEndpointPricePath.value,
+        });
+        testEndpointResult.value = result;
+        recordSyncLog(
+          "endpoint",
+          testEndpointUrl.value || "(任意 Endpoint 測試)",
+          result.ok,
+          result.errorMessage,
+          result.requestUrl,
+          result.responseText,
+          "connectionTest"
+        );
+      } catch (e) {
+        reportError("Endpoint 測試失敗：", e);
+      } finally {
+        testingEndpoint.value = false;
       }
     }
 
@@ -853,6 +1122,9 @@ const TabSettings = {
       try {
         const imported = await ALD.parseCSV(file, store.settings, store.accounts);
         store.records.push(...imported);
+        // 明確等待 IndexedDB 保存完成後才顯示「匯入成功」，避免寫入失敗卻誤報成功；
+        // watch 之後仍會 debounce 回寫同一份資料，屬冪等操作，不影響正確性。
+        await ALD_DB.replaceRecords(JSON.parse(JSON.stringify(store.records)));
         const skipped = imported.__skipped || 0;
         alert(
           "已匯入 " + imported.length + " 筆資料" +
@@ -883,12 +1155,20 @@ const TabSettings = {
       }
     }
 
-    function resetData() {
+    // 清除所有本地資料：清空 records、accounts，settings 重設為最小必要設定（不可整個
+    // 替換物件參考）。除了讓 watch 之後自動 debounce 回寫，這裡也立即明確寫回 IndexedDB，
+    // 避免使用者在防抖時間內就重新整理，導致清除結果尚未真正持久化。
+    async function resetData() {
+      if (!confirm("確定要清除所有本地資料嗎？此動作無法復原，建議先匯出 CSV 備份。")) return;
       try {
-        if (!confirm("確定要清除所有本地資料嗎？此動作無法復原，建議先匯出 CSV 備份。")) return;
         store.records.splice(0, store.records.length);
-        // 明確寫入空陣列，避免 deep watch 之後又蓋回，且下次載入不會重新種入模擬資料
-        ALD.saveRecords([]);
+        store.accounts.splice(0, store.accounts.length);
+        store.syncLogs.splice(0, store.syncLogs.length);
+        applyDefaultSettingsInPlace(store.settings);
+        await ALD_DB.replaceRecords([]);
+        await ALD_DB.replaceAccounts([]);
+        await ALD_DB.replaceSyncLogs([]);
+        await ALD_DB.saveSettings(JSON.parse(JSON.stringify(store.settings)));
         alert("已清除本地資料");
       } catch (e) {
         reportError("清除資料失敗：", e);
@@ -896,24 +1176,30 @@ const TabSettings = {
       }
     }
 
-    // 強制清除：用於一般清除按鈕因資料損毀（例如 localStorage 內容非合法 JSON）而失效時。
-    // 修正：不可用 removeItem 直接移除金鑰——那會讓 loadRecords() 誤判為「App 從未初始化」
-    // 而自動重新種入模擬資料，造成「看起來沒清除成功」的假象。改為明確寫入空陣列/預設設定。
-    function forceReset() {
+    // 強制清除並重新載入：清空 IndexedDB 三個 store，重新建立預設 records/settings/accounts，
+    // 等寫入全部完成後才 reload，避免在 transaction 尚未完成前就重新整理頁面。
+    async function forceReset() {
       if (!confirm("強制清除會移除所有本地資料與設定並重新載入頁面，確定嗎？")) return;
       try {
-        localStorage.setItem("ald_records_v1", "[]");
-        localStorage.setItem("ald_settings_v1", JSON.stringify(ALD.DEFAULT_SETTINGS));
+        await ALD_DB.clearAllData();
+        const defaultRecords = ALD.seedRecords();
+        const defaultSettings = mergeSettings(null);
+        const defaultAccounts = ALD.seedAccounts();
+        await ALD_DB.replaceRecords(defaultRecords);
+        await ALD_DB.saveSettings(defaultSettings);
+        await ALD_DB.replaceAccounts(defaultAccounts);
+        location.reload();
       } catch (e) {
-        // 寫入也失敗（例如 localStorage 損毀無法存取）時，才退回整體清空
-        try { localStorage.clear(); } catch (_) {}
+        reportError("強制清除失敗：", e);
+        alert("強制清除失敗：" + (e && e.message ? e.message : e));
       }
-      location.reload();
     }
 
     return {
       settings,
       accounts,
+      syncLogs,
+      syncLogMax: ALD.SYNC_LOG_MAX,
       settingsTab,
       assetCategoryKeys,
       types,
@@ -928,6 +1214,8 @@ const TabSettings = {
       syncFxRates,
       addAccount,
       removeAccount,
+      moveAccountUp,
+      moveAccountDown,
       onAccountCategoryChange,
       applyPricesToRecords,
       applyLeverageToRecords,
@@ -935,6 +1223,23 @@ const TabSettings = {
       exportAccountsCsv,
       importAccountsCsv,
       syncPrices,
+      testingTW,
+      testingUS,
+      testResultTW,
+      testResultUS,
+      testSymbolTW,
+      testSymbolUS,
+      testMarketConfigTW,
+      testMarketConfigUS,
+      testEndpointUrl,
+      testEndpointConnection,
+      testEndpointProxyUrl,
+      testEndpointPricePath,
+      testingEndpoint,
+      testEndpointResult,
+      runTestEndpoint,
+      exportSyncLogs,
+      clearSyncLogs,
       exportCsv,
       importCsv,
       loadSample,
@@ -961,7 +1266,7 @@ const App = {
         :key="tab.key"
         class="tab-btn"
         :class="{ active: activeTab === tab.key }"
-        @click="activeTab = tab.key"
+        @click="setActiveTab(tab.key)"
       >
         <span class="tab-icon">{{ tab.icon }}</span>
         <span>{{ tab.label }}</span>
@@ -975,13 +1280,24 @@ const App = {
     >↑↓</button>
   `,
   setup() {
-    const activeTab = ref("overview");
     const tabs = [
       { key: "overview", label: "總覽", icon: "⬠", component: "TabOverview" },
       { key: "rebalance", label: "再平衡", icon: "⟠", component: "TabRebalance" },
       { key: "detail", label: "明細", icon: "≣", component: "TabDetail" },
       { key: "settings", label: "設定", icon: "⛯", component: "TabSettings" },
     ];
+    // 主分頁狀態改由 settings.lastTab 還原，重新整理頁面後可維持上次所在分頁；
+    // settings.lastTab 不存在（舊資料）或非上述四種合法值時，一律回退為 overview。
+    const validTabKeys = tabs.map((t) => t.key);
+    const initialTab = validTabKeys.includes(store.settings.lastTab)
+      ? store.settings.lastTab
+      : "overview";
+    const activeTab = ref(initialTab);
+    function setActiveTab(key) {
+      activeTab.value = key;
+      // 沿用既有 settings 機制回寫 IndexedDB（由既有的 store.settings watch 統一 debounce 儲存）。
+      store.settings.lastTab = key;
+    }
     const tabTitles = Object.fromEntries(tabs.map((t) => [t.key, t.label]));
     const activeComponent = computed(
       () => tabs.find((t) => t.key === activeTab.value).component
@@ -1054,6 +1370,7 @@ const App = {
 
     return {
       activeTab,
+      setActiveTab,
       tabs,
       tabTitles,
       activeComponent,
@@ -1073,8 +1390,109 @@ app.config.errorHandler = (err, instance, info) => {
     window.__showAppError("Vue 元件錯誤（" + info + "）：\n" + detail);
   }
 };
-app.mount("#app");
-// 明確標記「App 已成功掛載」，供錯誤橫幅判斷健康狀態使用；
-// 避免用 DOM 子節點數量判斷（掛載前一瞬間會誤判為不健康）。
-window.__appMounted = true;
-if (window.__refreshErrorBanner) window.__refreshErrorBanner();
+
+// ---------- 非同步初始化 ----------
+// 順序：顯示載入狀態 -> 開啟 IndexedDB -> 讀取 records/settings/accounts -> 判斷是否首次使用
+// -> （首次才）建立並寫入預設資料 -> 建立 reactive store -> 設定 watch -> 最後才 mount()。
+// 任何一步失敗都會顯示明確錯誤並中止初始化，不會建立預設資料覆蓋既有狀態，也不會掛載 App。
+(async function initApp() {
+  showInitLoading("資料載入中…");
+
+  let db;
+  try {
+    db = await ALD_DB.openDatabase();
+  } catch (e) {
+    showInitError("IndexedDB 開啟失敗，App 無法啟動：\n" + (e && e.message ? e.message : String(e)));
+    return;
+  }
+  void db; // 僅需確認開啟成功，實際讀寫透過 ALD_DB 的其他 API 呼叫
+
+  let rawRecords, rawSettings, rawAccounts, rawSyncLogs;
+  try {
+    rawRecords = await ALD_DB.loadRecords();
+    rawSettings = await ALD_DB.loadSettings();
+    rawAccounts = await ALD_DB.loadAccounts();
+    rawSyncLogs = await ALD_DB.loadSyncLogs();
+  } catch (e) {
+    showInitError("讀取本地資料失敗，App 無法啟動：\n" + (e && e.message ? e.message : String(e)));
+    return;
+  }
+
+  // 首次使用判斷：settings 為固定 key 單筆記錄，從未寫入時 loadSettings() 回傳 null；
+  // 不可用 records/accounts 陣列長度判斷——已初始化但清空為 [] 屬合法狀態，重新整理仍須維持空白。
+  const isFirstRun = rawSettings === null;
+
+  let initialRecords, initialSettings, initialAccounts, initialSyncLogs;
+  if (isFirstRun) {
+    initialSettings = mergeSettings(null);
+    initialRecords = ALD.seedRecords();
+    initialAccounts = ALD.seedAccounts();
+    initialSyncLogs = [];
+    try {
+      await ALD_DB.replaceRecords(initialRecords);
+      await ALD_DB.saveSettings(initialSettings);
+      await ALD_DB.replaceAccounts(initialAccounts);
+    } catch (e) {
+      showInitError(
+        "首次初始化寫入 IndexedDB 失敗，App 無法啟動：\n" + (e && e.message ? e.message : String(e))
+      );
+      return;
+    }
+  } else {
+    initialSettings = mergeSettings(rawSettings);
+    initialRecords = Array.isArray(rawRecords) ? rawRecords.map(ALD.normalizeRec) : [];
+    initialAccounts = Array.isArray(rawAccounts)
+      ? rawAccounts.map((a, i) => normalizeAccount(a, i + 1))
+      : [];
+    // 依時間戳排序（舊到新），IndexedDB getAll() 不保證回傳順序，維持顯示/匯出時的時序一致。
+    initialSyncLogs = Array.isArray(rawSyncLogs)
+      ? rawSyncLogs.slice().sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)))
+      : [];
+  }
+
+  // 帳戶顯示/儲存順序一律依 sortOrder ASC；IndexedDB getAll() 不保證回傳順序，
+  // 在建立 store.accounts 前先排序，確保 Safari / IndexedDB / CSV 匯入都得到一致順序。
+  initialAccounts.sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0));
+
+  // ---------- 建立 reactive store ----------
+  store = reactive({
+    records: initialRecords,
+    settings: initialSettings,
+    accounts: initialAccounts,
+    syncLogs: initialSyncLogs,
+  });
+
+  // ---------- 設定 watch（初始化完成、store 已有正確資料後才註冊，避免載入期間回寫空資料） ----------
+  watch(
+    () => store.records,
+    (val) => saveRecordsDebounced(JSON.parse(JSON.stringify(val))),
+    { deep: true }
+  );
+  watch(
+    () => store.settings,
+    (val) => saveSettingsDebounced(JSON.parse(JSON.stringify(val))),
+    { deep: true }
+  );
+  watch(
+    () => store.accounts,
+    (val) => saveAccountsDebounced(JSON.parse(JSON.stringify(val))),
+    { deep: true }
+  );
+  watch(
+    () => store.syncLogs,
+    (val) => saveSyncLogsDebounced(JSON.parse(JSON.stringify(val))),
+    { deep: true }
+  );
+  // 外觀主題（配色/字型/字型大小）：載入時立即套用，設定變更時即時反映（純畫面效果，非資料寫入）
+  watch(() => store.settings, (val) => ALD.applyTheme(val), { deep: true, immediate: true });
+
+  // ---------- 最後才 mount() ----------
+  app.mount("#app");
+  // 明確標記「App 已成功掛載」，供錯誤橫幅判斷健康狀態使用；
+  // 避免用 DOM 子節點數量判斷（掛載前一瞬間會誤判為不健康）。
+  window.__appMounted = true;
+  if (window.__refreshErrorBanner) window.__refreshErrorBanner();
+})().catch((e) => {
+  // 保底：理論上以上流程皆已個別 try/catch，此處僅防止遺漏情境造成未處理的 Promise rejection。
+  showInitError("App 初始化發生未預期錯誤：\n" + (e && e.message ? e.message : String(e)));
+});

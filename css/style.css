@@ -244,6 +244,63 @@ select, input, button {
   font-size: calc(14px * var(--font-scale, 1));
 }
 
+/* ---------- 欄位堆疊版面（標籤獨立一行 + 下方滿版控制項） ----------
+   用於選項文字較長（如「股價資料來源」的下拉選單）、side-by-side 版面會被
+   撐開超出畫面寬度、或標籤因被壓縮到極窄而逐字換行的欄位。 */
+.field-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.field-stack select,
+.field-stack input {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* 欄位堆疊版面的標籤：比照 .form-row label 的樣式（灰色純文字），
+   僅版面上獨立一行顯示，不做膠囊/邊框裝飾，與其他卡片的標籤風格一致 */
+.field-chip-label {
+  color: var(--text-sub);
+  font-size: calc(14px * var(--font-scale, 1));
+}
+
+/* ---------- 連線測試中心：警告提示與測試結果顯示 ---------- */
+.field-warning {
+  color: var(--warn);
+}
+
+.test-result {
+  margin-top: 10px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--card-bg-2);
+  font-size: calc(13px * var(--font-scale, 1));
+  line-height: 1.6;
+  word-break: break-all;
+}
+
+.test-result.ok {
+  border-color: var(--accent-2);
+}
+
+.test-result.fail {
+  border-color: var(--danger);
+}
+
+.test-preview {
+  margin-top: 6px;
+  color: var(--text-sub);
+  white-space: pre-wrap;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
 /* ---------- 設定：外觀主題配色選色器 ---------- */
 .theme-swatch-row {
   display: flex;
@@ -579,6 +636,10 @@ table.detail-table input, table.detail-table select {
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
   border: 1px solid var(--border);
   z-index: 20;
+  /* 強制獨立合成層：緩解 iOS Safari 網址列收合/展開動畫期間，
+     position:fixed 元素短暫跳動到畫面中間再歸位的已知現象。 */
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 /* 明細浮動捲動鈕：獨立浮動於左下、選單條上方；正圓、透明底、邊框隨深/淺色模式變化 */
@@ -604,6 +665,9 @@ table.detail-table input, table.detail-table select {
   line-height: 1;
   letter-spacing: -1px;
   z-index: 21;
+  /* 理由同 .tab-bar：強制獨立合成層，緩解捲動時的跳動 */
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 .scroll-fab:active {
@@ -1021,32 +1085,26 @@ table.detail-table input, table.detail-table select {
 .date-field-wrap {
   position: relative;
   width: 100%;
-  /* 1 行文字 + 上下 padding 12px + 上下 border 2 px */
-  height: calc(1lh + 12px + 2px);
-  font-size: calc(13px * var(--font-scale, 1));
   background: var(--card-bg-2);
   border: 1px solid var(--border);
   border-radius: 8px;
   box-sizing: border-box;
-  overflow: hidden;
 }
 
 /* 選擇器改用 input[type="date"].date-native-input（屬性+類別），
    優先度須高於全域 input[type="date"] 規則（第 302 行），
    否則其 background/color 會覆蓋此處的 transparent 設定，導致文字層被蓋住看不見。 */
 input[type="date"].date-native-input {
-  position: absolute;
-  inset:0;
+  position: relative;
   z-index: 1;
   width: 100%;
-  height: 100%;
   margin: 0;
   padding: 6px 8px;
   border: none;
   background: transparent;
   color: transparent;
   box-sizing: border-box;
-  font: inherit;
+  font-size: calc(13px * var(--font-scale, 1));
 }
 
 /* 隱藏 WebKit 日期欄位內部各段文字（月/日/年），避免 color:transparent 之外仍洩漏文字 */
@@ -1181,6 +1239,7 @@ input[type="date"].date-native-input::-webkit-datetime-edit-year-field {
 .acc-cfg-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
   margin-top: 8px;
 }
 
@@ -1190,3 +1249,21 @@ input[type="date"].date-native-input::-webkit-datetime-edit-year-field {
   border-top: 1px solid var(--border);
   margin: 14px 0 10px;
 }
+
+/* IndexedDB 初始化載入/錯誤狀態（掛載主要 App 前顯示，見 app.js 的 showInitLoading/showInitError） */
+.app-init-status {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-sub);
+  font-size: 15px;
+  line-height: 1.6;
+}
+.app-init-status.app-init-error {
+  color: var(--danger);
+  white-space: pre-line;
+}
+

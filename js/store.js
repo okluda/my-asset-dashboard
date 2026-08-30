@@ -1,15 +1,11 @@
 /*
  * store.js
- * 負責資料持久化（localStorage）、資料 schema 定義、CSV 匯入匯出、
- * 以及跨頁面共用的計算工具函式。
- * 資料完全存放於瀏覽器本地（localStorage），不會上傳到任何伺服器。
+ * 負責資料 schema 定義、CSV 匯入匯出，以及跨頁面共用的計算工具函式。
+ * 資料持久化已改由 js/db.js 的 ALD_DB（IndexedDB）負責，本檔案不再讀寫任何儲存媒介；
+ * 資料完全存放於使用者本機瀏覽器（IndexedDB），不會上傳到任何伺服器。
  */
 
 const ALD = (() => {
-  const RECORDS_KEY = "ald_records_v1";
-  const SETTINGS_KEY = "ald_settings_v1";
-  const ACCOUNTS_KEY = "ald_accounts_v1";
-
   // 資料來源類型（依規格固定五種）
   const TYPES = ["流動資金", "投資", "固定資產", "應收款", "負債"];
 
@@ -18,10 +14,27 @@ const ALD = (() => {
 
   const DEFAULT_SETTINGS = {
     unit: "yuan", // 'yuan' = 元, 'wan' = 萬元
-    autoFx: false, // 是否自動抓取即時匯率
-    autoStock: false, // 是否自動抓取股票市值
     baseCurrency: "TWD",
+    // 股價資料來源（見 js/services.js）：Provider / Connection / Proxy 互相解耦，
+    // 不內建任何公開 CORS proxy，僅使用使用者自行配置的 proxyUrlTW/US（如自建 Cloudflare Workers）。
+    //   台股 stockProviderTW：'twse'（官方 OpenAPI，預設） | 'yahoo' | 'custom' | 'manual'（略過自動查詢）
+    //   美股 stockProviderUS：'finnhub'（需自行申請 API Key） | 'yahoo' | 'custom' | 'manual'（預設）
+    //   connectionModeTW/US：'direct'（瀏覽器直接連線） | 'proxy'（經 proxyUrlTW/US 轉發）
+    //     台股 TWSE OpenAPI 官方端點實測不支援瀏覽器 CORS，預設須經 proxy 才能查詢。
+    stockProviderTW: "twse",
+    stockProviderUS: "manual",
+    connectionModeTW: "proxy",
+    connectionModeUS: "direct",
+    proxyUrlTW: "", // connectionModeTW === 'proxy' 時使用，格式如 https://example.workers.dev/?url={url}
+    proxyUrlUS: "", // connectionModeUS === 'proxy' 時使用，格式同上
+    customStockApiTW: "", // stockProviderTW === 'custom' 時使用，URL 樣板，含 {symbol} 佔位字
+    customStockApiUS: "", // stockProviderUS === 'custom' 時使用，同上
+    customPricePathTW: "", // stockProviderTW === 'custom' 時使用，JSON Path，如 data.quote.close
+    customPricePathUS: "", // stockProviderUS === 'custom' 時使用，同上
+    finnhubApiKey: "", // 美股 provider 為 'finnhub' 時使用，存於本機瀏覽器，不會上傳
     rebalanceRatio: 70, // 再平衡：投資目標佔比(%)，預設 70% -> 流動:投資 = 3:7
+    lastTab: "overview", // 上次所在主分頁（overview/rebalance/detail/settings），重新整理後用於還原
+    syncLogEnabled: false, // 是否記錄「同步價格/匯率」的詳細執行資訊（含 API 請求/回應內容），預設關閉
     themeMode: "dark", // 'dark' | 'light'
     themeColor: "grayBlue", // 主題配色（見 THEME_COLORS）；'custom' 時改用 customColor
     customColor: "#5b8cff", // 自訂配色（themeColor === 'custom' 時生效）
@@ -140,39 +153,7 @@ const ALD = (() => {
     return rec;
   }
 
-  function loadRecords() {
-    try {
-      const raw = localStorage.getItem(RECORDS_KEY);
-      // 只有「從未初始化」（null）時才載入模擬資料；
-      // 已明確清空（[]）時應維持空白，避免清除後又被重新種入資料
-      if (raw === null) return seedRecords();
-      const arr = JSON.parse(raw);
-      if (!Array.isArray(arr)) return seedRecords();
-      return arr.map(normalizeRec);
-    } catch (e) {
-      console.error("讀取本地資料失敗", e);
-      return seedRecords();
-    }
-  }
 
-  function saveRecords(records) {
-    localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
-  }
-
-  function loadSettings() {
-    try {
-      const raw = localStorage.getItem(SETTINGS_KEY);
-      const s = raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : { ...DEFAULT_SETTINGS };
-      normalizeCurrencies(s);
-      return s;
-    } catch (e) {
-      const s = { ...DEFAULT_SETTINGS };
-      normalizeCurrencies(s);
-      return s;
-    }
-  }
-
-  // 正規化幣別設定：確保為陣列、baseCurrency 一定存在且匯率固定為 1、去除重複與空白代碼。
   function normalizeCurrencies(settings) {
     const base = settings.baseCurrency || "TWD";
     let list = Array.isArray(settings.currencies) ? settings.currencies : [];
@@ -207,10 +188,6 @@ const ALD = (() => {
     return { code: "", rate: 0 };
   }
 
-  function saveSettings(settings) {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  }
-
   // ---------- 資產子類別顯示名稱 ----------
   // 取得類別 key 的顯示名稱；空白或無設定時回傳內部鍵。負債固定為「負債」。
   function categoryDisplayName(settings, key) {
@@ -231,11 +208,20 @@ const ALD = (() => {
   }
 
   // ---------- 帳戶/項目設定 ----------
-  // 每筆：{ id, category(內部類別鍵), account(帳戶/項目名稱), price(價格), leverage(槓桿倍數) }
+  // 每筆：{ id, category(內部類別鍵), account(帳戶/項目名稱), price(價格), leverage(槓桿倍數), sortOrder(顯示順序) }
   // 槓桿倍數預設：類別為「投資」時為 1，其餘為 0。
-  function emptyAccount(category) {
+  // sortOrder 由呼叫端指派（例如新增帳戶時取目前最大值 + 1），此函式不自行依陣列長度計算，
+  // 避免呼叫端尚未把新帳戶塞入陣列時算出重複或錯誤的順序。
+  function emptyAccount(category, sortOrder) {
     const cat = category || "流動資金";
-    return { id: uid(), category: cat, account: "", price: 1, leverage: cat === "投資" ? 1 : 0 };
+    return {
+      id: uid(),
+      category: cat,
+      account: "",
+      price: 1,
+      leverage: cat === "投資" ? 1 : 0,
+      sortOrder: Number(sortOrder) || 0,
+    };
   }
 
   function seedAccounts() {
@@ -248,34 +234,7 @@ const ALD = (() => {
       { category: "應收款", account: "親友借款", price: 1, leverage: 0 },
       { category: "負債", account: "房屋貸款", price: 1, leverage: 0 },
     ];
-    return raw.map((r) => ({ id: uid(), ...r }));
-  }
-
-  function loadAccounts() {
-    try {
-      const rawStr = localStorage.getItem(ACCOUNTS_KEY);
-      // 只有「從未初始化」（null）時才種入預設帳戶；已明確清空（[]）時維持空白
-      if (rawStr === null) return seedAccounts();
-      const arr = JSON.parse(rawStr);
-      if (!Array.isArray(arr)) return seedAccounts();
-      return arr.map((a) => {
-        const category = TYPES.includes(a.category) ? a.category : "流動資金";
-        return {
-          id: a.id || uid(),
-          category,
-          account: String(a.account == null ? "" : a.account),
-          price: Number(a.price) || 0,
-          // 槓桿倍數：缺值時依類別帶預設（投資=1，其餘=0）
-          leverage: a.leverage == null ? (category === "投資" ? 1 : 0) : (Number(a.leverage) || 0),
-        };
-      });
-    } catch (e) {
-      return seedAccounts();
-    }
-  }
-
-  function saveAccounts(accounts) {
-    localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
+    return raw.map((r, i) => ({ id: uid(), ...r, sortOrder: i + 1 }));
   }
 
   // 依「類別 + 帳戶/項目」查對應帳戶設定物件；找不到回傳 null
@@ -583,7 +542,9 @@ const ALD = (() => {
               const price = numOr(get("價格"), 1);
               // 槓桿倍數：空值預設依類別（投資=1，其餘=0）
               const leverage = numOr(get("槓桿倍數"), category === "投資" ? 1 : 0);
-              accounts.push({ id: uid(), category, account, price, leverage });
+              // CSV 格式不含 sortOrder 欄位，依匯入（解析）順序補上 1,2,3...，
+              // 確保重新整理後帳戶順序與匯入時一致。
+              accounts.push({ id: uid(), category, account, price, leverage, sortOrder: accounts.length + 1 });
             });
             accounts.__skipped = skipped;
             resolve(accounts);
@@ -594,6 +555,49 @@ const ALD = (() => {
         error: (err) => reject(err),
       });
     });
+  }
+
+  // ---------- 同步記錄（同步價格/匯率/連線測試的執行記錄，沿用既有 syncLogs store，不新增 store） ----------
+  // 保留上限：僅保留最近 500 筆，避免 IndexedDB 無限成長。
+  const SYNC_LOG_MAX = 500;
+  // 單筆記錄的 responseText preview 上限（字元數）；js/services.js 的 requestRaw 已先行截斷，
+  // 這裡再次防禦性裁切，避免任何非經 services.js 產生的記錄（例如未來擴充）超出上限。
+  const SYNC_LOG_PREVIEW_MAX = 5000;
+  // 所有記錄的 responseText 總字元數上限；超過時從最舊的記錄開始移除，直到符合上限為止
+  // （即使尚未達到 SYNC_LOG_MAX 筆數上限也會提前裁減，兩個上限同時生效）。
+  const SYNC_LOG_TOTAL_PREVIEW_MAX = 500000;
+
+  // 附加一筆同步記錄（假設呼叫端依時間順序附加在陣列尾端＝最新）；
+  // entry.logKind：'sync'（正式同步） | 'connectionTest'（連線測試中心），呼叫端未提供時預設 'sync'。
+  // 超過筆數上限時從陣列開頭（最舊）裁掉多餘筆數；超過總 preview 字數上限時同樣從最舊開始移除。
+  function appendSyncLog(logs, entry) {
+    if (!Array.isArray(logs)) return;
+    const capped = Object.assign({}, entry, { logKind: (entry && entry.logKind) || "sync" });
+    if (typeof capped.responseText === "string" && capped.responseText.length > SYNC_LOG_PREVIEW_MAX) {
+      capped.responseText = capped.responseText.slice(0, SYNC_LOG_PREVIEW_MAX) + "…（已截斷）";
+    }
+    logs.push(capped);
+    const overflow = logs.length - SYNC_LOG_MAX;
+    if (overflow > 0) logs.splice(0, overflow);
+    let total = logs.reduce((sum, l) => sum + (l.responseText ? l.responseText.length : 0), 0);
+    while (total > SYNC_LOG_TOTAL_PREVIEW_MAX && logs.length > 0) {
+      const removed = logs.shift();
+      total -= removed.responseText ? removed.responseText.length : 0;
+    }
+  }
+
+  // 匯出同步記錄為 JSON（內容含完整 API 請求 URL 與回應內容全文，適合結構化保留，不適合 CSV）。
+  function exportSyncLogsJSON(logs) {
+    const json = JSON.stringify(logs || [], null, 2);
+    const blob = new Blob([json], { type: "application/json;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `同步記錄_${todayStr()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   }
 
   // 依設定套用外觀主題：設定 CSS 變數（配色/字型/字型大小）與淺色模式 class
@@ -624,12 +628,6 @@ const ALD = (() => {
     THEME_COLORS,
     FONT_FAMILIES,
     FONT_SIZES,
-    loadRecords,
-    saveRecords,
-    loadSettings,
-    saveSettings,
-    loadAccounts,
-    saveAccounts,
     seedAccounts,
     emptyAccount,
     lookupAccount,
@@ -644,6 +642,11 @@ const ALD = (() => {
     emptyCurrency,
     exportAccountsCSV,
     parseAccountsCSV,
+    appendSyncLog,
+    exportSyncLogsJSON,
+    SYNC_LOG_MAX,
+    SYNC_LOG_PREVIEW_MAX,
+    SYNC_LOG_TOTAL_PREVIEW_MAX,
     emptyRecord,
     uid,
     todayStr,
