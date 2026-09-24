@@ -531,14 +531,14 @@ const TabDetail = {
       return arr;
     });
 
-    // 幣別分組標籤：投資用「台股/美股」，非投資用「台幣合計/美元合計」
+    // 幣別分組標籤：投資用「台股/美股」，非投資用「台幣/美元」
     function groupLabel(type, currency) {
       if (type === "投資") {
         const m = { TWD: "台股", USD: "美股" };
         return m[currency] || currency;
       }
-      const m = { TWD: "台幣合計", USD: "美元合計" };
-      return m[currency] || currency + " 合計";
+      const m = { TWD: "台幣", USD: "美元" };
+      return m[currency] || currency;
     }
 
     // 依幣別 -> 帳戶/項目 兩層分組彙總。金額一律用「金額(台幣)」加總。

@@ -9,7 +9,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="theme-color" content="#1c1c2e" />
   <title>fishbubble</title>
-  <link rel="stylesheet" href="css/style.css?v=20260902" />
+  <link rel="stylesheet" href="css/style.css?v=20260901" />
 </head>
 <body>
   <!-- 錯誤顯示橫幅：手機上沒有開發者工具可看 console，發生例外時直接顯示在畫面上。
@@ -458,8 +458,15 @@
                 </div>
               </div>
               <div class="rec-field">
-                <label>單位</label>
-                <input type="number" v-model.number="rec.units" @change="recalc(rec)" />
+                <label>帳戶/項目</label>
+                <select v-model="rec.account" @change="onAccountChange(rec)">
+                  <option value="">（請選擇）</option>
+                  <option v-for="a in accountOptions(rec)" :key="a" :value="a">{{ a }}</option>
+                </select>
+              </div>
+              <div class="rec-field">
+                <label>金額</label>
+                <input type="text" :value="num(money(rec))" readonly />
               </div>
             </div>
 
@@ -468,13 +475,6 @@
                 <label>類別</label>
                 <select v-model="rec.type" @change="onTypeChange(rec)">
                   <option v-for="t in types" :key="t" :value="t">{{ catName(t) }}</option>
-                </select>
-              </div>
-              <div class="rec-field">
-                <label>帳戶/項目</label>
-                <select v-model="rec.account" @change="onAccountChange(rec)">
-                  <option value="">（請選擇）</option>
-                  <option v-for="a in accountOptions(rec)" :key="a" :value="a">{{ a }}</option>
                 </select>
               </div>
               <div class="rec-field">
@@ -506,8 +506,8 @@
                 <input type="number" :value="rec.fxRate" readonly />
               </div>
               <div class="rec-field">
-                <label>金額</label>
-                <input type="text" :value="num(money(rec))" readonly />
+                <label>單位</label>
+                <input type="number" v-model.number="rec.units" @change="recalc(rec)" />
               </div>
             </div>
 
@@ -640,13 +640,13 @@
               <option value="proxy">經 Proxy 轉發</option>
             </select>
           </div>
-          <div class="empty-hint field-warning" style="text-align:left" v-if="settings.stockProviderTW === 'twse' && settings.connectionModeTW === 'direct'">
+          <!--<div class="empty-hint field-warning" style="text-align:left" v-if="settings.stockProviderTW === 'twse' && settings.connectionModeTW === 'direct'">
             ⚠️ TWSE OpenAPI 官方端點實測不支援瀏覽器跨網域請求（無 CORS 標頭），直接連線必定失敗，請改選「經 Proxy 轉發」。
-          </div>
+          </div>-->
           <template v-if="settings.connectionModeTW === 'proxy'">
             <div class="field-stack">
               <span class="field-chip-label">Proxy URL</span>
-              <input type="text" v-model="settings.proxyUrlTW" placeholder="例：https://your-worker.example.workers.dev/?url={url}" />
+              <input type="text" v-model="settings.proxyUrlTW" placeholder="例：https://your-proxy.com/?url={url}" />
             </div>
           </template>
           <template v-if="settings.stockProviderTW === 'custom'">
@@ -660,10 +660,10 @@
             </div>
           </template>
         </template>
-        <div class="empty-hint" style="text-align:left">
+        <!--<div class="empty-hint" style="text-align:left">
           不內建任何公開 CORS proxy，需自行配置 Proxy URL（建議自建 Cloudflare Workers，
           詳見 docs/cloudflare-worker-proxy-佈建手冊.md）。設定完成後請至「連線測試」子分頁驗證。
-        </div>
+        </div>-->
       </div>
 
       <div class="card">
@@ -682,11 +682,11 @@
             <span class="field-chip-label">Finnhub API Key</span>
             <input type="text" v-model="settings.finnhubApiKey" placeholder="於 finnhub.io 免費申請後填入" />
           </div>
-          <div class="empty-hint" style="text-align:left">
+          <!--<div class="empty-hint" style="text-align:left">
             請至 <a href="https://finnhub.io/register" target="_blank" rel="noopener">finnhub.io</a> 免費註冊取得 API Key，貼上即可使用；
             免費層限制每分鐘 60 次查詢，帳戶數量多時請留意查詢速率。Key 僅存於本機瀏覽器，不會上傳，
             且不會出現於畫面、Log 或匯出檔案中（一律顯示為 ******）。
-          </div>
+          </div>-->
         </template>
         <template v-if="settings.stockProviderUS !== 'manual'">
           <div class="field-stack">
@@ -699,7 +699,7 @@
           <template v-if="settings.connectionModeUS === 'proxy'">
             <div class="field-stack">
               <span class="field-chip-label">Proxy URL</span>
-              <input type="text" v-model="settings.proxyUrlUS" placeholder="例：https://your-worker.example.workers.dev/?url={url}" />
+              <input type="text" v-model="settings.proxyUrlUS" placeholder="例：https://your-proxy.com/?url={url}" />
             </div>
           </template>
           <template v-if="settings.stockProviderUS === 'custom'">
@@ -713,10 +713,10 @@
             </div>
           </template>
         </template>
-        <div class="empty-hint" style="text-align:left">
+        <!--<div class="empty-hint" style="text-align:left">
           預設為手動輸入。於「設定 &gt; 帳戶」的「同步價格」按鈕可一次更新所有帳戶/項目的價格（投資取即時市價），
           查詢失敗請改回手動輸入。內部網路無法連外時更新會失敗，屬正常現象。
-        </div>
+        </div>-->
       </div>
       </template>
 

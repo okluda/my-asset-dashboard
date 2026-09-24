@@ -21,10 +21,10 @@ const ALD = (() => {
     //   美股 stockProviderUS：'finnhub'（需自行申請 API Key） | 'yahoo' | 'custom' | 'manual'（預設）
     //   connectionModeTW/US：'direct'（瀏覽器直接連線） | 'proxy'（經 proxyUrlTW/US 轉發）
     //     台股 TWSE OpenAPI 官方端點實測不支援瀏覽器 CORS，預設須經 proxy 才能查詢。
-    stockProviderTW: "twse",
-    stockProviderUS: "manual",
+    stockProviderTW: "yahoo",
+    stockProviderUS: "yahoo",
     connectionModeTW: "proxy",
-    connectionModeUS: "direct",
+    connectionModeUS: "proxy",
     proxyUrlTW: "", // connectionModeTW === 'proxy' 時使用，格式如 https://example.workers.dev/?url={url}
     proxyUrlUS: "", // connectionModeUS === 'proxy' 時使用，格式同上
     customStockApiTW: "", // stockProviderTW === 'custom' 時使用，URL 樣板，含 {symbol} 佔位字
@@ -37,7 +37,7 @@ const ALD = (() => {
     syncLogEnabled: false, // 是否記錄「同步價格/匯率」的詳細執行資訊（含 API 請求/回應內容），預設關閉
     themeMode: "dark", // 'dark' | 'light'
     themeColor: "grayBlue", // 主題配色（見 THEME_COLORS）；'custom' 時改用 customColor
-    customColor: "#5b8cff", // 自訂配色（themeColor === 'custom' 時生效）
+    customColor: "#707070", // 自訂配色（themeColor === 'custom' 時生效）
     fontFamily: "system", // 字型（見 FONT_FAMILIES）
     fontSize: "md", // 字型大小（見 FONT_SIZES）
     // 資產子類別顯示名稱：可自訂 4 個資產類別的呈現名稱，空白時以內部鍵為預設。
@@ -58,12 +58,10 @@ const ALD = (() => {
 
   // 主題配色：切換 --accent（按鈕/選中狀態等主色）。莫蘭迪低飽和色系。
   const THEME_COLORS = {
-    morandiPink: { label: "莫蘭迪粉", accent: "#D4C2C1" },
-    grayBlue: { label: "灰藍", accent: "#B7C9D9" },
-    terracotta: { label: "淡陶土", accent: "#E2B7A0" },
-    oliveGray: { label: "橄欖灰綠", accent: "#A4A37A" },
-    fogPurple: { label: "霧紫灰", accent: "#C9C0C9" },
-    almond: { label: "米杏", accent: "#D8CFC4" },
+    OatmealTaupe: { label: "燕麥灰褐", accent: "#7A7571" },
+    PineFog: { label: "霧松灰綠", accent: "#606F6A" },
+    SmokyBlue: { label: "煙燻藍灰", accent: "#6A7785" },
+    PebbleGray: { label: "鵝卵石灰", accent: "#D2D7DF" },
   };
 
   // 字型選項：切換 --font-family
@@ -607,7 +605,7 @@ const ALD = (() => {
     // 配色：themeColor === 'custom' 時使用自訂色，否則用預設配色表
     const accent =
       settings.themeColor === "custom"
-        ? (settings.customColor || "#5b8cff")
+        ? (settings.customColor || "#707070")
         : (THEME_COLORS[settings.themeColor] || THEME_COLORS.grayBlue).accent;
     const font = FONT_FAMILIES[settings.fontFamily] || FONT_FAMILIES.system;
     const size = FONT_SIZES[settings.fontSize] || FONT_SIZES.md;
