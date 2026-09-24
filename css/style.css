@@ -1,15 +1,22 @@
 :root {
-  --bg: #0f1020;
-  --card-bg: #1c1d33;
-  --card-bg-2: #242642;
-  --text-main: #f2f2f7;
-  --text-sub: #9a9ab0;
+  /* --bg: #0f1020; */
+  --bg: #252526;
+  /* --card-bg: #1c1d33; */
+  --card-bg: #333333;
+  /* --card-bg-2: #242642; */
+  --card-bg-2: #404040;
+  /* --text-main: #f2f2f7; */
+  --text-main: #cccccc;
+  /* --text-sub: #9a9ab0; */
+  --text-sub: #a1a1a1;
   --accent: #5b8cff;
   --accent-2: #35c98f;
   --danger: #ff6b6b;
   --warn: #ffb454;
-  --border: #33344f;
-  --tabbar-bg: #1a1b2e;
+  /* --border: #33344f; */
+  --border: #525252;
+  /* --tabbar-bg: #1a1b2e; */
+  --tabbar-bg: #3d3d3d;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-top: env(safe-area-inset-top, 0px);
   --font-scale: 1;
@@ -691,7 +698,7 @@ table.detail-table input, table.detail-table select {
 
 .tab-btn.active {
   background: var(--accent);
-  color: #fff;
+  color: #ffffff;
 }
 
 .tab-icon {
