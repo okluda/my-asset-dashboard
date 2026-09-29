@@ -169,9 +169,15 @@ const TabOverview = {
             .reduce((sum, r) => sum + ALD.amountTWD(r), 0)
         );
         const ratio = totalAssets.value > 0 ? amount / totalAssets.value : 0;
-        return { type, amount, ratio };
+        return { type, amount, ratio, color: ALD.chartColor(ALD.ASSET_TYPES.indexOf(type)) };
       });
     });
+
+    const hidden = computed(() => !!store.settings.hideAmounts);
+    function toggleHidden() {
+      store.settings.hideAmounts = !store.settings.hideAmounts;
+    }
+    const unitText = computed(() => ALD.unitLabel(store.settings));
 
     return {
       totalAssets,
@@ -179,9 +185,243 @@ const TabOverview = {
       netAssets,
       liabilityRatio,
       breakdown,
-      fmt: (v) => ALD.formatAmount(v, store.settings),
+      hidden,
+      toggleHidden,
+      unitText,
+      fmt: (v) => (hidden.value ? "***" : ALD.formatAmount(v, store.settings)),
+      fmtNum: (v) => (hidden.value ? "***" : ALD.formatAmountNum(v, store.settings)),
       pct: (v) => ALD.formatPercent(v),
       catName: (t) => ALD.categoryDisplayName(store.settings, t),
+    };
+  },
+};
+
+// ---------- 資產（負債） ----------
+// 「我的資產／我的負債」切換狀態：模組層級 ref，供標題列（App）、底部分頁列文字與 TabAssets 共用；
+// 不寫入設定，重新整理後回到「我的資產」。
+const assetsView = ref("asset");
+
+// 區段（segment）排序：現金 → 投資 → 應收款 → 固定資產；同類別內台幣/台股 → 美元/美股 → 其他幣別
+const SEGMENT_KIND_ORDER = { cash: 0, inv: 1, recv: 2, fixed: 3 };
+const SEGMENT_CUR_LABEL = {
+  cash: { TWD: "台幣", USD: "美元" },
+  inv: { TWD: "台股", USD: "美股" },
+};
+
+const TabAssets = {
+  template: "#tpl-assets",
+  setup() {
+    const settings = store.settings;
+    const hidden = computed(() => !!settings.hideAmounts);
+    const fmt = (v) => (hidden.value ? "***" : ALD.formatAmount(v, settings));
+    const fmtNum = (v) => (hidden.value ? "***" : ALD.formatAmountNum(v, settings));
+    const num = (v) =>
+      hidden.value ? "***" : (Number(v) || 0).toLocaleString("zh-TW", { maximumFractionDigits: 2 });
+    const pct = (v) => ALD.formatPercent(v);
+    const catName = (t) => ALD.categoryDisplayName(settings, t);
+    const unitText = computed(() => ALD.unitLabel(settings));
+
+    const assetRecs = computed(() =>
+      store.records.filter((r) => !r.excluded && ALD.ASSET_TYPES.includes(r.type))
+    );
+    const totalAssets = computed(() =>
+      ALD.round2(assetRecs.value.reduce((s, r) => s + ALD.amountTWD(r), 0))
+    );
+    const breakdown = computed(() =>
+      ALD.ASSET_TYPES.map((type, i) => {
+        const amount = ALD.round2(
+          assetRecs.value.filter((r) => r.type === type).reduce((s, r) => s + ALD.amountTWD(r), 0)
+        );
+        return {
+          type,
+          amount,
+          ratio: totalAssets.value > 0 ? amount / totalAssets.value : 0,
+          color: ALD.chartColor(i),
+        };
+      })
+    );
+
+    // 每筆資產紀錄對應到一個區段；固定的 5 個流動資產區段與固定資產區段即使沒有資料也保留（金額 0），
+    // 其他幣別（設定中另外新增的幣別）有資料才出現。
+    function makeSegment(kind, cur) {
+      let key, label;
+      if (kind === "recv") {
+        key = "recv";
+        label = catName("應收款");
+      } else if (kind === "fixed") {
+        key = "fixed";
+        label = catName("固定資產");
+      } else {
+        key = kind + ":" + cur;
+        label = SEGMENT_CUR_LABEL[kind][cur] || (kind === "cash" ? cur : cur + " 投資");
+      }
+      const curRank = cur === "TWD" ? 0 : cur === "USD" ? 1 : 2;
+      return {
+        key,
+        kind,
+        cur: kind === "recv" || kind === "fixed" ? "" : cur,
+        label,
+        group: kind === "fixed" ? "noncurrent" : "current",
+        order: SEGMENT_KIND_ORDER[kind] * 10 + curRank,
+        amount: 0,
+        records: [],
+      };
+    }
+    function segmentKeyOf(r) {
+      const cur = r.currency || "TWD";
+      if (r.type === "流動資金") return { kind: "cash", cur };
+      if (r.type === "投資") return { kind: "inv", cur };
+      if (r.type === "應收款") return { kind: "recv", cur: "" };
+      return { kind: "fixed", cur: "" };
+    }
+    const segments = computed(() => {
+      const map = {};
+      const ensure = (kind, cur) => {
+        const seg = makeSegment(kind, cur);
+        if (!map[seg.key]) map[seg.key] = seg;
+        return map[seg.key];
+      };
+      ensure("cash", "TWD");
+      ensure("cash", "USD");
+      ensure("inv", "TWD");
+      ensure("inv", "USD");
+      ensure("recv", "");
+      ensure("fixed", "");
+      assetRecs.value.forEach((r) => {
+        const { kind, cur } = segmentKeyOf(r);
+        const seg = ensure(kind, cur);
+        seg.records.push(r);
+        seg.amount = ALD.round2(seg.amount + ALD.amountTWD(r));
+      });
+      return Object.values(map).sort((a, b) => a.order - b.order || (a.key < b.key ? -1 : 1));
+    });
+
+    const row3 = ref("current");
+    const row4 = ref(["all"]);
+    const row3Amount = (g) =>
+      ALD.round2(segments.value.filter((s) => s.group === g).reduce((sum, s) => sum + s.amount, 0));
+    const currentAmount = computed(() => row3Amount("current"));
+    const noncurrentAmount = computed(() => row3Amount("noncurrent"));
+    const availableSegments = computed(() => segments.value.filter((s) => s.group === row3.value));
+    const row4Chips = computed(() => [
+      {
+        key: "all",
+        label: "全部",
+        amount: row3.value === "current" ? currentAmount.value : noncurrentAmount.value,
+      },
+      ...availableSegments.value.map((s) => ({ key: s.key, label: s.label, amount: s.amount })),
+    ]);
+
+    function selectRow3(g) {
+      if (row3.value === g) return;
+      row3.value = g;
+      row4.value = ["all"];
+    }
+    function toggleRow4(key) {
+      if (key === "all") {
+        row4.value = ["all"];
+        return;
+      }
+      const cur = row4.value.filter((k) => k !== "all");
+      const idx = cur.indexOf(key);
+      if (idx === -1) cur.push(key);
+      else cur.splice(idx, 1);
+      row4.value = cur.length ? cur : ["all"];
+    }
+
+    const selectedSegments = computed(() => {
+      if (row4.value.includes("all")) return availableSegments.value;
+      const picked = availableSegments.value.filter((s) => row4.value.includes(s.key));
+      return picked.length ? picked : availableSegments.value;
+    });
+    const denominator = computed(() =>
+      ALD.round2(selectedSegments.value.reduce((s, seg) => s + seg.amount, 0))
+    );
+
+    // 帳戶彙總沿用明細頁 summary 的方式：同一區段、同一帳戶的多筆紀錄加總
+    const groups = computed(() =>
+      selectedSegments.value
+        .filter((seg) => seg.records.length > 0)
+        .map((seg) => {
+          const acctMap = {};
+          seg.records.forEach((r) => {
+            const name = r.account || "(未命名)";
+            if (!acctMap[name]) {
+              acctMap[name] = { account: name, amountTWD: 0, amountOrig: 0, units: 0 };
+            }
+            const a = acctMap[name];
+            a.amountTWD = ALD.round2(a.amountTWD + ALD.amountTWD(r));
+            a.amountOrig = ALD.round2(a.amountOrig + ALD.origAmount(r));
+            a.units = ALD.round2(a.units + (Number(r.units) || 0));
+          });
+          const isForeign = !!seg.cur && seg.cur !== settings.baseCurrency;
+          const accounts = Object.values(acctMap).map((a) => {
+            let priceText = "";
+            if (seg.kind === "inv") {
+              let price = ALD.lookupAccountPrice(store.accounts, "投資", a.account);
+              if (!price) price = a.units > 0 ? a.amountOrig / a.units : 0;
+              priceText =
+                (seg.cur ? seg.cur + " " : "") +
+                (Number(price) || 0).toLocaleString("zh-TW", { maximumFractionDigits: 4 });
+            }
+            return {
+              ...a,
+              ratio: denominator.value > 0 ? a.amountTWD / denominator.value : 0,
+              origText: isForeign ? seg.cur + " " + num(a.amountOrig) : num(a.amountOrig),
+              priceText,
+            };
+          });
+          return {
+            key: seg.key,
+            label: seg.label,
+            invest: seg.kind === "inv",
+            isForeign,
+            amount: seg.amount,
+            accounts,
+          };
+        })
+    );
+
+    const liabilityAccounts = computed(() => {
+      const map = {};
+      store.records
+        .filter((r) => !r.excluded && r.type === "負債")
+        .forEach((r) => {
+          const name = r.account || "(未命名)";
+          map[name] = ALD.round2((map[name] || 0) + ALD.amountTWD(r));
+        });
+      const list = Object.keys(map).map((account) => ({ account, amount: map[account] }));
+      const total = ALD.round2(list.reduce((s, a) => s + a.amount, 0));
+      return list.map((a, i) => ({
+        ...a,
+        ratio: total > 0 ? a.amount / total : 0,
+        color: ALD.chartColor(i),
+      }));
+    });
+    const totalLiabilities = computed(() =>
+      ALD.round2(liabilityAccounts.value.reduce((s, a) => s + a.amount, 0))
+    );
+
+    return {
+      view: assetsView,
+      totalAssets,
+      breakdown,
+      row3,
+      row4,
+      currentAmount,
+      noncurrentAmount,
+      row4Chips,
+      selectRow3,
+      toggleRow4,
+      groups,
+      liabilityAccounts,
+      totalLiabilities,
+      unitText,
+      fmt,
+      fmtNum,
+      num,
+      pct,
+      catName,
     };
   },
 };
@@ -1255,13 +1495,20 @@ const TabSettings = {
 
 // ---------- 根元件：底部分頁列 + 分頁切換 ----------
 const App = {
-  components: { TabOverview, TabRebalance, TabDetail, TabSettings },
+  components: { TabOverview, TabRebalance, TabAssets, TabDetail, TabSettings },
   template: `
     <div class="page-header" :class="{ 'has-back': inSettingsSubPage }" ref="pageHeaderRef">
       <template v-if="inSettingsSubPage">
         <button type="button" class="set-back-btn" @click="closeSubPage" aria-label="返回設定">‹</button>
         <div class="set-page-title">{{ settingsSubPageTitles[settingsSubPage] }}</div>
       </template>
+      <button
+        v-else-if="activeTab === 'assets'"
+        type="button"
+        class="as-title-btn"
+        @click="toggleAssetsView"
+        :aria-label="assetsView === 'asset' ? '切換到我的負債' : '切換到我的資產'"
+      >{{ assetsView === 'asset' ? '我的資產 ›' : '‹ 我的負債' }}</button>
       <template v-else>{{ tabTitles[activeTab] }}</template>
     </div>
     <component :is="activeComponent"></component>
@@ -1274,7 +1521,7 @@ const App = {
         @click="setActiveTab(tab.key)"
       >
         <span class="tab-icon">{{ tab.icon }}</span>
-        <span>{{ tab.label }}</span>
+        <span>{{ tabLabel(tab) }}</span>
       </button>
     </nav>
     <button
@@ -1288,11 +1535,12 @@ const App = {
     const tabs = [
       { key: "overview", label: "總覽", icon: "⬠", component: "TabOverview" },
       { key: "rebalance", label: "再平衡", icon: "⟠", component: "TabRebalance" },
+      { key: "assets", label: "資產", icon: "◧", component: "TabAssets" },
       { key: "detail", label: "明細", icon: "≣", component: "TabDetail" },
       { key: "settings", label: "設定", icon: "⛯", component: "TabSettings" },
     ];
     // 主分頁狀態改由 settings.lastTab 還原，重新整理頁面後可維持上次所在分頁；
-    // settings.lastTab 不存在（舊資料）或非上述四種合法值時，一律回退為 overview。
+    // settings.lastTab 不存在（舊資料）或非上述五種合法值時，一律回退為 overview。
     const validTabKeys = tabs.map((t) => t.key);
     const initialTab = validTabKeys.includes(store.settings.lastTab)
       ? store.settings.lastTab
@@ -1310,6 +1558,14 @@ const App = {
     function closeSubPage() {
       settingsSubPage.value = null;
       window.scrollTo(0, 0);
+    }
+    // 「資產」分頁的按鈕文字隨我的資產／我的負債切換
+    function tabLabel(tab) {
+      if (tab.key === "assets") return assetsView.value === "asset" ? "資產" : "負債";
+      return tab.label;
+    }
+    function toggleAssetsView() {
+      assetsView.value = assetsView.value === "asset" ? "liability" : "asset";
     }
     const tabTitles = Object.fromEntries(tabs.map((t) => [t.key, t.label]));
     const activeComponent = computed(
@@ -1386,6 +1642,9 @@ const App = {
       setActiveTab,
       tabs,
       tabTitles,
+      tabLabel,
+      assetsView,
+      toggleAssetsView,
       activeComponent,
       onScrollFab,
       fabVisible,

@@ -9,7 +9,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="theme-color" content="#1c1c2e" />
   <title>fishbubble</title>
-  <link rel="stylesheet" href="css/style.css?v=2026092902" />
+  <link rel="stylesheet" href="css/style.css?v=2026092904" />
 </head>
 <body>
   <!-- 錯誤顯示橫幅：手機上沒有開發者工具可看 console，發生例外時直接顯示在畫面上。
@@ -145,33 +145,63 @@
 
   <script type="text/x-template" id="tpl-overview">
     <div class="page-content">
-      <div class="kpi-row">
-        <div class="kpi-card">
-          <div class="kpi-label">資產</div>
-          <div class="kpi-value">{{ fmt(totalAssets) }}</div>
+      <div class="card ov-hero">
+        <div class="ov-net-label">淨資產</div>
+        <div class="ov-net-row">
+          <div class="ov-net" :class="netAssets >= 0 ? 'positive' : 'negative'">{{ fmt(netAssets) }}</div>
+          <button type="button" class="ov-eye-btn" @click="toggleHidden" :aria-label="hidden ? '顯示金額' : '隱藏金額'">
+            <svg v-if="!hidden" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+            <svg v-else viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M17.94 17.94A10.9 10.9 0 0 1 12 19c-7 0-11-7-11-7a19.8 19.8 0 0 1 5.06-5.94"></path>
+              <path d="M9.9 4.24A10.9 10.9 0 0 1 12 4c7 0 11 7 11 7a19.7 19.7 0 0 1-3.17 4.19"></path>
+              <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"></path>
+              <line x1="1" y1="1" x2="23" y2="23"></line>
+            </svg>
+          </button>
         </div>
-        <div class="kpi-card">
-          <div class="kpi-label">負債</div>
-          <div class="kpi-value">{{ fmt(totalLiabilities) }}</div>
-          <div class="kpi-sub">負債比 {{ pct(liabilityRatio) }}</div>
+
+        <div class="ratio-bar">
+          <div
+            v-for="item in breakdown"
+            :key="'bar-' + item.type"
+            class="ratio-bar-seg"
+            :style="{ width: (item.ratio * 100) + '%', background: item.color }"
+          ></div>
         </div>
-        <div class="kpi-card">
-          <div class="kpi-label">淨資產</div>
-          <div class="kpi-value" :class="netAssets >= 0 ? 'positive' : 'negative'">{{ fmt(netAssets) }}</div>
+        <div class="ratio-legend">
+          <span v-for="item in breakdown" :key="'lg-' + item.type" class="ratio-legend-item">
+            <i class="ratio-dot" :style="{ background: item.color }"></i>{{ catName(item.type) }} {{ pct(item.ratio) }}
+          </span>
+        </div>
+
+        <div class="ov-hr"></div>
+
+        <div class="ov-split">
+          <div class="ov-split-col">
+            <div class="ov-split-label">總資產</div>
+            <div class="ov-split-value">{{ fmt(totalAssets) }}</div>
+          </div>
+          <div class="ov-split-col">
+            <div class="ov-split-label">總負債</div>
+            <div class="ov-split-value">{{ fmt(totalLiabilities) }}</div>
+            <div class="ov-split-sub">負債比 {{ pct(liabilityRatio) }}</div>
+          </div>
         </div>
       </div>
 
       <div class="card">
-        <div class="section-title">資產</div>
+        <div class="pf-head">
+          <div class="section-title">投資組合</div>
+          <div class="pf-unit">單位：{{ unitText }}</div>
+        </div>
         <div v-if="totalAssets <= 0" class="empty-hint">尚無資產資料，請至「明細」新增</div>
-        <div v-for="item in breakdown" :key="item.type" class="asset-item">
-          <div class="asset-item-row">
-            <span class="asset-item-name">{{ catName(item.type) }}</span>
-            <span class="asset-item-amt">{{ fmt(item.amount) }}（{{ pct(item.ratio) }}）</span>
-          </div>
-          <div class="progress-bar">
-            <div class="progress-bar-fill" :style="{ width: (item.ratio * 100) + '%' }"></div>
-          </div>
+        <div v-for="item in breakdown" :key="item.type" class="pf-row">
+          <span class="pf-name">{{ catName(item.type) }}</span>
+          <span class="pf-amt">{{ fmtNum(item.amount) }}</span>
+          <span class="pf-pct">{{ pct(item.ratio) }}</span>
         </div>
       </div>
     </div>
@@ -230,6 +260,126 @@
           </div>
         </template>
       </div>
+    </div>
+  </script>
+
+  <script type="text/x-template" id="tpl-assets">
+    <div class="page-content">
+      <template v-if="view === 'asset'">
+        <div class="card as-summary">
+          <div class="as-total-label">總資產</div>
+          <div class="as-total">{{ fmt(totalAssets) }}</div>
+
+          <div class="ratio-bar">
+            <div
+              v-for="item in breakdown"
+              :key="'bar-' + item.type"
+              class="ratio-bar-seg"
+              :style="{ width: (item.ratio * 100) + '%', background: item.color }"
+            ></div>
+          </div>
+          <div class="ratio-legend">
+            <span v-for="item in breakdown" :key="'lg-' + item.type" class="ratio-legend-item">
+              <i class="ratio-dot" :style="{ background: item.color }"></i>{{ catName(item.type) }} {{ pct(item.ratio) }}
+            </span>
+          </div>
+
+          <div class="as-row3">
+            <button type="button" class="as-block" :class="{ active: row3 === 'current' }" @click="selectRow3('current')">
+              <span class="as-block-name">流動資產</span>
+              <span class="as-block-amt">{{ fmtNum(currentAmount) }}</span>
+            </button>
+            <button type="button" class="as-block" :class="{ active: row3 === 'noncurrent' }" @click="selectRow3('noncurrent')">
+              <span class="as-block-name">非流動資產</span>
+              <span class="as-block-amt">{{ fmtNum(noncurrentAmount) }}</span>
+            </button>
+          </div>
+
+          <div class="as-row4">
+            <button
+              v-for="chip in row4Chips"
+              :key="chip.key"
+              type="button"
+              class="as-chip"
+              :class="{ active: row4.includes(chip.key) }"
+              @click="toggleRow4(chip.key)"
+            >
+              <span class="as-chip-name">{{ chip.label }}</span>
+              <span class="as-chip-amt">{{ fmtNum(chip.amount) }}</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="pf-head">
+            <div class="section-title">帳戶匯總</div>
+            <div class="pf-unit">單位：{{ unitText }}</div>
+          </div>
+          <div v-if="groups.length === 0" class="empty-hint">此範圍尚無資產資料，請至「明細」新增</div>
+          <div v-for="g in groups" :key="g.key" class="as-group">
+            <div class="as-group-head">
+              <span>{{ g.label }} · {{ g.accounts.length }} 筆</span>
+              <span class="as-amt">{{ fmtNum(g.amount) }}</span>
+            </div>
+            <template v-if="g.invest">
+              <div v-for="a in g.accounts" :key="a.account" class="as-acct as-acct-invest">
+                <span class="as-acct-ratio">{{ pct(a.ratio) }}</span>
+                <span class="as-acct-main">
+                  <span class="as-acct-name">{{ a.account }}</span>
+                  <span class="as-acct-sub">價格 {{ a.priceText }}</span>
+                  <span class="as-acct-sub">總股數 {{ num(a.units) }}</span>
+                </span>
+                <span class="as-amt">{{ fmtNum(a.amountTWD) }}</span>
+              </div>
+            </template>
+            <template v-else>
+              <div v-for="a in g.accounts" :key="a.account" class="as-acct">
+                <span class="as-acct-main">
+                  <span class="as-acct-name">{{ a.account }}</span>
+                  <span class="as-acct-sub">{{ a.origText }}</span>
+                </span>
+                <span class="as-amt">{{ fmtNum(a.amountTWD) }}</span>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+
+      <template v-else>
+        <div class="card as-summary">
+          <div class="as-total-label">總負債</div>
+          <div class="as-total">{{ fmt(totalLiabilities) }}</div>
+          <template v-if="liabilityAccounts.length > 0">
+            <div class="ratio-bar">
+              <div
+                v-for="item in liabilityAccounts"
+                :key="'bar-' + item.account"
+                class="ratio-bar-seg"
+                :style="{ width: (item.ratio * 100) + '%', background: item.color }"
+              ></div>
+            </div>
+            <div class="ratio-legend">
+              <span v-for="item in liabilityAccounts" :key="'lg-' + item.account" class="ratio-legend-item">
+                <i class="ratio-dot" :style="{ background: item.color }"></i>{{ item.account }} {{ pct(item.ratio) }}
+              </span>
+            </div>
+          </template>
+        </div>
+
+        <div class="card">
+          <div class="pf-head">
+            <div class="section-title">負債帳戶</div>
+            <div class="pf-unit">單位：{{ unitText }}</div>
+          </div>
+          <div v-if="liabilityAccounts.length === 0" class="empty-hint">尚無負債資料，請至「明細」新增</div>
+          <div v-for="a in liabilityAccounts" :key="a.account" class="as-acct">
+            <span class="as-acct-main">
+              <span class="as-acct-name">{{ a.account }}</span>
+            </span>
+            <span class="as-amt">{{ fmtNum(a.amount) }}</span>
+          </div>
+        </div>
+      </template>
     </div>
   </script>
 
@@ -1011,9 +1161,9 @@
   <!-- 本地程式檔（store/db/services/app）：?v= 為快取破壞參數，比照上方 CDN 的 ?cb= 慣例。
        修改這 4 個檔案任何內容後，務必同步更新此版本號，避免瀏覽器/CDN 快取舊版程式碼，
        導致「畫面（index.html）看起來是新版、但實際執行邏輯是舊版」的不一致問題。 -->
-  <script src="js/store.js?v=20260929"></script>
-  <script src="js/db.js?v=20260929"></script>
-  <script src="js/services.js?v=20260929"></script>
-  <script src="js/app.js?v=20260929"></script>
+  <script src="js/store.js?v=2026092904"></script>
+  <script src="js/db.js?v=2026092904"></script>
+  <script src="js/services.js?v=2026092904"></script>
+  <script src="js/app.js?v=2026092904"></script>
 </body>
 </html>
