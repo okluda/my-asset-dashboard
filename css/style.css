@@ -1372,9 +1372,8 @@ button.set-row:disabled {
   margin-left: 6px;
 }
 
-/* 下拉選單：與區塊底色融合，不顯示獨立按鈕底色/邊框，右側以 ⌃⌄ 小圖示提示可選 */
+/* 下拉選單：沿用原生 select，僅底色改為區塊底色並移除邊框，與區塊融合 */
 .set-select {
-  position: relative;
   display: flex;
   justify-content: flex-end;
   flex: 1 1 auto;
@@ -1383,43 +1382,9 @@ button.set-row:disabled {
 }
 
 .set-select select {
-  -webkit-appearance: none;
-  appearance: none;
-  background: transparent;
-  border: none;
-  border-radius: 0;
-  color: var(--text-sub);
-  padding: 4px 18px 4px 0;
-  width: 100%;
-  min-width: 0;
-  text-align: right;
-  text-align-last: right;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  overflow: hidden;
-  cursor: pointer;
-}
-
-.set-select select:focus {
-  outline: none;
-}
-
-.set-select::after {
-  content: "\2303\A\2304";
-  white-space: pre;
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 9px;
-  line-height: 7px;
-  color: var(--text-sub);
-  pointer-events: none;
-}
-
-.set-select select option {
   background: var(--card-bg);
-  color: var(--text-main);
+  border: 0;
+  max-width: 100%;
 }
 
 /* 開關：原生 checkbox 以 opacity:0 疊滿整個開關範圍，保有實際尺寸、可直接點擊 */
