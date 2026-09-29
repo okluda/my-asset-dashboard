@@ -33,7 +33,8 @@ const ALD = (() => {
     customPricePathUS: "", // stockProviderUS === 'custom' 時使用，同上
     finnhubApiKey: "", // 美股 provider 為 'finnhub' 時使用，存於本機瀏覽器，不會上傳
     rebalanceRatio: 70, // 再平衡：投資目標佔比(%)，預設 70% -> 流動:投資 = 3:7
-    lastTab: "overview", // 上次所在主分頁（overview/rebalance/detail/settings），重新整理後用於還原
+    lastTab: "overview", // 上次所在主分頁（overview/rebalance/assets/detail/settings），重新整理後用於還原
+    hideAmounts: false, // 全域隱藏金額（總覽眼睛鈕切換）：true 時所有金額顯示為 ***，比例（%）照常顯示
     syncLogEnabled: false, // 是否記錄「同步價格/匯率」的詳細執行資訊（含 API 請求/回應內容），預設關閉
     themeMode: "dark", // 'dark' | 'light'
     themeColor: "OatmealTaupe", // 主題配色（見 THEME_COLORS）；'custom' 時改用 customColor
@@ -316,6 +317,26 @@ const ALD = (() => {
       return (v / 10000).toLocaleString("zh-TW", { maximumFractionDigits: 2 }) + " 萬元";
     }
     return Math.round(v).toLocaleString("zh-TW") + " 元";
+  }
+
+  // 與 formatAmount 相同的四捨五入與萬元換算，但不加單位字尾（單位另由 unitLabel 顯示於標題）
+  function formatAmountNum(value, settings) {
+    const v = Number(value) || 0;
+    if (settings && settings.unit === "wan") {
+      return (v / 10000).toLocaleString("zh-TW", { maximumFractionDigits: 2 });
+    }
+    return Math.round(v).toLocaleString("zh-TW");
+  }
+
+  function unitLabel(settings) {
+    return settings && settings.unit === "wan" ? "萬元" : "元";
+  }
+
+  // 比例條/圖例用色（莫蘭迪低飽和色系），超過 6 個時以 chartColor 循環取用
+  const CHART_COLORS = ["#8E9AAF", "#A3B18A", "#D4A373", "#B5838D", "#84A59D", "#C9B79C"];
+
+  function chartColor(index) {
+    return CHART_COLORS[((index % CHART_COLORS.length) + CHART_COLORS.length) % CHART_COLORS.length];
   }
 
   function formatPercent(value, digits = 1) {
@@ -655,6 +676,10 @@ const ALD = (() => {
     isExcluded,
     normalizeRec,
     formatAmount,
+    formatAmountNum,
+    unitLabel,
+    CHART_COLORS,
+    chartColor,
     formatPercent,
     exportCSV,
     parseCSV,
