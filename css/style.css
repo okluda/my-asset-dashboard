@@ -1274,3 +1274,286 @@ input[type="date"].date-native-input::-webkit-datetime-edit-year-field {
   white-space: pre-line;
 }
 
+
+/* ---------- 設定頁：iOS 風格分區清單（set-*，僅限設定頁使用，不影響其他分頁） ---------- */
+.set-section-title {
+  font-size: calc(13px * var(--font-scale, 1));
+  color: var(--text-sub);
+  margin: 18px 4px 6px 16px;
+}
+
+.set-section-title:first-child {
+  margin-top: 6px;
+}
+
+/* 單一區塊：每個分區只有一個區塊，列與列之間以分隔線區隔；不設 overflow:hidden，避免裁切下拉選單 */
+.set-group {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.set-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 46px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-main);
+  font-size: calc(15px * var(--font-scale, 1));
+}
+
+.set-row:last-child {
+  border-bottom: none;
+}
+
+.set-row-label {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* 整列可點選的按鈕列（進入子分頁、執行動作） */
+button.set-row {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+button.set-row:last-child {
+  border-bottom: none;
+}
+
+button.set-row:first-child {
+  border-radius: 14px 14px 0 0;
+}
+
+button.set-row:last-child {
+  border-radius: 0 0 14px 14px;
+}
+
+button.set-row:only-child {
+  border-radius: 14px;
+}
+
+button.set-row:active:not(:disabled) {
+  background: var(--card-bg-2);
+}
+
+button.set-row:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.set-row-action {
+  color: var(--accent);
+}
+
+.set-row-danger {
+  color: var(--danger);
+}
+
+.set-row-value {
+  margin-left: auto;
+  color: var(--text-sub);
+  font-size: calc(14px * var(--font-scale, 1));
+  white-space: nowrap;
+}
+
+.set-chevron {
+  color: var(--text-sub);
+  font-size: calc(20px * var(--font-scale, 1));
+  line-height: 1;
+  margin-left: 6px;
+}
+
+/* 下拉選單：與區塊底色融合，不顯示獨立按鈕底色/邊框，右側以 ⌃⌄ 小圖示提示可選 */
+.set-select {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 65%;
+}
+
+.set-select select {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: var(--text-sub);
+  padding: 4px 18px 4px 0;
+  width: 100%;
+  min-width: 0;
+  text-align: right;
+  text-align-last: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.set-select select:focus {
+  outline: none;
+}
+
+.set-select::after {
+  content: "\2303\A\2304";
+  white-space: pre;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 9px;
+  line-height: 7px;
+  color: var(--text-sub);
+  pointer-events: none;
+}
+
+.set-select select option {
+  background: var(--card-bg);
+  color: var(--text-main);
+}
+
+/* 開關：原生 checkbox 以 opacity:0 疊滿整個開關範圍，保有實際尺寸、可直接點擊 */
+.set-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 50px;
+  height: 30px;
+}
+
+.set-switch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  z-index: 1;
+  cursor: pointer;
+}
+
+.set-switch-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 15px;
+  background: var(--card-bg-2);
+  border: 1px solid var(--border);
+  transition: background 0.2s;
+}
+
+.set-switch-track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s;
+}
+
+.set-switch input:checked + .set-switch-track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.set-switch input:checked + .set-switch-track::after {
+  transform: translateX(20px);
+}
+
+/* label 在上、控制項滿版在下的列（長文字輸入、色票列） */
+.set-row-stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.set-row-stack > .set-row-label {
+  color: var(--text-sub);
+  font-size: calc(13px * var(--font-scale, 1));
+}
+
+.set-row-stack input[type="text"] {
+  width: 100%;
+  min-width: 0;
+}
+
+/* 多行列（資產帳戶每筆、幣別每筆、測試結果） */
+.set-row-block {
+  display: block;
+}
+
+.set-row-block .acc-cfg-actions {
+  margin-top: 8px;
+}
+
+.set-row-block .test-result {
+  margin: 0;
+}
+
+.set-footnote {
+  color: var(--text-sub);
+  font-size: calc(12px * var(--font-scale, 1));
+  line-height: 1.5;
+  margin: 6px 16px 0;
+}
+
+.set-footnote + .set-footnote {
+  margin-top: 4px;
+}
+
+/* 子分頁標題列：左上角圓形返回鈕 + 子分頁名稱 */
+.page-header.has-back {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.set-back-btn {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--card-bg-2);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+  font-size: 24px;
+  line-height: 1;
+  padding: 0 2px 3px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.set-page-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 幣別/資產類別的欄位表頭列 */
+.set-row-head {
+  min-height: 0;
+  padding-top: 8px;
+  padding-bottom: 6px;
+  color: var(--text-sub);
+  font-size: calc(12px * var(--font-scale, 1));
+}
+
+.set-row-empty {
+  color: var(--text-sub);
+  font-size: calc(13px * var(--font-scale, 1));
+}

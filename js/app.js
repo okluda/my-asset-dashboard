@@ -737,13 +737,30 @@ const TabDetail = {
 };
 
 // ---------- 設定 ----------
+// 設定頁目前所在子分頁（null = 設定主頁）；App 標題列與 TabSettings 共用，不寫入 settings/IndexedDB，
+// 重新整理或切換底部分頁後一律回到設定主頁。
+const settingsSubPage = ref(null);
+const SETTINGS_SUBPAGE_TITLES = {
+  appearance: "外觀",
+  currency: "幣別",
+  category: "資產類別",
+  accounts: "資產帳戶",
+  quoteTW: "台股",
+  quoteUS: "美股",
+  test: "連線測試",
+};
+
 const TabSettings = {
   template: "#tpl-settings",
   setup() {
     const settings = store.settings;
     const accounts = store.accounts;
     const syncLogs = store.syncLogs;
-    const settingsTab = ref("system");
+
+    function openSubPage(key) {
+      settingsSubPage.value = key;
+      window.scrollTo(0, 0);
+    }
     const assetCategoryKeys = ALD.ASSET_TYPES;
     const types = ALD.TYPES;
     const syncing = ref(false);
@@ -933,11 +950,15 @@ const TabSettings = {
       }
     }
 
-    // 一次套用匯率、價格、槓桿倍數至所有明細
-    function applyAllToRecords() {
-      applyFxToRecords();
+    // 同步價格、手動修改帳戶欄位、從資產帳戶 CSV 還原後，自動把價格與槓桿倍數套回明細
+    function applyAccountsToRecords() {
       applyPricesToRecords();
       applyLeverageToRecords();
+    }
+
+    function onAccountCategoryChangeAndApply(acc) {
+      onAccountCategoryChange(acc);
+      applyAccountsToRecords();
     }
 
     // 匯出帳戶/項目設定為 CSV
@@ -963,6 +984,7 @@ const TabSettings = {
         }
         const skipped = imported.__skipped || 0;
         store.accounts.splice(0, store.accounts.length, ...imported);
+        applyAccountsToRecords();
         // 明確等待 IndexedDB 保存完成後才顯示「匯入成功」，避免寫入失敗卻誤報成功；
         // watch 之後仍會 debounce 回寫同一份資料，屬冪等操作，不影響正確性。
         await ALD_DB.replaceAccounts(JSON.parse(JSON.stringify(store.accounts)));
@@ -1006,7 +1028,7 @@ const TabSettings = {
             }
           }
         }
-        applyPricesToRecords();
+        applyAccountsToRecords();
         alert(
           "價格同步完成：成功 " + ok + " 筆，失敗 " + fail + " 筆" +
             (skipped > 0 ? "，略過 " + skipped + " 筆（資料來源設為手動輸入）" : "") +
@@ -1176,31 +1198,13 @@ const TabSettings = {
       }
     }
 
-    // 強制清除並重新載入：清空 IndexedDB 三個 store，重新建立預設 records/settings/accounts，
-    // 等寫入全部完成後才 reload，避免在 transaction 尚未完成前就重新整理頁面。
-    async function forceReset() {
-      if (!confirm("強制清除會移除所有本地資料與設定並重新載入頁面，確定嗎？")) return;
-      try {
-        await ALD_DB.clearAllData();
-        const defaultRecords = ALD.seedRecords();
-        const defaultSettings = mergeSettings(null);
-        const defaultAccounts = ALD.seedAccounts();
-        await ALD_DB.replaceRecords(defaultRecords);
-        await ALD_DB.saveSettings(defaultSettings);
-        await ALD_DB.replaceAccounts(defaultAccounts);
-        location.reload();
-      } catch (e) {
-        reportError("強制清除失敗：", e);
-        alert("強制清除失敗：" + (e && e.message ? e.message : e));
-      }
-    }
-
     return {
       settings,
       accounts,
       syncLogs,
       syncLogMax: ALD.SYNC_LOG_MAX,
-      settingsTab,
+      settingsSubPage,
+      openSubPage,
       assetCategoryKeys,
       types,
       syncing,
@@ -1216,10 +1220,8 @@ const TabSettings = {
       removeAccount,
       moveAccountUp,
       moveAccountDown,
-      onAccountCategoryChange,
-      applyPricesToRecords,
-      applyLeverageToRecords,
-      applyAllToRecords,
+      onAccountCategoryChangeAndApply,
+      applyAccountsToRecords,
       exportAccountsCsv,
       importAccountsCsv,
       syncPrices,
@@ -1244,7 +1246,6 @@ const TabSettings = {
       importCsv,
       loadSample,
       resetData,
-      forceReset,
       themeColors: ALD.THEME_COLORS,
       fontFamilies: ALD.FONT_FAMILIES,
       fontSizes: ALD.FONT_SIZES,
@@ -1256,8 +1257,12 @@ const TabSettings = {
 const App = {
   components: { TabOverview, TabRebalance, TabDetail, TabSettings },
   template: `
-    <div class="page-header" ref="pageHeaderRef">
-      {{ tabTitles[activeTab] }}
+    <div class="page-header" :class="{ 'has-back': inSettingsSubPage }" ref="pageHeaderRef">
+      <template v-if="inSettingsSubPage">
+        <button type="button" class="set-back-btn" @click="closeSubPage" aria-label="返回設定">‹</button>
+        <div class="set-page-title">{{ settingsSubPageTitles[settingsSubPage] }}</div>
+      </template>
+      <template v-else>{{ tabTitles[activeTab] }}</template>
     </div>
     <component :is="activeComponent"></component>
     <nav class="tab-bar">
@@ -1295,8 +1300,16 @@ const App = {
     const activeTab = ref(initialTab);
     function setActiveTab(key) {
       activeTab.value = key;
+      settingsSubPage.value = null;
       // 沿用既有 settings 機制回寫 IndexedDB（由既有的 store.settings watch 統一 debounce 儲存）。
       store.settings.lastTab = key;
+    }
+    const inSettingsSubPage = computed(
+      () => activeTab.value === "settings" && !!settingsSubPage.value
+    );
+    function closeSubPage() {
+      settingsSubPage.value = null;
+      window.scrollTo(0, 0);
     }
     const tabTitles = Object.fromEntries(tabs.map((t) => [t.key, t.label]));
     const activeComponent = computed(
@@ -1377,6 +1390,10 @@ const App = {
       onScrollFab,
       fabVisible,
       pageHeaderRef,
+      settingsSubPage,
+      settingsSubPageTitles: SETTINGS_SUBPAGE_TITLES,
+      inSettingsSubPage,
+      closeSubPage,
     };
   },
 };
