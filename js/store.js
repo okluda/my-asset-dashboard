@@ -36,7 +36,7 @@ const ALD = (() => {
     lastTab: "overview", // 上次所在主分頁（overview/rebalance/detail/settings），重新整理後用於還原
     syncLogEnabled: false, // 是否記錄「同步價格/匯率」的詳細執行資訊（含 API 請求/回應內容），預設關閉
     themeMode: "dark", // 'dark' | 'light'
-    themeColor: "grayBlue", // 主題配色（見 THEME_COLORS）；'custom' 時改用 customColor
+    themeColor: "OatmealTaupe", // 主題配色（見 THEME_COLORS）；'custom' 時改用 customColor
     customColor: "#707070", // 自訂配色（themeColor === 'custom' 時生效）
     fontFamily: "system", // 字型（見 FONT_FAMILIES）
     fontSize: "md", // 字型大小（見 FONT_SIZES）
@@ -606,7 +606,7 @@ const ALD = (() => {
     const accent =
       settings.themeColor === "custom"
         ? (settings.customColor || "#707070")
-        : (THEME_COLORS[settings.themeColor] || THEME_COLORS.grayBlue).accent;
+        : (THEME_COLORS[settings.themeColor] || THEME_COLORS.OatmealTaupe).accent;
     const font = FONT_FAMILIES[settings.fontFamily] || FONT_FAMILIES.system;
     const size = FONT_SIZES[settings.fontSize] || FONT_SIZES.md;
     root.style.setProperty("--accent", accent);
