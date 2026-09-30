@@ -9,7 +9,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="theme-color" content="#1c1c2e" />
   <title>fishbubble</title>
-  <link rel="stylesheet" href="css/style.css?v=2026093003" />
+  <link rel="stylesheet" href="css/style.css?v=2026093004" />
 </head>
 <body>
   <!-- 錯誤顯示橫幅：手機上沒有開發者工具可看 console，發生例外時直接顯示在畫面上。
@@ -385,7 +385,7 @@
 
       <!-- 共用 Bottom Sheet：目前僅 [新增帳戶]，後續階段的帳戶增減/編輯/紀錄沿用同一外框 -->
       <div v-if="sheet" class="bs-mask" @click.self="closeSheet">
-        <div class="bs-panel" role="dialog" aria-modal="true">
+        <div class="bs-panel" :class="{ 'bs-panel-fixed': sheet === 'account' }" role="dialog" aria-modal="true">
           <button type="button" class="bs-handle" @click="closeSheet" aria-label="關閉"><span></span></button>
 
           <template v-if="sheet === 'new'">
@@ -422,10 +422,10 @@
             <div class="bs-group">
               <div class="bs-row">
                 <label class="bs-label" for="bs-new-acct">存放位置</label>
-                <select id="bs-new-acct" class="bs-select" v-model="newForm.account">
-                  <option value="">{{ newAccountOptions.length ? '（請選擇）' : '（請先於設定新增帳戶）' }}</option>
-                  <option v-for="a in newAccountOptions" :key="a" :value="a">{{ a }}</option>
-                </select>
+                <input id="bs-new-acct" class="bs-input" type="text" list="bs-new-acct-list" autocomplete="off" placeholder="輸入或選擇帳戶名稱" v-model="newForm.account" />
+                <datalist id="bs-new-acct-list">
+                  <option v-for="a in newAccountOptions" :key="a" :value="a"></option>
+                </datalist>
               </div>
               <div class="bs-row">
                 <label class="bs-label" for="bs-new-units">持有數量</label>
@@ -436,12 +436,14 @@
                 <span class="bs-value">{{ plain(newPreview.amount) }}</span>
               </div>
               <div class="bs-row">
-                <span class="bs-label">單價</span>
-                <span class="bs-value">{{ plain(newPreview.unitPrice) }}</span>
+                <label class="bs-label" for="bs-new-price">單價</label>
+                <input v-if="newIsNewAccount" id="bs-new-price" class="bs-input" type="number" inputmode="decimal" step="any" min="0" v-model="newForm.price" />
+                <span v-else class="bs-value">{{ plain(newPreview.unitPrice) }}</span>
               </div>
               <div class="bs-row">
-                <span class="bs-label">槓桿倍率</span>
-                <span class="bs-value">{{ plain(newPreview.leverage) }}</span>
+                <label class="bs-label" for="bs-new-lev">槓桿倍率</label>
+                <input v-if="newIsNewAccount" id="bs-new-lev" class="bs-input" type="number" inputmode="decimal" step="any" min="0" v-model="newForm.leverage" />
+                <span v-else class="bs-value">{{ plain(newPreview.leverage) }}</span>
               </div>
               <div class="bs-row">
                 <span class="bs-label">匯率</span>
@@ -503,6 +505,17 @@
                   <label class="bs-label" for="bs-adj-qty">調整數量</label>
                   <input id="bs-adj-qty" class="bs-input" type="number" inputmode="decimal" step="any" min="0" placeholder="請輸入" v-model="adj.qty" />
                 </div>
+                <div class="bs-row">
+                  <label class="bs-label" for="bs-adj-note">備註</label>
+                  <input id="bs-adj-note" class="bs-input" type="text" :placeholder="adj.kind === 'internal' ? '轉移' : (adj.dir === 'in' ? '存入' : '支出')" v-model="adj.note" />
+                </div>
+                <div class="bs-row">
+                  <span class="bs-label">不計入</span>
+                  <label class="set-switch">
+                    <input type="checkbox" v-model="adj.excluded" aria-label="不計入" />
+                    <span class="set-switch-track"></span>
+                  </label>
+                </div>
               </div>
 
               <template v-if="adj.kind === 'internal'">
@@ -524,12 +537,6 @@
                 </div>
               </template>
 
-              <div class="bs-group bs-group-gap">
-                <div class="bs-row">
-                  <label class="bs-label" for="bs-adj-note">備註</label>
-                  <input id="bs-adj-note" class="bs-input" type="text" :placeholder="adj.kind === 'internal' ? '轉移' : (adj.dir === 'in' ? '存入' : '支出')" v-model="adj.note" />
-                </div>
-              </div>
             </template>
 
             <!-- 投資 -->
@@ -1538,9 +1545,9 @@
   <!-- 本地程式檔（store/db/services/app）：?v= 為快取破壞參數，比照上方 CDN 的 ?cb= 慣例。
        修改這 4 個檔案任何內容後，務必同步更新此版本號，避免瀏覽器/CDN 快取舊版程式碼，
        導致「畫面（index.html）看起來是新版、但實際執行邏輯是舊版」的不一致問題。 -->
-  <script src="js/store.js?v=2026093003"></script>
-  <script src="js/db.js?v=2026093003"></script>
-  <script src="js/services.js?v=2026093003"></script>
-  <script src="js/app.js?v=2026093003"></script>
+  <script src="js/store.js?v=2026093004"></script>
+  <script src="js/db.js?v=2026093004"></script>
+  <script src="js/services.js?v=2026093004"></script>
+  <script src="js/app.js?v=2026093004"></script>
 </body>
 </html>

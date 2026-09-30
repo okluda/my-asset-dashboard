@@ -429,7 +429,10 @@ const TabAssets = {
       account: "",
       units: "",
       note: "",
+      price: 1, // 僅在輸入「設定中不存在的新帳戶」時使用
+      leverage: 0,
     });
+    const defaultLeverage = (type) => (type === "投資" ? 1 : 0);
     function openNewAccount() {
       newForm.type = assetsView.value === "liability" ? "負債" : "流動資金";
       newForm.currency = settings.baseCurrency || "TWD";
@@ -437,10 +440,14 @@ const TabAssets = {
       newForm.account = "";
       newForm.units = "";
       newForm.note = "";
+      newForm.price = 1;
+      newForm.leverage = defaultLeverage(newForm.type);
       sheet.value = "new";
     }
     function onNewTypeChange() {
       newForm.account = "";
+      newForm.price = 1;
+      newForm.leverage = defaultLeverage(newForm.type);
     }
 
     // 單價：設定中帳戶價格；查無（或為 0）時用該帳戶最新一筆紀錄的單價，再查無用 1
@@ -463,17 +470,30 @@ const TabAssets = {
     const newTypes = ALD.TYPES;
     const newAccountOptions = computed(() => ALD.accountsForCategory(store.accounts, newForm.type));
     const currencyOptions = computed(() => ALD.currencyCodes(settings));
+    const newAccountName = computed(() => newForm.account.trim());
+    // 輸入的名稱不在「設定 > 資產帳戶」該類別中 → 視為新帳戶，儲存時一併加入設定
+    const newIsNewAccount = computed(
+      () => !!newAccountName.value && !newAccountOptions.value.includes(newAccountName.value)
+    );
     const newPreview = computed(() => {
-      const account = newForm.account;
+      const account = newAccountName.value;
+      const isNew = newIsNewAccount.value;
       const rec = {
-        unitPrice: account ? resolveUnitPrice(newForm.type, account) : 0,
+        unitPrice: !account ? 0 : isNew ? Number(newForm.price) || 0 : resolveUnitPrice(newForm.type, account),
         units: Number(newForm.units) || 0,
         fxRate: ALD.currencyRate(settings, newForm.currency) || 1,
-        leverage: account ? resolveLeverage(newForm.type, account) : 0,
+        leverage: !account ? 0 : isNew ? Number(newForm.leverage) || 0 : resolveLeverage(newForm.type, account),
       };
       return { ...rec, amount: ALD.amountTWD(rec), exposure: ALD.exposureTWD(rec) };
     });
-    const newValid = computed(() => !!newForm.account && Number(newForm.units) > 0);
+    const newValid = computed(() => {
+      if (!newAccountName.value || !(Number(newForm.units) > 0)) return false;
+      if (!newIsNewAccount.value) return true;
+      return (
+        newForm.price !== "" && Number(newForm.price) > 0 &&
+        newForm.leverage !== "" && isFinite(Number(newForm.leverage)) && Number(newForm.leverage) >= 0
+      );
+    });
 
     let sheetSaving = false;
     function saveNewAccount() {
@@ -481,9 +501,19 @@ const TabAssets = {
       sheetSaving = true;
       try {
         const p = newPreview.value;
+        const accountName = newAccountName.value;
+        if (newIsNewAccount.value) {
+          const nextOrder = store.accounts.reduce((max, a) => Math.max(max, Number(a.sortOrder) || 0), 0) + 1;
+          store.accounts.push({
+            ...ALD.emptyAccount(newForm.type, nextOrder),
+            account: accountName,
+            price: p.unitPrice,
+            leverage: p.leverage,
+          });
+        }
         const rec = ALD.normalizeRec({
           ...ALD.emptyRecord(newForm.type),
-          account: newForm.account,
+          account: accountName,
           currency: newForm.currency,
           fxRate: p.fxRate,
           unitPrice: p.unitPrice,
@@ -511,6 +541,7 @@ const TabAssets = {
       kind: "external", // external | internal（內部轉移）
       qty: "",
       note: "",
+      excluded: false,
       xType: "流動資金",
       xAccount: "",
       price: "",
@@ -545,6 +576,7 @@ const TabAssets = {
       adj.kind = "external";
       adj.qty = "";
       adj.note = "";
+      adj.excluded = false;
       adj.xType = "流動資金";
       adj.xAccount = "";
       adj.price = "";
@@ -591,6 +623,8 @@ const TabAssets = {
       if (acctKind.value === "repay") {
         return r6(holding.value - (Number(adj.principal) || 0) / (acctPrice.value || 1));
       }
+      // 流動資金類勾選「不計入」時，這筆紀錄不計入持有數量
+      if (acctKind.value === "cash" && adj.excluded) return holding.value;
       return r6(holding.value + adjSign.value * adjQty.value);
     });
 
@@ -627,6 +661,8 @@ const TabAssets = {
       const cur = acctCtx.currency;
       const fx = ALD.currencyRate(settings, cur) || 1;
       const selfName = acctCtx.account === UNNAMED ? "" : acctCtx.account;
+      // 「不計入」僅出現在流動資金類的 [增減]，本筆與對方帳戶紀錄一併套用
+      const excluded = acctKind.value === "cash" && adj.excluded ? 1 : 0;
       const mk = (type, account, units, unitPrice, note) =>
         ALD.normalizeRec({
           ...ALD.emptyRecord(type),
@@ -637,7 +673,7 @@ const TabAssets = {
           units: r6(units),
           leverage: resolveLeverage(type, account),
           note,
-          excluded: 0,
+          excluded,
           date: ts,
         });
       const recs = [];
@@ -676,7 +712,7 @@ const TabAssets = {
 
     function saveAdjust() {
       if (sheetSaving || !adjValid.value) return;
-      const reduces = acctKind.value === "repay" || adj.dir === "out";
+      const reduces = (acctKind.value === "repay" || adj.dir === "out") && !(acctKind.value === "cash" && adj.excluded);
       if (reduces && adjAfter.value < 0) {
         if (!window.confirm("調整後數量為 " + plain(adjAfter.value) + "，小於 0，仍要儲存嗎？")) return;
       }
@@ -818,6 +854,7 @@ const TabAssets = {
       newAccountOptions,
       currencyOptions,
       newPreview,
+      newIsNewAccount,
       newValid,
       saveNewAccount,
       plain,
