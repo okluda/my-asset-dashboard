@@ -146,9 +146,8 @@
   <script type="text/x-template" id="tpl-overview">
     <div class="page-content">
       <div class="card ov-hero">
-        <div class="ov-net-label">淨資產</div>
-        <div class="ov-net-row">
-          <div class="ov-net" :class="netAssets >= 0 ? 'positive' : 'negative'">{{ fmt(netAssets) }}</div>
+        <div class="ov-net-label ov-net-label-row">
+          <span>淨資產</span>
           <button type="button" class="ov-eye-btn" @click="toggleHidden" :aria-label="hidden ? '顯示金額' : '隱藏金額'">
             <svg v-if="!hidden" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"></path>
@@ -161,6 +160,9 @@
               <line x1="1" y1="1" x2="23" y2="23"></line>
             </svg>
           </button>
+        </div>
+        <div class="ov-net-row">
+          <div class="ov-net" :class="netAssets >= 0 ? 'positive' : 'negative'">{{ fmt(netAssets) }}</div>
         </div>
 
         <div class="ratio-bar">
@@ -195,7 +197,6 @@
       <div class="card">
         <div class="pf-head">
           <div class="section-title">投資組合</div>
-          <div class="pf-unit">單位：{{ unitText }}</div>
         </div>
         <div v-if="totalAssets <= 0" class="empty-hint">尚無資產資料，請至「明細」新增</div>
         <div v-for="item in breakdown" :key="item.type" class="pf-row">
@@ -267,20 +268,34 @@
     <div class="page-content as-page">
       <template v-if="view === 'asset'">
         <div class="card as-summary">
-          <div class="as-total-label">總資產</div>
+          <div class="as-total-label as-total-head">
+            <span>總資產</span>
+            <button type="button" class="ov-eye-btn" @click="toggleHidden" :aria-label="hidden ? '顯示金額' : '隱藏金額'">
+              <svg v-if="!hidden" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg v-else viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M17.94 17.94A10.9 10.9 0 0 1 12 19c-7 0-11-7-11-7a19.8 19.8 0 0 1 5.06-5.94"></path>
+                <path d="M9.9 4.24A10.9 10.9 0 0 1 12 4c7 0 11 7 11 7a19.7 19.7 0 0 1-3.17 4.19"></path>
+                <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
           <div class="as-total">{{ fmt(totalAssets) }}</div>
 
           <div class="ratio-bar">
             <div
-              v-for="item in breakdown"
-              :key="'bar-' + item.type"
+              v-for="item in ratioItems"
+              :key="'bar-' + item.key"
               class="ratio-bar-seg"
               :style="{ width: (item.ratio * 100) + '%', background: item.color }"
             ></div>
           </div>
-          <div class="ratio-legend">
-            <span v-for="item in breakdown" :key="'lg-' + item.type" class="ratio-legend-item">
-              <i class="ratio-dot" :style="{ background: item.color }"></i>{{ catName(item.type) }} {{ pct(item.ratio) }}
+          <div class="ratio-legend as-ratio-legend">
+            <span v-for="item in ratioItems" :key="'lg-' + item.key" class="ratio-legend-item">
+              <i class="ratio-dot" :style="{ background: item.color }"></i>{{ item.label }} {{ pctWhole(item.ratio) }}
             </span>
           </div>
 
@@ -310,37 +325,28 @@
           </div>
         </div>
 
-        <div class="card">
+        <div class="as-accounts-section">
           <div class="pf-head">
             <div class="section-title">帳戶匯總</div>
-            <div class="pf-unit">單位：{{ unitText }}</div>
           </div>
           <div v-if="groups.length === 0" class="empty-hint">此範圍尚無資產資料，請至「明細」新增</div>
           <div v-for="g in groups" :key="g.key" class="as-group">
             <div class="as-group-head">
-              <span>{{ g.label }} · {{ g.accounts.length }} 筆</span>
-              <span class="as-amt">{{ fmtNum(g.amount) }}</span>
+              <span>{{ g.label }}</span>
+              <span class="as-group-meta">{{ fmtNum(g.amount) }} · {{ g.accounts.length }} 筆</span>
             </div>
-            <template v-if="g.invest">
-              <div v-for="a in g.accounts" :key="a.account" class="as-acct as-acct-invest as-acct-tap" role="button" tabindex="0" @click="openAccountSheet(g.type, a.account, g.cur)">
-                <span class="as-acct-ratio">{{ pct(a.ratio) }}</span>
+            <div v-for="a in g.accounts" :key="a.account" class="as-acct as-acct-tap" :class="{ 'as-acct-invest': g.invest }" role="button" tabindex="0" @click="openAccountSheet(g.type, a.account, g.cur)">
+                <span class="as-acct-ratio" :style="{ '--ratio': (a.ratio * 360) + 'deg' }">{{ pct(a.ratio) }}</span>
                 <span class="as-acct-main">
                   <span class="as-acct-name">{{ a.account }}</span>
-                  <span class="as-acct-sub">價格 {{ a.priceText }}</span>
-                  <span class="as-acct-sub">總股數 {{ num(a.units) }}</span>
+                  <template v-if="g.invest">
+                    <span class="as-acct-sub">價格 {{ a.priceText }}</span>
+                    <span class="as-acct-sub">總股數 {{ num(a.units) }}</span>
+                  </template>
+                  <span v-else class="as-acct-sub">{{ a.origText }}</span>
                 </span>
                 <span class="as-amt">{{ fmtNum(a.amountTWD) }}</span>
-              </div>
-            </template>
-            <template v-else>
-              <div v-for="a in g.accounts" :key="a.account" class="as-acct as-acct-tap" role="button" tabindex="0" @click="openAccountSheet(g.type, a.account, g.cur)">
-                <span class="as-acct-main">
-                  <span class="as-acct-name">{{ a.account }}</span>
-                  <span class="as-acct-sub">{{ a.origText }}</span>
-                </span>
-                <span class="as-amt">{{ fmtNum(a.amountTWD) }}</span>
-              </div>
-            </template>
+            </div>
           </div>
         </div>
       </template>
@@ -369,7 +375,6 @@
         <div class="card">
           <div class="pf-head">
             <div class="section-title">負債帳戶</div>
-            <div class="pf-unit">單位：{{ unitText }}</div>
           </div>
           <div v-if="liabilityAccounts.length === 0" class="empty-hint">尚無負債資料，請至「明細」新增</div>
           <div v-for="a in liabilityAccounts" :key="a.account" class="as-acct as-acct-tap" role="button" tabindex="0" @click="openAccountSheet('負債', a.account, '')">
@@ -422,7 +427,7 @@
             <div class="bs-group">
               <div class="bs-row">
                 <label class="bs-label" for="bs-new-acct">存放位置</label>
-                <input id="bs-new-acct" class="bs-input" type="text" list="bs-new-acct-list" autocomplete="off" placeholder="輸入或選擇帳戶名稱" v-model="newForm.account" />
+                <input id="bs-new-acct" class="bs-input" type="text" list="bs-new-acct-list" autocomplete="off" placeholder="輸入或選擇帳戶名稱" v-model="newForm.account" @change="onNewAccountNameChange" />
                 <datalist id="bs-new-acct-list">
                   <option v-for="a in newAccountOptions" :key="a" :value="a"></option>
                 </datalist>
@@ -1314,7 +1319,13 @@
             </div>
             <div class="rec-field">
               <label>帳戶/項目</label>
-              <input type="text" v-model="acc.account" placeholder="帳戶/項目" @change="applyAccountsToRecords" />
+              <input type="text" v-model="acc.account" placeholder="帳戶/項目" @focus="rememberAccountName(acc)" @change="onAccountNameChange(acc)" />
+            </div>
+            <div class="rec-field">
+              <label>幣別</label>
+              <select v-model="acc.currency" @focus="rememberAccountCurrency(acc)" @change="onAccountCurrencyChange(acc)">
+                <option v-for="currency in currencyOptions" :key="currency" :value="currency">{{ currency }}</option>
+              </select>
             </div>
             <div class="rec-field">
               <label>價格</label>
@@ -1335,7 +1346,7 @@
           <span class="set-row-label">＋新增帳戶/項目</span>
         </button>
       </div>
-      <div class="set-footnote">修改價格、槓桿倍數、類別或帳戶/項目名稱後，會自動套用至「類別 + 帳戶/項目」相符的明細並重算金額；設定頁「同步 > 同步價格」與「從資產帳戶CSV還原」完成後亦會自動套用。</div>
+      <div class="set-footnote">帳戶/項目名稱在所有類別中必須唯一；每個帳戶只能設定一種幣別，相關明細必須使用相同幣別。修改價格、槓桿倍數、類別或帳戶/項目名稱後，會自動套用至相符的明細並重算金額；設定頁「同步 > 同步價格」與「從資產帳戶CSV還原」完成後亦會自動套用。</div>
       </template>
 
       <!-- ===== 台股報價來源子分頁 ===== -->
