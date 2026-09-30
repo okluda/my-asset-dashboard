@@ -832,10 +832,9 @@
         </div>
       </div>
 
-      <!-- 明細卡片列表 -->
-      <div class="card">
+      <!-- 明細工具區：篩選與排序不使用卡片外框 -->
+      <div class="detail-controls">
         <div class="detail-toolbar">
-          <button class="btn" @click="addRow">＋新增</button>
           <div class="date-filter-group" role="group" aria-label="日期篩選">
             <button
               type="button"
@@ -963,11 +962,15 @@
           </select>
           <button type="button" class="btn small" @click="resetSort">重設排序</button>
         </div>
+      </div>
 
+      <!-- 明細紀錄：所有目前顯示資料共用一張卡片，紀錄列以內縮分隔線區隔 -->
+      <div class="detail-record-card">
+        <button type="button" class="detail-add-btn" @click="addRow">＋新增</button>
         <div v-if="sortedRecords.length === 0" class="empty-hint">
           此類別尚無明細
           <template v-if="hasActiveFilter">（符合目前篩選條件）</template>
-          <template v-else>，點「＋新增」開始</template>
+          <template v-else>，請按上方「＋新增」開始</template>
           <button v-if="hasActiveFilter" class="btn small" @click="clearFilters">清除篩選</button>
         </div>
 

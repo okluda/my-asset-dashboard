@@ -21,6 +21,7 @@
   --safe-top: env(safe-area-inset-top, 0px);
   --font-scale: 1;
   --font-family: -apple-system, BlinkMacSystemFont, "PingFang TC", "Helvetica Neue", Arial, sans-serif;
+  --card-divider-inset: 14px;
 }
 
 /* ---------- 淺色模式（由設定頁「深色/淺色模式」切換套用於 <html>，
@@ -448,8 +449,9 @@ table.detail-table input, table.detail-table select {
   display: flex;
   justify-content: space-between;
   font-size: calc(13px * var(--font-scale, 1));
-  padding: 6px 0;
-  border-bottom: 1px dashed var(--border);
+  padding: 7px 0;
+  margin: 0 var(--card-divider-inset);
+  border-bottom: 1px solid var(--border);
 }
 
 .summary-group:last-child { border-bottom: none; }
@@ -968,13 +970,38 @@ table.detail-table input, table.detail-table select {
   flex: 0 0 auto;
 }
 
-/* ---------- 明細：卡片式明細列 ---------- */
+/* ---------- 明細：無框工具區與單一卡片紀錄列 ---------- */
 .detail-toolbar {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
   gap: 10px;
   margin-bottom: 14px;
+}
+
+.detail-controls {
+  margin: 0 0 14px;
+}
+
+.detail-record-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  margin-bottom: 14px;
+  padding: 14px 0 2px;
+}
+
+.detail-add-btn {
+  width: calc(100% - 28px);
+  margin: 0 14px 2px;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 8px;
+  background: var(--card-bg-2);
+  color: var(--text-main);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .btn.warn {
@@ -988,11 +1015,17 @@ table.detail-table input, table.detail-table select {
 
 .rec-card {
   position: relative;
-  background: var(--card-bg-2);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 12px;
-  margin-bottom: 12px;
+  padding: 12px 14px;
+}
+
+.rec-card + .rec-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: var(--card-divider-inset);
+  right: var(--card-divider-inset);
+  height: 1px;
+  background: var(--border);
 }
 
 /* 收合摘要列：預設收合時唯一可見的內容，點擊可展開/收合 */
@@ -1307,19 +1340,26 @@ input[type="date"].date-native-input::-webkit-datetime-edit-year-field {
 }
 
 .set-row {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   min-height: 46px;
   padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: none;
   color: var(--text-main);
   font-size: calc(15px * var(--font-scale, 1));
 }
 
-.set-row:last-child {
-  border-bottom: none;
+.set-row:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: var(--card-divider-inset);
+  right: var(--card-divider-inset);
+  bottom: 0;
+  height: 1px;
+  background: var(--border);
 }
 
 .set-row-label {
@@ -1332,7 +1372,6 @@ button.set-row {
   width: 100%;
   background: transparent;
   border: none;
-  border-bottom: 1px solid var(--border);
   text-align: left;
   font-weight: 400;
   cursor: pointer;
