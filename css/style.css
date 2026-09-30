@@ -1764,7 +1764,7 @@ button.set-row:disabled {
 .as-chip {
   min-width: 0;
   padding: 6px 12px;
-  border-radius: 999px;
+  border-radius: 10px;
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text-main);
@@ -2178,4 +2178,18 @@ button.set-row:disabled {
 /* [紀錄] 頁籤的唯讀卡片：欄位為 readonly 文字框，不可編輯 */
 .bs-panel .rec-card .rec-exclude {
   cursor: default;
+}
+
+/* 帳戶彈窗（[增減]/[編輯]/[紀錄]）：固定高度，不隨頁籤內容伸縮，內容超出時在彈窗內捲動；頁籤列固定在頂端 */
+.bs-panel.bs-panel-fixed {
+  height: 88vh;
+  height: 88dvh;
+}
+
+.bs-panel-fixed .bs-pill-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg);
+  box-shadow: 0 0 0 6px var(--bg);
 }
