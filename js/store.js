@@ -109,6 +109,31 @@ const ALD = (() => {
     return `${y}-${m}-${day}`;
   }
 
+  // 取得「本地時區」目前時間字串（yyyy-mm-dd hh:mi:ss），同樣不使用 toISOString() 以避免 UTC 偏移。
+  function nowStr() {
+    const d = new Date();
+    const p2 = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(
+      d.getMinutes()
+    )}:${p2(d.getSeconds())}`;
+  }
+
+  // 正規化日期時間：接受 yyyy-mm-dd / yyyy/mm/dd，可選 " hh:mi" 或 " hh:mi:ss"（也接受 T 分隔）；
+  // 輸出 yyyy-mm-dd hh:mi:ss，缺時間補 00:00:00；空值或無法解析回傳 ""。
+  function normalizeDateTime(val) {
+    const s = String(val == null ? "" : val).trim();
+    if (s === "") return "";
+    const m = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+    if (!m) return "";
+    const p2 = (x) => String(x == null ? 0 : x).padStart(2, "0");
+    return `${m[1]}-${p2(m[2])}-${p2(m[3])} ${p2(m[4])}:${p2(m[5])}:${p2(m[6])}`;
+  }
+
+  // 取前 10 碼 yyyy-mm-dd（畫面顯示、日期篩選、date input 使用）；非字串回傳 ""
+  function datePart(val) {
+    return typeof val === "string" ? val.slice(0, 10) : "";
+  }
+
   function emptyRecord(type) {
     const t = type || "流動資金";
     const isInvest = t === "投資";
@@ -116,7 +141,7 @@ const ALD = (() => {
       id: uid(),
       type: t,
       account: "",
-      date: todayStr(),
+      date: nowStr(),
       note: "",
       unitPrice: 1, // 非投資固定為 1；投資可由市價帶入
       currency: "TWD",
@@ -142,6 +167,11 @@ const ALD = (() => {
         ? (rec.type === "投資" ? 1 : 0)
         : Number(rec.leverage);
     rec.excluded = rec.excluded ? 1 : 0;
+    // 日期擴欄遷移：純日期（yyyy-mm-dd / yyyy/mm/dd）補 " 00:00:00"；空值或無法解析者維持原樣
+    if (rec.date) {
+      const dt = normalizeDateTime(rec.date);
+      if (dt) rec.date = dt;
+    }
     if (rec.type !== "投資") {
       // 舊資料遷移：非投資若無單位但有金額，把金額搬到單位
       if (!rec.units && Number(rec.amount)) rec.units = Number(rec.amount) || 0;
@@ -267,7 +297,7 @@ const ALD = (() => {
   // 首次使用提供的範例資料，方便使用者了解畫面呈現方式。
   // 金額為計算欄位（單價 × 單位/額數 × 匯率），這裡透過 normalizeRec 重算。
   function seedRecords() {
-    const today = todayStr();
+    const today = nowStr();
     const raw = [
       { type: "流動資金", account: "銀行活存-台幣", currency: "TWD", fxRate: 1, unitPrice: 1, units: 300000, leverage: 0 },
       { type: "流動資金", account: "銀行活存-美金", currency: "USD", fxRate: 32.5, unitPrice: 1, units: 5000, leverage: 0 },
@@ -373,7 +403,7 @@ const ALD = (() => {
         if (c.key === "amount") o[c.label] = amountTWD(r);
         else if (c.key === "exposure") o[c.label] = exposureTWD(r);
         else if (c.key === "excluded") o[c.label] = r.excluded ? 1 : 0;
-        else if (c.key === "date") o[c.label] = normalizeDate(r.date);
+        else if (c.key === "date") o[c.label] = normalizeDateTime(r.date);
         else if (c.key === "type") o[c.label] = categoryDisplayName(settings, r.type);
         else o[c.label] = r[c.key];
       });
@@ -455,8 +485,8 @@ const ALD = (() => {
               // 帳戶/項目、備註：文字，空值可匯入
               rec.account = String(raw.account == null ? "" : raw.account).trim();
               rec.note = String(raw.note == null ? "" : raw.note).trim();
-              // 日期：yyyy/mm/dd 或 yyyy-mm-dd，空值可匯入（留空）
-              rec.date = normalizeDate(raw.date);
+              // 日期：yyyy/mm/dd、yyyy-mm-dd 或含時分秒，空值可匯入（留空）；輸出統一為 yyyy-mm-dd hh:mi:ss
+              rec.date = normalizeDateTime(raw.date);
               // 單價：數字，空值預設 1
               rec.unitPrice = numOr(raw.unitPrice, 1);
               // 幣別：值域為「設定 > 幣別」清單，空值或不符預設 baseCurrency
@@ -669,6 +699,9 @@ const ALD = (() => {
     emptyRecord,
     uid,
     todayStr,
+    nowStr,
+    normalizeDateTime,
+    datePart,
     round2,
     origAmount,
     amountTWD,
