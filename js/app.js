@@ -59,12 +59,32 @@ function mergeSettings(raw) {
 // （與 ALD.emptyAccount 的預設規則一致：投資類別槓桿倍數預設 1，其餘為 0）。
 // fallbackOrder：舊資料（IndexedDB getAll() 讀出，不保證順序）若無 sortOrder，
 // 依目前載入順序補值（呼叫端傳入 1-based 索引），確保重新整理後仍有明確順序可排序。
-function normalizeAccount(a, fallbackOrder) {
+function normalizeAccount(a, fallbackOrder, settings, records) {
   const category = ALD.TYPES.includes(a.category) ? a.category : "流動資金";
+  const account = String(a.account == null ? "" : a.account).trim();
+  const configuredCurrency = String(a.currency == null ? "" : a.currency).trim().toUpperCase();
+  if (configuredCurrency && !ALD.currencyCodes(settings).includes(configuredCurrency)) {
+    throw new Error(`帳戶/項目「${account || "(未命名)"}」的幣別「${configuredCurrency}」不在幣別設定中。`);
+  }
+  const recordCurrencies = [
+    ...new Set(
+      (records || [])
+        .filter((rec) => account && rec.account === account && rec.currency)
+        .map((rec) => rec.currency)
+    ),
+  ];
+  if (recordCurrencies.length > 1) {
+    throw new Error(`帳戶/項目「${account}」的既有明細使用多種幣別：${recordCurrencies.join("、")}。`);
+  }
+  const currency =
+    ALD.currencyCodes(settings).includes(configuredCurrency)
+      ? configuredCurrency
+      : recordCurrencies[0] || settings.baseCurrency || "TWD";
   return {
     id: a.id || ALD.uid(),
     category,
-    account: String(a.account == null ? "" : a.account),
+    account,
+    currency,
     price: Number(a.price) || 0,
     leverage: a.leverage == null ? (category === "投資" ? 1 : 0) : Number(a.leverage) || 0,
     sortOrder: a.sortOrder == null || isNaN(Number(a.sortOrder)) ? fallbackOrder : Number(a.sortOrder),
@@ -177,8 +197,6 @@ const TabOverview = {
     function toggleHidden() {
       store.settings.hideAmounts = !store.settings.hideAmounts;
     }
-    const unitText = computed(() => ALD.unitLabel(store.settings));
-
     return {
       totalAssets,
       totalLiabilities,
@@ -187,7 +205,6 @@ const TabOverview = {
       breakdown,
       hidden,
       toggleHidden,
-      unitText,
       fmt: (v) => (hidden.value ? "***" : ALD.formatAmount(v, store.settings)),
       fmtNum: (v) => (hidden.value ? "***" : ALD.formatAmountNum(v, store.settings)),
       pct: (v) => ALD.formatPercent(v),
@@ -220,8 +237,8 @@ const TabAssets = {
     const num = (v) =>
       hidden.value ? "***" : (Number(v) || 0).toLocaleString("zh-TW", { maximumFractionDigits: 2 });
     const pct = (v) => ALD.formatPercent(v);
+    const pctWhole = (v) => `${Math.round((Number(v) || 0) * 100)}%`;
     const catName = (t) => ALD.categoryDisplayName(settings, t);
-    const unitText = computed(() => ALD.unitLabel(settings));
 
     const assetRecs = computed(() =>
       store.records.filter((r) => !r.excluded && ALD.ASSET_TYPES.includes(r.type))
@@ -242,6 +259,36 @@ const TabAssets = {
         };
       })
     );
+
+    // row 2：流動資金按幣別、投資按帳戶、固定資產與應收款各合併一組，僅顯示比例最高的五項。
+    const ratioItems = computed(() => {
+      const map = {};
+      const add = (key, label, amount) => {
+        if (!map[key]) map[key] = { key, label, amount: 0 };
+        map[key].amount = ALD.round2(map[key].amount + amount);
+      };
+      assetRecs.value.forEach((rec) => {
+        const amount = ALD.amountTWD(rec);
+        if (rec.type === "流動資金") {
+          const currency = rec.currency || settings.baseCurrency || "TWD";
+          add(`cash:${currency}`, SEGMENT_CUR_LABEL.cash[currency] || currency, amount);
+        } else if (rec.type === "投資") {
+          add(`inv:${rec.account || "(未命名)"}`, rec.account || "(未命名)", amount);
+        } else if (rec.type === "固定資產") {
+          add("fixed", catName("固定資產"), amount);
+        } else {
+          add("recv", catName("應收款"), amount);
+        }
+      });
+      return Object.values(map)
+        .map((item) => ({
+          ...item,
+          ratio: totalAssets.value > 0 ? item.amount / totalAssets.value : 0,
+        }))
+        .sort((a, b) => b.ratio - a.ratio || a.label.localeCompare(b.label, "zh-Hant"))
+        .slice(0, 5)
+        .map((item, index) => ({ ...item, color: ALD.chartColor(index) }));
+    });
 
     // 每筆資產紀錄對應到一個區段；固定的 5 個流動資產區段與固定資產區段即使沒有資料也保留（金額 0），
     // 其他幣別（設定中另外新增的幣別）有資料才出現。
@@ -340,13 +387,32 @@ const TabAssets = {
       ALD.round2(selectedSegments.value.reduce((s, seg) => s + seg.amount, 0))
     );
 
-    // 帳戶彙總沿用明細頁 summary 的方式：同一區段、同一帳戶的多筆紀錄加總
+    // 帳戶匯總：流動資金與投資按幣別分組，固定資產與應收款各自合併為一組。
     const groups = computed(() =>
-      selectedSegments.value
-        .filter((seg) => seg.records.length > 0)
-        .map((seg) => {
+      Object.values(
+        selectedSegments.value
+          .filter((seg) => seg.records.length > 0)
+          .reduce((groupMap, seg) => {
+            const key = seg.kind === "cash" || seg.kind === "inv" ? `${seg.kind}:${seg.cur}` : seg.kind;
+            if (!groupMap[key]) {
+              groupMap[key] = {
+                key,
+                label: seg.kind === "inv" ? SEGMENT_CUR_LABEL.inv[seg.cur] || seg.cur : seg.label,
+                type: SEGMENT_KIND_TYPE[seg.kind],
+                cur: seg.cur,
+                invest: seg.kind === "inv",
+                order: seg.order,
+                records: [],
+              };
+            }
+            groupMap[key].records.push(...seg.records);
+            return groupMap;
+          }, {})
+      )
+        .sort((a, b) => a.order - b.order)
+        .map((group) => {
           const acctMap = {};
-          seg.records.forEach((r) => {
+          group.records.forEach((r) => {
             const name = r.account || "(未命名)";
             if (!acctMap[name]) {
               acctMap[name] = { account: name, amountTWD: 0, amountOrig: 0, units: 0 };
@@ -356,31 +422,27 @@ const TabAssets = {
             a.amountOrig = ALD.round2(a.amountOrig + ALD.origAmount(r));
             a.units = ALD.round2(a.units + (Number(r.units) || 0));
           });
-          const isForeign = !!seg.cur && seg.cur !== settings.baseCurrency;
+          const isForeign = !!group.cur && group.cur !== settings.baseCurrency;
           const accounts = Object.values(acctMap).map((a) => {
             let priceText = "";
-            if (seg.kind === "inv") {
+            if (group.invest) {
               let price = ALD.lookupAccountPrice(store.accounts, "投資", a.account);
               if (!price) price = a.units > 0 ? a.amountOrig / a.units : 0;
               priceText =
-                (seg.cur ? seg.cur + " " : "") +
+                (group.cur ? group.cur + " " : "") +
                 (Number(price) || 0).toLocaleString("zh-TW", { maximumFractionDigits: 4 });
             }
             return {
               ...a,
               ratio: denominator.value > 0 ? a.amountTWD / denominator.value : 0,
-              origText: isForeign ? seg.cur + " " + num(a.amountOrig) : num(a.amountOrig),
+              origText: isForeign ? group.cur + " " + num(a.amountOrig) : num(a.amountOrig),
               priceText,
             };
           });
           return {
-            key: seg.key,
-            label: seg.label,
-            type: SEGMENT_KIND_TYPE[seg.kind],
-            cur: seg.cur,
-            invest: seg.kind === "inv",
+            ...group,
             isForeign,
-            amount: seg.amount,
+            amount: ALD.round2(accounts.reduce((sum, account) => sum + account.amountTWD, 0)),
             accounts,
           };
         })
@@ -471,10 +533,17 @@ const TabAssets = {
     const newAccountOptions = computed(() => ALD.accountsForCategory(store.accounts, newForm.type));
     const currencyOptions = computed(() => ALD.currencyCodes(settings));
     const newAccountName = computed(() => newForm.account.trim());
-    // 輸入的名稱不在「設定 > 資產帳戶」該類別中 → 視為新帳戶，儲存時一併加入設定
+    const configuredNewAccount = computed(() => ALD.lookupAccount(store.accounts, newForm.type, newAccountName.value));
+    // 輸入的名稱不在「設定 > 資產帳戶」中 → 視為新帳戶，儲存時一併加入設定
     const newIsNewAccount = computed(
-      () => !!newAccountName.value && !newAccountOptions.value.includes(newAccountName.value)
+      () => !!newAccountName.value && !configuredNewAccount.value
     );
+    function onNewAccountNameChange() {
+      const account = configuredNewAccount.value;
+      if (!account) return;
+      newForm.type = account.category;
+      newForm.currency = account.currency;
+    }
     const newPreview = computed(() => {
       const account = newAccountName.value;
       const isNew = newIsNewAccount.value;
@@ -488,7 +557,12 @@ const TabAssets = {
     });
     const newValid = computed(() => {
       if (!newAccountName.value || !(Number(newForm.units) > 0)) return false;
-      if (!newIsNewAccount.value) return true;
+      if (!newIsNewAccount.value) {
+        return (
+          configuredNewAccount.value.category === newForm.type &&
+          configuredNewAccount.value.currency === newForm.currency
+        );
+      }
       return (
         newForm.price !== "" && Number(newForm.price) > 0 &&
         newForm.leverage !== "" && isFinite(Number(newForm.leverage)) && Number(newForm.leverage) >= 0
@@ -507,6 +581,7 @@ const TabAssets = {
           store.accounts.push({
             ...ALD.emptyAccount(newForm.type, nextOrder),
             account: accountName,
+            currency: newForm.currency,
             price: p.unitPrice,
             leverage: p.leverage,
           });
@@ -852,6 +927,7 @@ const TabAssets = {
       newForm,
       newTypes,
       newAccountOptions,
+      onNewAccountNameChange,
       currencyOptions,
       newPreview,
       newIsNewAccount,
@@ -861,6 +937,7 @@ const TabAssets = {
       view: assetsView,
       totalAssets,
       breakdown,
+      ratioItems,
       row3,
       row4,
       currentAmount,
@@ -871,11 +948,14 @@ const TabAssets = {
       groups,
       liabilityAccounts,
       totalLiabilities,
-      unitText,
       fmt,
       fmtNum,
       num,
       pct,
+      pctWhole,
+      toggleHidden: () => {
+        settings.hideAmounts = !settings.hideAmounts;
+      },
       catName,
     };
   },
@@ -1348,10 +1428,16 @@ const TabDetail = {
 
     // 依「設定 > 帳戶」中該類別對應帳戶/項目的價格與槓桿倍數，寫入此筆明細
     function applyAccountConfig(rec) {
+      const account = ALD.lookupAccount(store.accounts, rec.type, rec.account);
       const p = ALD.lookupAccountPrice(store.accounts, rec.type, rec.account);
       if (p !== null) rec.unitPrice = p;
       const lev = ALD.lookupAccountLeverage(store.accounts, rec.type, rec.account);
       if (lev !== null) rec.leverage = lev;
+      if (account) {
+        rec.currency = account.currency;
+        const rate = ALD.currencyRate(store.settings, account.currency);
+        if (rate !== null) rec.fxRate = rate;
+      }
     }
 
     // 該類別可選的帳戶/項目清單（含目前值，避免現有資料的帳戶不在清單時消失）
@@ -1378,6 +1464,11 @@ const TabDetail = {
 
     // 選擇幣別時，依「設定 > 幣別」帶入對應匯率並重算金額
     function onCurrencyChange(rec) {
+      const account = ALD.lookupAccount(store.accounts, rec.type, rec.account);
+      if (account && rec.currency !== account.currency) {
+        rec.currency = account.currency;
+        alert(`帳戶/項目「${account.account}」只能使用 ${account.currency}。`);
+      }
       const r = ALD.currencyRate(store.settings, rec.currency);
       if (r !== null) rec.fxRate = r;
       recalc(rec);
@@ -1465,6 +1556,9 @@ const TabSettings = {
     const settings = store.settings;
     const accounts = store.accounts;
     const syncLogs = store.syncLogs;
+    const currencyOptions = computed(() => ALD.currencyCodes(settings));
+    const accountNamesBeforeEdit = new Map();
+    const accountCurrenciesBeforeEdit = new Map();
 
     function openSubPage(key) {
       settingsSubPage.value = key;
@@ -1601,7 +1695,7 @@ const TabSettings = {
     function addAccount() {
       const nextOrder =
         store.accounts.reduce((max, a) => Math.max(max, Number(a.sortOrder) || 0), 0) + 1;
-      store.accounts.push(ALD.emptyAccount(assetCategoryKeys[0], nextOrder));
+      store.accounts.push(ALD.emptyAccount(assetCategoryKeys[0], nextOrder, settings.baseCurrency));
     }
 
     function removeAccount(id) {
@@ -1639,6 +1733,60 @@ const TabSettings = {
       if (cur === 0 || cur === 1) {
         acc.leverage = acc.category === "投資" ? 1 : 0;
       }
+    }
+
+    function rememberAccountName(acc) {
+      accountNamesBeforeEdit.set(acc.id, acc.account);
+    }
+
+    function rememberAccountCurrency(acc) {
+      accountCurrenciesBeforeEdit.set(acc.id, acc.currency);
+    }
+
+    function accountValidationWith(candidate) {
+      return ALD.validateAccounts(
+        accounts.map((acc) => (acc.id === candidate.id ? candidate : acc)),
+        settings,
+        true
+      );
+    }
+
+    function onAccountNameChange(acc) {
+      const previous = accountNamesBeforeEdit.get(acc.id);
+      acc.account = String(acc.account || "").trim();
+      const validation = accountValidationWith(acc);
+      if (!validation.valid) {
+        acc.account = previous || "";
+        alert(validation.message);
+        return;
+      }
+      const currencyValidation = ALD.validateAccountRecordCurrencies(
+        accounts.map((item) => (item.id === acc.id ? acc : item)),
+        store.records
+      );
+      if (!currencyValidation.valid) {
+        acc.account = previous || "";
+        alert(currencyValidation.message);
+        return;
+      }
+      applyAccountsToRecords();
+    }
+
+    function onAccountCurrencyChange(acc) {
+      const previous = accountCurrenciesBeforeEdit.get(acc.id);
+      const validation = accountValidationWith(acc);
+      if (!validation.valid) {
+        acc.currency = previous || settings.baseCurrency || "TWD";
+        alert(validation.message);
+        return;
+      }
+      const currencyValidation = ALD.validateAccountRecordCurrencies(accounts, store.records);
+      if (!currencyValidation.valid) {
+        acc.currency = previous || settings.baseCurrency || "TWD";
+        alert(currencyValidation.message);
+        return;
+      }
+      applyAccountsToRecords();
     }
 
     // 把帳戶設定中的價格套回對應的明細資料並重算金額
@@ -1910,6 +2058,7 @@ const TabSettings = {
     return {
       settings,
       accounts,
+      currencyOptions,
       syncLogs,
       syncLogMax: ALD.SYNC_LOG_MAX,
       settingsSubPage,
@@ -1930,6 +2079,10 @@ const TabSettings = {
       moveAccountUp,
       moveAccountDown,
       onAccountCategoryChangeAndApply,
+      rememberAccountName,
+      rememberAccountCurrency,
+      onAccountNameChange,
+      onAccountCurrencyChange,
       applyAccountsToRecords,
       exportAccountsCsv,
       importAccountsCsv,
@@ -2198,9 +2351,29 @@ app.config.errorHandler = (err, instance, info) => {
         if (window.__showAppError) window.__showAppError("日期格式遷移寫回 IndexedDB 失敗：\n" + detail);
       }
     }
-    initialAccounts = Array.isArray(rawAccounts)
-      ? rawAccounts.map((a, i) => normalizeAccount(a, i + 1))
-      : [];
+    try {
+      initialAccounts = Array.isArray(rawAccounts)
+        ? rawAccounts.map((a, i) => normalizeAccount(a, i + 1, initialSettings, initialRecords))
+        : [];
+      const accountValidation = ALD.validateAccounts(initialAccounts, initialSettings, true);
+      if (!accountValidation.valid) throw new Error(accountValidation.message);
+      const recordCurrencyValidation = ALD.validateAccountRecordCurrencies(initialAccounts, initialRecords);
+      if (!recordCurrencyValidation.valid) throw new Error(recordCurrencyValidation.message);
+      const accountsMigrated = (rawAccounts || []).some(
+        (raw, i) =>
+          raw.currency !== initialAccounts[i].currency ||
+          String(raw.account == null ? "" : raw.account) !== initialAccounts[i].account
+      );
+      if (accountsMigrated) {
+        await ALD_DB.replaceAccounts(initialAccounts);
+      }
+    } catch (e) {
+      showInitError(
+        "帳戶設定資料不符合名稱唯一或限制幣別規則，App 無法啟動：\n" +
+          (e && e.message ? e.message : String(e))
+      );
+      return;
+    }
     // 依時間戳排序（舊到新），IndexedDB getAll() 不保證回傳順序，維持顯示/匯出時的時序一致。
     initialSyncLogs = Array.isArray(rawSyncLogs)
       ? rawSyncLogs.slice().sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)))

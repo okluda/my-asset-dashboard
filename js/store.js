@@ -237,16 +237,17 @@ const ALD = (() => {
   }
 
   // ---------- 帳戶/項目設定 ----------
-  // 每筆：{ id, category(內部類別鍵), account(帳戶/項目名稱), price(價格), leverage(槓桿倍數), sortOrder(顯示順序) }
+  // 每筆：{ id, category(內部類別鍵), account(全域唯一帳戶/項目名稱), currency(限制幣別), price(價格), leverage(槓桿倍數), sortOrder(顯示順序) }
   // 槓桿倍數預設：類別為「投資」時為 1，其餘為 0。
   // sortOrder 由呼叫端指派（例如新增帳戶時取目前最大值 + 1），此函式不自行依陣列長度計算，
   // 避免呼叫端尚未把新帳戶塞入陣列時算出重複或錯誤的順序。
-  function emptyAccount(category, sortOrder) {
+  function emptyAccount(category, sortOrder, currency) {
     const cat = category || "流動資金";
     return {
       id: uid(),
       category: cat,
       account: "",
+      currency: currency || "TWD",
       price: 1,
       leverage: cat === "投資" ? 1 : 0,
       sortOrder: Number(sortOrder) || 0,
@@ -255,32 +256,30 @@ const ALD = (() => {
 
   function seedAccounts() {
     const raw = [
-      { category: "流動資金", account: "銀行活存-台幣", price: 1, leverage: 0 },
-      { category: "流動資金", account: "銀行活存-美金", price: 1, leverage: 0 },
-      { category: "投資", account: "0050 元大台灣50", price: 140, leverage: 1 },
-      { category: "投資", account: "VOO", price: 480, leverage: 1 },
-      { category: "固定資產", account: "自住房產", price: 1, leverage: 0 },
-      { category: "應收款", account: "親友借款", price: 1, leverage: 0 },
-      { category: "負債", account: "房屋貸款", price: 1, leverage: 0 },
+      { category: "流動資金", account: "銀行活存-台幣", currency: "TWD", price: 1, leverage: 0 },
+      { category: "流動資金", account: "銀行活存-美金", currency: "USD", price: 1, leverage: 0 },
+      { category: "投資", account: "0050 元大台灣50", currency: "TWD", price: 140, leverage: 1 },
+      { category: "投資", account: "VOO", currency: "USD", price: 480, leverage: 1 },
+      { category: "固定資產", account: "自住房產", currency: "TWD", price: 1, leverage: 0 },
+      { category: "應收款", account: "親友借款", currency: "TWD", price: 1, leverage: 0 },
+      { category: "負債", account: "房屋貸款", currency: "TWD", price: 1, leverage: 0 },
     ];
     return raw.map((r, i) => ({ id: uid(), ...r, sortOrder: i + 1 }));
   }
 
-  // 依「類別 + 帳戶/項目」查對應帳戶設定物件；找不到回傳 null
+  // 帳戶/項目名稱在所有類別中全域唯一，category 參數為既有呼叫端相容保留。
   function lookupAccount(accounts, category, account) {
-    if (!Array.isArray(accounts)) return null;
-    return (
-      accounts.find((a) => a.category === category && a.account === account) || null
-    );
+    if (!Array.isArray(accounts) || !String(account == null ? "" : account).trim()) return null;
+    return accounts.find((a) => a.account === account) || null;
   }
 
-  // 依「類別 + 帳戶/項目」查對應價格；找不到回傳 null
+  // 依全域唯一帳戶/項目名稱查對應價格；找不到回傳 null
   function lookupAccountPrice(accounts, category, account) {
     const found = lookupAccount(accounts, category, account);
     return found ? Number(found.price) || 0 : null;
   }
 
-  // 依「類別 + 帳戶/項目」查對應槓桿倍數；找不到回傳 null
+  // 依全域唯一帳戶/項目名稱查對應槓桿倍數；找不到回傳 null
   function lookupAccountLeverage(accounts, category, account) {
     const found = lookupAccount(accounts, category, account);
     return found ? Number(found.leverage) || 0 : null;
@@ -292,6 +291,44 @@ const ALD = (() => {
     return accounts
       .filter((a) => a.category === category && String(a.account).trim() !== "")
       .map((a) => a.account);
+  }
+
+  function validateAccounts(accounts, settings, allowBlank) {
+    const names = new Set();
+    const codes = new Set(currencyCodes(settings));
+    for (const account of accounts || []) {
+      const name = String(account && account.account != null ? account.account : "").trim();
+      if (!name) {
+        if (allowBlank) continue;
+        return { valid: false, message: "帳戶/項目名稱不可空白。" };
+      }
+      if (names.has(name)) {
+        return { valid: false, message: `帳戶/項目名稱「${name}」重複；名稱必須全域唯一。` };
+      }
+      names.add(name);
+      if (!codes.has(account.currency)) {
+        return {
+          valid: false,
+          message: `帳戶/項目「${name}」的幣別「${account.currency || "未設定"}」不在幣別設定中。`,
+        };
+      }
+    }
+    return { valid: true, message: "" };
+  }
+
+  function validateAccountRecordCurrencies(accounts, records) {
+    for (const rec of records || []) {
+      const account = lookupAccount(accounts, rec.type, rec.account);
+      if (account && rec.currency !== account.currency) {
+        return {
+          valid: false,
+          message:
+            `帳戶/項目「${account.account}」設定為 ${account.currency}，` +
+            `但存在 ${rec.currency || "未設定"} 的明細紀錄；請先修正資料後再啟動。`,
+        };
+      }
+    }
+    return { valid: true, message: "" };
   }
 
   // 首次使用提供的範例資料，方便使用者了解畫面呈現方式。
@@ -340,22 +377,15 @@ const ALD = (() => {
     return !!rec && (rec.excluded === 1 || rec.excluded === true);
   }
 
-  // 依設定單位（元/萬元）格式化金額顯示
+  // 全站金額統一顯示為 $ 加分位數字，不受顯示單位設定影響。
   function formatAmount(value, settings) {
     const v = Number(value) || 0;
-    if (settings && settings.unit === "wan") {
-      return (v / 10000).toLocaleString("zh-TW", { maximumFractionDigits: 2 }) + " 萬元";
-    }
-    return Math.round(v).toLocaleString("zh-TW") + " 元";
+    return "$" + Math.round(v).toLocaleString("zh-TW");
   }
 
-  // 與 formatAmount 相同的四捨五入與萬元換算，但不加單位字尾（單位另由 unitLabel 顯示於標題）
+  // 保留既有呼叫端名稱，金額輸出與 formatAmount 一致。
   function formatAmountNum(value, settings) {
-    const v = Number(value) || 0;
-    if (settings && settings.unit === "wan") {
-      return (v / 10000).toLocaleString("zh-TW", { maximumFractionDigits: 2 });
-    }
-    return Math.round(v).toLocaleString("zh-TW");
+    return formatAmount(value, settings);
   }
 
   function unitLabel(settings) {
@@ -498,6 +528,13 @@ const ALD = (() => {
               rec.fxRate = settingRate != null ? settingRate : numOr(raw.fxRate, 1);
               // 單位數：空值預設 0
               rec.units = numOr(raw.units, 0);
+              const cfgAccount = lookupAccount(accounts, type, rec.account);
+              if (cfgAccount && rec.currency !== cfgAccount.currency) {
+                throw new Error(
+                  `CSV 第 ${records.length + skipped + 2} 列的帳戶/項目「${rec.account}」` +
+                    `必須使用設定幣別 ${cfgAccount.currency}。`
+                );
+              }
               // 槓桿倍數：優先讀取「設定 > 帳戶」對應項目的設定值並寫入明細；
               // 查無設定時退回 CSV 值（空值預設：投資=1，其餘=0）
               const cfgLev = lookupAccountLeverage(accounts, type, rec.account);
@@ -528,10 +565,11 @@ const ALD = (() => {
   }
 
   // ---------- 帳戶/項目設定 CSV 匯出/匯入 ----------
-  // 欄位：類別（顯示名稱）、帳戶/項目、價格、槓桿倍數
+  // 欄位：類別（顯示名稱）、帳戶/項目、幣別、價格、槓桿倍數
   const ACCOUNT_CSV_COLUMNS = [
     { key: "category", label: "類別" },
     { key: "account", label: "帳戶/項目" },
+    { key: "currency", label: "幣別" },
     { key: "price", label: "價格" },
     { key: "leverage", label: "槓桿倍數" },
   ];
@@ -543,6 +581,7 @@ const ALD = (() => {
     const rows = (accounts || []).map((a) => ({
       類別: categoryDisplayName(settings, a.category),
       "帳戶/項目": a.account,
+      幣別: a.currency,
       價格: Number(a.price) || 0,
       槓桿倍數: Number(a.leverage) || 0,
     }));
@@ -559,7 +598,7 @@ const ALD = (() => {
     URL.revokeObjectURL(url);
   }
 
-  // 解析帳戶/項目設定 CSV，回傳帳戶物件陣列（含新 id）。類別不符或空白則跳過整列。
+  // 解析帳戶/項目設定 CSV，回傳帳戶物件陣列（含新 id）。類別、名稱或幣別不符時拒絕整份匯入。
   function parseAccountsCSV(file, settings) {
     return new Promise((resolve, reject) => {
       if (typeof Papa === "undefined") {
@@ -588,13 +627,32 @@ const ALD = (() => {
                 return;
               }
               const account = String(get("帳戶/項目") || "").trim();
+              if (!account) {
+                throw new Error(`CSV 第 ${accounts.length + skipped + 2} 列的帳戶/項目名稱不可空白。`);
+              }
+              const currency = String(get("幣別") || "").trim().toUpperCase();
+              if (!currencyCodes(settings).includes(currency)) {
+                throw new Error(
+                  `CSV 第 ${accounts.length + skipped + 2} 列的幣別「${currency || "未設定"}」不在幣別設定中。`
+                );
+              }
               const price = numOr(get("價格"), 1);
               // 槓桿倍數：空值預設依類別（投資=1，其餘=0）
               const leverage = numOr(get("槓桿倍數"), category === "投資" ? 1 : 0);
               // CSV 格式不含 sortOrder 欄位，依匯入（解析）順序補上 1,2,3...，
               // 確保重新整理後帳戶順序與匯入時一致。
-              accounts.push({ id: uid(), category, account, price, leverage, sortOrder: accounts.length + 1 });
+              accounts.push({
+                id: uid(),
+                category,
+                account,
+                currency,
+                price,
+                leverage,
+                sortOrder: accounts.length + 1,
+              });
             });
+            const validation = validateAccounts(accounts, settings, false);
+            if (!validation.valid) throw new Error(validation.message);
             accounts.__skipped = skipped;
             resolve(accounts);
           } catch (e) {
@@ -683,6 +741,8 @@ const ALD = (() => {
     lookupAccountPrice,
     lookupAccountLeverage,
     accountsForCategory,
+    validateAccounts,
+    validateAccountRecordCurrencies,
     categoryDisplayName,
     buildTypeNameToKey,
     normalizeCurrencies,
