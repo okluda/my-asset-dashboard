@@ -9,7 +9,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="theme-color" content="#1c1c2e" />
   <title>fishbubble</title>
-  <link rel="stylesheet" href="css/style.css?v=2026092904" />
+  <link rel="stylesheet" href="css/style.css?v=2026093003" />
 </head>
 <body>
   <!-- 錯誤顯示橫幅：手機上沒有開發者工具可看 console，發生例外時直接顯示在畫面上。
@@ -264,7 +264,7 @@
   </script>
 
   <script type="text/x-template" id="tpl-assets">
-    <div class="page-content">
+    <div class="page-content as-page">
       <template v-if="view === 'asset'">
         <div class="card as-summary">
           <div class="as-total-label">總資產</div>
@@ -322,7 +322,7 @@
               <span class="as-amt">{{ fmtNum(g.amount) }}</span>
             </div>
             <template v-if="g.invest">
-              <div v-for="a in g.accounts" :key="a.account" class="as-acct as-acct-invest">
+              <div v-for="a in g.accounts" :key="a.account" class="as-acct as-acct-invest as-acct-tap" role="button" tabindex="0" @click="openAccountSheet(g.type, a.account, g.cur)">
                 <span class="as-acct-ratio">{{ pct(a.ratio) }}</span>
                 <span class="as-acct-main">
                   <span class="as-acct-name">{{ a.account }}</span>
@@ -333,7 +333,7 @@
               </div>
             </template>
             <template v-else>
-              <div v-for="a in g.accounts" :key="a.account" class="as-acct">
+              <div v-for="a in g.accounts" :key="a.account" class="as-acct as-acct-tap" role="button" tabindex="0" @click="openAccountSheet(g.type, a.account, g.cur)">
                 <span class="as-acct-main">
                   <span class="as-acct-name">{{ a.account }}</span>
                   <span class="as-acct-sub">{{ a.origText }}</span>
@@ -372,7 +372,7 @@
             <div class="pf-unit">單位：{{ unitText }}</div>
           </div>
           <div v-if="liabilityAccounts.length === 0" class="empty-hint">尚無負債資料，請至「明細」新增</div>
-          <div v-for="a in liabilityAccounts" :key="a.account" class="as-acct">
+          <div v-for="a in liabilityAccounts" :key="a.account" class="as-acct as-acct-tap" role="button" tabindex="0" @click="openAccountSheet('負債', a.account, '')">
             <span class="as-acct-main">
               <span class="as-acct-name">{{ a.account }}</span>
             </span>
@@ -380,6 +380,383 @@
           </div>
         </div>
       </template>
+
+      <button type="button" class="as-fab" @click="openNewAccount" aria-label="新增帳戶">＋</button>
+
+      <!-- 共用 Bottom Sheet：目前僅 [新增帳戶]，後續階段的帳戶增減/編輯/紀錄沿用同一外框 -->
+      <div v-if="sheet" class="bs-mask" @click.self="closeSheet">
+        <div class="bs-panel" role="dialog" aria-modal="true">
+          <button type="button" class="bs-handle" @click="closeSheet" aria-label="關閉"><span></span></button>
+
+          <template v-if="sheet === 'new'">
+            <div class="bs-head">
+              <button type="button" class="bs-cancel" @click="closeSheet">取消</button>
+              <div class="bs-title">新增帳戶</div>
+              <span class="bs-head-spacer"></span>
+            </div>
+
+            <div class="bs-section-title">資產屬性</div>
+            <div class="bs-group">
+              <div class="bs-row">
+                <label class="bs-label" for="bs-new-type">資產種類</label>
+                <select id="bs-new-type" class="bs-select" v-model="newForm.type" @change="onNewTypeChange">
+                  <option v-for="t in newTypes" :key="t" :value="t">{{ catName(t) }}</option>
+                </select>
+              </div>
+              <div class="bs-row">
+                <label class="bs-label" for="bs-new-cur">計價幣別</label>
+                <select id="bs-new-cur" class="bs-select" v-model="newForm.currency">
+                  <option v-for="c in currencyOptions" :key="c" :value="c">{{ c }}</option>
+                </select>
+              </div>
+              <div class="bs-row">
+                <span class="bs-label">不計入</span>
+                <label class="set-switch">
+                  <input type="checkbox" v-model="newForm.excluded" aria-label="不計入" />
+                  <span class="set-switch-track"></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="bs-section-title">帳戶資訊</div>
+            <div class="bs-group">
+              <div class="bs-row">
+                <label class="bs-label" for="bs-new-acct">存放位置</label>
+                <select id="bs-new-acct" class="bs-select" v-model="newForm.account">
+                  <option value="">{{ newAccountOptions.length ? '（請選擇）' : '（請先於設定新增帳戶）' }}</option>
+                  <option v-for="a in newAccountOptions" :key="a" :value="a">{{ a }}</option>
+                </select>
+              </div>
+              <div class="bs-row">
+                <label class="bs-label" for="bs-new-units">持有數量</label>
+                <input id="bs-new-units" class="bs-input" type="number" inputmode="decimal" step="any" min="0" placeholder="請輸入" v-model="newForm.units" />
+              </div>
+              <div class="bs-row">
+                <span class="bs-label">金額</span>
+                <span class="bs-value">{{ plain(newPreview.amount) }}</span>
+              </div>
+              <div class="bs-row">
+                <span class="bs-label">單價</span>
+                <span class="bs-value">{{ plain(newPreview.unitPrice) }}</span>
+              </div>
+              <div class="bs-row">
+                <span class="bs-label">槓桿倍率</span>
+                <span class="bs-value">{{ plain(newPreview.leverage) }}</span>
+              </div>
+              <div class="bs-row">
+                <span class="bs-label">匯率</span>
+                <span class="bs-value">{{ plain(newPreview.fxRate) }}</span>
+              </div>
+              <div class="bs-row">
+                <span class="bs-label">曝險金額</span>
+                <span class="bs-value">{{ plain(newPreview.exposure) }}</span>
+              </div>
+              <div class="bs-row">
+                <label class="bs-label" for="bs-new-note">備註</label>
+                <input id="bs-new-note" class="bs-input" type="text" placeholder="初始建倉" v-model="newForm.note" />
+              </div>
+            </div>
+
+            <button type="button" class="bs-primary-btn" :disabled="!newValid" @click="saveNewAccount">確認新增</button>
+          </template>
+
+          <template v-else-if="sheet === 'account'">
+            <div class="bs-pill-tabs">
+              <button type="button" :class="{ active: sheetTab === 'adjust' }" @click="selectSheetTab('adjust')">{{ acctKind === 'repay' ? '還款' : '增減' }}</button>
+              <button type="button" :class="{ active: sheetTab === 'edit' }" @click="selectSheetTab('edit')">編輯</button>
+              <button type="button" :class="{ active: sheetTab === 'log' }" @click="selectSheetTab('log')">紀錄</button>
+            </div>
+
+            <div class="bs-acct-head">
+              <div class="bs-acct-name">{{ acctCtx.account }}</div>
+              <div class="bs-acct-sub">{{ acctCtx.currency }} · 最後編輯 {{ lastEditText }}</div>
+            </div>
+
+            <template v-if="sheetTab === 'adjust'">
+            <!-- 流動資金 / 固定資產 / 應收款 -->
+            <template v-if="acctKind === 'cash'">
+              <div class="bs-card bs-stat">
+                <span class="bs-stat-label">目前餘額</span>
+                <span class="bs-stat-value">{{ acctCtx.currency }} {{ plain(acctBalance) }}</span>
+              </div>
+              <div class="bs-flow">
+                <span>目前持有 {{ plain(holding) }}</span>
+                <span>→</span>
+                <span>調整後 {{ plain(adjAfter) }}</span>
+              </div>
+
+              <div class="bs-section-title">選擇操作</div>
+              <div class="bs-seg">
+                <button type="button" :class="{ active: adj.dir === 'in' }" @click="adj.dir = 'in'">存入</button>
+                <button type="button" :class="{ active: adj.dir === 'out' }" @click="adj.dir = 'out'">提取</button>
+              </div>
+
+              <div class="bs-section-title">這筆{{ adj.dir === 'in' ? '存入' : '提取' }}屬於</div>
+              <div class="bs-seg">
+                <button type="button" :class="{ active: adj.kind === 'external' }" @click="adj.kind = 'external'">{{ adj.dir === 'in' ? '外部收入' : '外部支出' }}</button>
+                <button type="button" :class="{ active: adj.kind === 'internal' }" @click="adj.kind = 'internal'">內部轉移</button>
+              </div>
+
+              <div class="bs-section-title">調整資訊</div>
+              <div class="bs-group">
+                <div class="bs-row">
+                  <label class="bs-label" for="bs-adj-qty">調整數量</label>
+                  <input id="bs-adj-qty" class="bs-input" type="number" inputmode="decimal" step="any" min="0" placeholder="請輸入" v-model="adj.qty" />
+                </div>
+              </div>
+
+              <template v-if="adj.kind === 'internal'">
+                <div class="bs-section-title">轉移資訊</div>
+                <div class="bs-group">
+                  <div class="bs-row">
+                    <label class="bs-label" for="bs-adj-xtype">資產種類</label>
+                    <select id="bs-adj-xtype" class="bs-select" v-model="adj.xType" @change="onXTypeChange">
+                      <option v-for="t in TRANSFER_TYPES" :key="t" :value="t">{{ catName(t) }}</option>
+                    </select>
+                  </div>
+                  <div class="bs-row">
+                    <label class="bs-label" for="bs-adj-xacct">帳戶位置</label>
+                    <select id="bs-adj-xacct" class="bs-select" v-model="adj.xAccount">
+                      <option value="">（不指定）</option>
+                      <option v-for="a in xOptions" :key="a" :value="a">{{ a }}</option>
+                    </select>
+                  </div>
+                </div>
+              </template>
+
+              <div class="bs-group bs-group-gap">
+                <div class="bs-row">
+                  <label class="bs-label" for="bs-adj-note">備註</label>
+                  <input id="bs-adj-note" class="bs-input" type="text" :placeholder="adj.kind === 'internal' ? '轉移' : (adj.dir === 'in' ? '存入' : '支出')" v-model="adj.note" />
+                </div>
+              </div>
+            </template>
+
+            <!-- 投資 -->
+            <template v-else-if="acctKind === 'invest'">
+              <div class="bs-stat-pair">
+                <div class="bs-card bs-stat">
+                  <span class="bs-stat-label">目前持有</span>
+                  <span class="bs-stat-value">{{ plain(holding) }}</span>
+                </div>
+                <div class="bs-card bs-stat">
+                  <span class="bs-stat-label">目前價格</span>
+                  <span class="bs-stat-value">{{ acctCtx.currency }} {{ plain(acctPrice) }}</span>
+                </div>
+              </div>
+              <div class="bs-flow">
+                <span>目前持有 {{ plain(holding) }}</span>
+                <span>→</span>
+                <span>調整後 {{ plain(adjAfter) }}</span>
+              </div>
+
+              <div class="bs-section-title">選擇操作</div>
+              <div class="bs-seg">
+                <button type="button" :class="{ active: adj.dir === 'in' }" @click="adj.dir = 'in'">買入</button>
+                <button type="button" :class="{ active: adj.dir === 'out' }" @click="adj.dir = 'out'">賣出</button>
+              </div>
+
+              <div class="bs-section-title">調整資訊</div>
+              <div class="bs-group">
+                <div class="bs-row">
+                  <label class="bs-label" for="bs-adj-qty">調整數量</label>
+                  <input id="bs-adj-qty" class="bs-input" type="number" inputmode="decimal" step="any" min="0" placeholder="請輸入" v-model="adj.qty" />
+                </div>
+                <div class="bs-row">
+                  <label class="bs-label" for="bs-adj-price">成交價格</label>
+                  <input id="bs-adj-price" class="bs-input" type="number" inputmode="decimal" step="any" min="0" :placeholder="'留空則使用目前價格 $' + plain(acctPrice)" v-model="adj.price" />
+                </div>
+              </div>
+
+              <div class="bs-section-title">交割帳戶</div>
+              <div class="bs-group">
+                <div class="bs-row">
+                  <span class="bs-label">資產種類</span>
+                  <span class="bs-value">{{ catName('流動資金') }}</span>
+                </div>
+                <div class="bs-row">
+                  <label class="bs-label" for="bs-adj-settle">帳戶位置</label>
+                  <select id="bs-adj-settle" class="bs-select" v-model="adj.settleAccount">
+                    <option value="">（不指定）</option>
+                    <option v-for="a in settleOptions" :key="a" :value="a">{{ a }}</option>
+                  </select>
+                </div>
+              </div>
+            </template>
+
+            <!-- 負債：還款 -->
+            <template v-else>
+              <div class="bs-card bs-stat">
+                <span class="bs-stat-label">目前餘額</span>
+                <span class="bs-stat-value">{{ acctCtx.currency }} {{ plain(acctBalance) }}</span>
+              </div>
+
+              <div class="bs-section-title">扣款帳戶</div>
+              <div class="bs-group">
+                <div class="bs-row">
+                  <span class="bs-label">資產種類</span>
+                  <span class="bs-value">{{ catName('流動資金') }}</span>
+                </div>
+                <div class="bs-row">
+                  <label class="bs-label" for="bs-adj-settle">帳戶位置</label>
+                  <select id="bs-adj-settle" class="bs-select" v-model="adj.settleAccount">
+                    <option value="">（不指定）</option>
+                    <option v-for="a in settleOptions" :key="a" :value="a">{{ a }}</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="bs-section-title">還款資訊</div>
+              <div class="bs-group">
+                <div class="bs-row">
+                  <span class="bs-label">總應繳</span>
+                  <span class="bs-value">{{ plain(repayTotal) }}</span>
+                </div>
+                <div class="bs-row">
+                  <label class="bs-label" for="bs-adj-principal">還本金</label>
+                  <input id="bs-adj-principal" class="bs-input" type="number" inputmode="decimal" step="any" min="0" placeholder="請輸入" v-model="adj.principal" />
+                </div>
+                <div class="bs-row">
+                  <label class="bs-label" for="bs-adj-interest">繳利息</label>
+                  <input id="bs-adj-interest" class="bs-input" type="number" inputmode="decimal" step="any" min="0" placeholder="請輸入" v-model="adj.interest" />
+                </div>
+              </div>
+            </template>
+
+            <button type="button" class="bs-primary-btn" :disabled="!adjValid" @click="saveAdjust">{{ adjBtnText }}</button>
+            </template>
+
+            <!-- [編輯]：只可編輯持有數量與備註，其餘唯讀 -->
+            <template v-else-if="sheetTab === 'edit'">
+              <div class="bs-section-title">資產屬性</div>
+              <div class="bs-group">
+                <div class="bs-row">
+                  <span class="bs-label">資產種類</span>
+                  <span class="bs-value">{{ catName(acctCtx.type) }}</span>
+                </div>
+                <div class="bs-row">
+                  <span class="bs-label">計價幣別</span>
+                  <span class="bs-value">{{ acctCtx.currency }}</span>
+                </div>
+              </div>
+
+              <div class="bs-section-title">帳戶資訊</div>
+              <div class="bs-group">
+                <div class="bs-row">
+                  <span class="bs-label">存放位置</span>
+                  <span class="bs-value">{{ acctCtx.account }}</span>
+                </div>
+                <div class="bs-row">
+                  <label class="bs-label" for="bs-edit-units">持有數量</label>
+                  <input id="bs-edit-units" class="bs-input" type="number" inputmode="decimal" step="any" placeholder="請輸入" v-model="editForm.units" @input="editMsg = ''" />
+                </div>
+                <div class="bs-row">
+                  <span class="bs-label">金額</span>
+                  <span class="bs-value">{{ plain(editRec.amount) }}</span>
+                </div>
+                <div class="bs-row">
+                  <span class="bs-label">單價</span>
+                  <span class="bs-value">{{ plain(editRec.unitPrice) }}</span>
+                </div>
+                <div class="bs-row">
+                  <span class="bs-label">槓桿倍率</span>
+                  <span class="bs-value">{{ plain(editRec.leverage) }}</span>
+                </div>
+                <div class="bs-row">
+                  <span class="bs-label">匯率</span>
+                  <span class="bs-value">{{ plain(editRec.fxRate) }}</span>
+                </div>
+                <div class="bs-row">
+                  <span class="bs-label">曝險金額</span>
+                  <span class="bs-value">{{ plain(editRec.exposure) }}</span>
+                </div>
+                <div class="bs-row">
+                  <label class="bs-label" for="bs-edit-note">備註</label>
+                  <input id="bs-edit-note" class="bs-input" type="text" placeholder="留空自動填寫" v-model="editForm.note" />
+                </div>
+              </div>
+
+              <div v-if="editMsg" class="bs-msg">{{ editMsg }}</div>
+              <button type="button" class="bs-primary-btn" :disabled="!editValid" @click="saveEdit">儲存</button>
+              <button type="button" class="bs-danger-btn" @click="deleteAccountRecords">刪除此資產</button>
+            </template>
+
+            <!-- [紀錄]：唯讀卡片 -->
+            <template v-else>
+              <div v-if="logRecords.length === 0" class="empty-hint">此帳戶尚無紀錄</div>
+              <div v-for="rec in logRecords" :key="rec.id" class="rec-card" :class="{ 'rec-excluded': rec.excluded }">
+                <div class="rec-summary" @click="toggleLog(rec.id)">
+                  <span class="rec-summary-date">{{ logDateMD(rec.date) }}</span>
+                  <span class="rec-summary-account">{{ rec.account || '(未命名)' }}</span>
+                  <span class="rec-summary-amount">{{ plain(logAmount(rec)) }}</span>
+                  <span class="rec-toggle-arrow" :class="{ expanded: logOpen(rec.id) }">›</span>
+                </div>
+                <div v-if="logOpen(rec.id)" class="rec-grid">
+                  <div class="rec-row">
+                    <div class="rec-field">
+                      <label>日期</label>
+                      <input type="text" :value="datePart(rec.date)" readonly />
+                    </div>
+                    <div class="rec-field">
+                      <label>帳戶/項目</label>
+                      <input type="text" :value="rec.account || '(未命名)'" readonly />
+                    </div>
+                    <div class="rec-field">
+                      <label>金額</label>
+                      <input type="text" :value="plain(logAmount(rec))" readonly />
+                    </div>
+                  </div>
+                  <div class="rec-row">
+                    <div class="rec-field">
+                      <label>類別</label>
+                      <input type="text" :value="catName(rec.type)" readonly />
+                    </div>
+                    <div class="rec-field">
+                      <label>價格</label>
+                      <input type="text" :value="plain(rec.unitPrice)" readonly />
+                    </div>
+                  </div>
+                  <div class="rec-row" v-if="rec.type === '投資'">
+                    <div class="rec-field">
+                      <label>槓桿倍數</label>
+                      <input type="text" :value="plain(rec.leverage)" readonly />
+                    </div>
+                    <div class="rec-field">
+                      <label>曝險金額</label>
+                      <input type="text" :value="plain(logExposure(rec))" readonly />
+                    </div>
+                  </div>
+                  <div class="rec-row">
+                    <div class="rec-field">
+                      <label>幣別</label>
+                      <input type="text" :value="rec.currency" readonly />
+                    </div>
+                    <div class="rec-field">
+                      <label>匯率</label>
+                      <input type="text" :value="plain(rec.fxRate)" readonly />
+                    </div>
+                    <div class="rec-field">
+                      <label>單位</label>
+                      <input type="text" :value="plain(rec.units)" readonly />
+                    </div>
+                  </div>
+                  <div class="rec-row rec-row-inline">
+                    <div class="rec-field rec-field-shrink">
+                      <label class="rec-exclude">
+                        <input type="checkbox" :checked="!!rec.excluded" disabled />
+                        <span>不計入</span>
+                      </label>
+                    </div>
+                    <div class="rec-field rec-field-grow rec-field-note">
+                      <input type="text" :value="rec.note" placeholder="備註" readonly />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </template>
+        </div>
+      </div>
     </div>
   </script>
 
@@ -588,7 +965,7 @@
             <span class="rec-summary-date">{{ dateMD(rec.date) }}</span>
             <span class="rec-summary-account">{{ rec.account || '(未命名)' }}</span>
             <span class="rec-summary-amount">{{ num(money(rec)) }}</span>
-            <span class="rec-toggle-arrow">{{ isExpanded(rec.id) ? '▽' : '▷' }}</span>
+            <span class="rec-toggle-arrow" :class="{ expanded: isExpanded(rec.id) }">›</span>
           </div>
 
           <template v-if="isExpanded(rec.id)">
@@ -603,8 +980,8 @@
                      WebKit datetime 偽元素），再於下方以 pointer-events:none 的文字層顯示
                      固定 YYYY-MM-DD 格式，兩者透過 wrapper 疊合對齊。 -->
                 <div class="date-field-wrap">
-                  <input type="date" v-model="rec.date" class="date-native-input" />
-                  <span class="date-display-text">{{ rec.date }}</span>
+                  <input type="date" :value="datePart(rec.date)" @change="onRecDateChange(rec, $event)" class="date-native-input" />
+                  <span class="date-display-text">{{ datePart(rec.date) }}</span>
                 </div>
               </div>
               <div class="rec-field">
@@ -1161,9 +1538,9 @@
   <!-- 本地程式檔（store/db/services/app）：?v= 為快取破壞參數，比照上方 CDN 的 ?cb= 慣例。
        修改這 4 個檔案任何內容後，務必同步更新此版本號，避免瀏覽器/CDN 快取舊版程式碼，
        導致「畫面（index.html）看起來是新版、但實際執行邏輯是舊版」的不一致問題。 -->
-  <script src="js/store.js?v=2026092904"></script>
-  <script src="js/db.js?v=2026092904"></script>
-  <script src="js/services.js?v=2026092904"></script>
-  <script src="js/app.js?v=2026092904"></script>
+  <script src="js/store.js?v=2026093003"></script>
+  <script src="js/db.js?v=2026093003"></script>
+  <script src="js/services.js?v=2026093003"></script>
+  <script src="js/app.js?v=2026093003"></script>
 </body>
 </html>

@@ -208,6 +208,8 @@ const SEGMENT_CUR_LABEL = {
   inv: { TWD: "台股", USD: "美股" },
 };
 
+const SEGMENT_KIND_TYPE = { cash: "流動資金", inv: "投資", recv: "應收款", fixed: "固定資產" };
+
 const TabAssets = {
   template: "#tpl-assets",
   setup() {
@@ -374,6 +376,8 @@ const TabAssets = {
           return {
             key: seg.key,
             label: seg.label,
+            type: SEGMENT_KIND_TYPE[seg.kind],
+            cur: seg.cur,
             invest: seg.kind === "inv",
             isForeign,
             amount: seg.amount,
@@ -402,7 +406,421 @@ const TabAssets = {
       ALD.round2(liabilityAccounts.value.reduce((s, a) => s + a.amount, 0))
     );
 
+    // ---------- 共用 Bottom Sheet 與 [新增帳戶] ----------
+    // sheet：目前開啟的彈窗（null=無，"new"=新增帳戶）；後續階段的帳戶增減/編輯/紀錄沿用同一個外框。
+    const sheet = ref(null);
+    const plain = (v) => (Number(v) || 0).toLocaleString("zh-TW", { maximumFractionDigits: 2 });
+
+    // 彈窗為編輯情境，一律顯示實際數字，不套用隱藏金額；開啟時鎖住背景捲動，關閉/卸載時還原。
+    watch(sheet, (v) => {
+      document.body.style.overflow = v ? "hidden" : "";
+    });
+    onUnmounted(() => {
+      document.body.style.overflow = "";
+    });
+    function closeSheet() {
+      sheet.value = null;
+    }
+
+    const newForm = reactive({
+      type: "流動資金",
+      currency: settings.baseCurrency || "TWD",
+      excluded: false,
+      account: "",
+      units: "",
+      note: "",
+    });
+    function openNewAccount() {
+      newForm.type = assetsView.value === "liability" ? "負債" : "流動資金";
+      newForm.currency = settings.baseCurrency || "TWD";
+      newForm.excluded = false;
+      newForm.account = "";
+      newForm.units = "";
+      newForm.note = "";
+      sheet.value = "new";
+    }
+    function onNewTypeChange() {
+      newForm.account = "";
+    }
+
+    // 單價：設定中帳戶價格；查無（或為 0）時用該帳戶最新一筆紀錄的單價，再查無用 1
+    function resolveUnitPrice(type, account) {
+      const cfg = ALD.lookupAccountPrice(store.accounts, type, account);
+      if (cfg) return cfg;
+      let latest = null;
+      store.records.forEach((r) => {
+        if (r.type !== type || r.account !== account) return;
+        if (!latest || ALD.normalizeDateTime(r.date) > ALD.normalizeDateTime(latest.date)) latest = r;
+      });
+      return latest && Number(latest.unitPrice) > 0 ? Number(latest.unitPrice) : 1;
+    }
+    // 槓桿：設定中帳戶槓桿；查無時依類別預設（投資 1，其餘 0）
+    function resolveLeverage(type, account) {
+      const cfg = ALD.lookupAccountLeverage(store.accounts, type, account);
+      return cfg != null ? cfg : type === "投資" ? 1 : 0;
+    }
+
+    const newTypes = ALD.TYPES;
+    const newAccountOptions = computed(() => ALD.accountsForCategory(store.accounts, newForm.type));
+    const currencyOptions = computed(() => ALD.currencyCodes(settings));
+    const newPreview = computed(() => {
+      const account = newForm.account;
+      const rec = {
+        unitPrice: account ? resolveUnitPrice(newForm.type, account) : 0,
+        units: Number(newForm.units) || 0,
+        fxRate: ALD.currencyRate(settings, newForm.currency) || 1,
+        leverage: account ? resolveLeverage(newForm.type, account) : 0,
+      };
+      return { ...rec, amount: ALD.amountTWD(rec), exposure: ALD.exposureTWD(rec) };
+    });
+    const newValid = computed(() => !!newForm.account && Number(newForm.units) > 0);
+
+    let sheetSaving = false;
+    function saveNewAccount() {
+      if (sheetSaving || !newValid.value) return;
+      sheetSaving = true;
+      try {
+        const p = newPreview.value;
+        const rec = ALD.normalizeRec({
+          ...ALD.emptyRecord(newForm.type),
+          account: newForm.account,
+          currency: newForm.currency,
+          fxRate: p.fxRate,
+          unitPrice: p.unitPrice,
+          units: p.units,
+          leverage: p.leverage,
+          note: newForm.note.trim() || "初始建倉",
+          excluded: newForm.excluded ? 1 : 0,
+          date: ALD.nowStr(),
+        });
+        store.records.push(rec);
+        closeSheet();
+      } finally {
+        sheetSaving = false;
+      }
+    }
+
+    // ---------- 帳戶彈窗：[增減]（流動資金類／投資）與 [還款]（負債） ----------
+    // 帳戶識別鍵（D1）：類別 + 帳戶 + 幣別。應收款／固定資產／負債在匯總區塊只依名稱分組，
+    // 因此只用「類別 + 帳戶」比對紀錄，寫入時的幣別取該帳戶最新一筆紀錄的幣別。
+    const acctCtx = reactive({ type: "", account: "", currency: "" });
+    const sheetTab = ref("adjust");
+    const TRANSFER_TYPES = ["流動資金", "固定資產", "應收款"];
+    const adj = reactive({
+      dir: "in", // in=存入/買入，out=提取/賣出
+      kind: "external", // external | internal（內部轉移）
+      qty: "",
+      note: "",
+      xType: "流動資金",
+      xAccount: "",
+      price: "",
+      settleAccount: "",
+      principal: "",
+      interest: "",
+    });
+    const UNNAMED = "(未命名)";
+    const r6 = (n) => Math.round((Number(n) || 0) * 1e6) / 1e6;
+    const dtKey = (r) => ALD.normalizeDateTime(r.date);
+    const isCurKeyed = (type) => type === "流動資金" || type === "投資";
+    function latestOf(list) {
+      let latest = null;
+      list.forEach((r) => {
+        if (!latest || dtKey(r) >= dtKey(latest)) latest = r;
+      });
+      return latest;
+    }
+
+    function openAccountSheet(type, account, cur) {
+      let currency = cur;
+      if (!currency) {
+        const latest = latestOf(
+          store.records.filter((r) => r.type === type && (r.account || UNNAMED) === account)
+        );
+        currency = (latest && latest.currency) || settings.baseCurrency || "TWD";
+      }
+      acctCtx.type = type;
+      acctCtx.account = account;
+      acctCtx.currency = currency;
+      adj.dir = "in";
+      adj.kind = "external";
+      adj.qty = "";
+      adj.note = "";
+      adj.xType = "流動資金";
+      adj.xAccount = "";
+      adj.price = "";
+      adj.settleAccount = "";
+      adj.principal = "";
+      adj.interest = "";
+      sheetTab.value = "adjust";
+      editMsg.value = "";
+      logExpanded.value = new Set();
+      sheet.value = "account";
+    }
+    function onXTypeChange() {
+      adj.xAccount = "";
+    }
+
+    const acctKind = computed(() =>
+      acctCtx.type === "投資" ? "invest" : acctCtx.type === "負債" ? "repay" : "cash"
+    );
+    // 全部紀錄（含不計入）：供「最後編輯」；持有數量只計入 excluded=0 的紀錄（D2）
+    const acctRecs = computed(() =>
+      store.records.filter(
+        (r) =>
+          r.type === acctCtx.type &&
+          (r.account || UNNAMED) === acctCtx.account &&
+          (!isCurKeyed(acctCtx.type) || (r.currency || "TWD") === acctCtx.currency)
+      )
+    );
+    const holding = computed(() =>
+      r6(acctRecs.value.filter((r) => !ALD.isExcluded(r)).reduce((s, r) => s + (Number(r.units) || 0), 0))
+    );
+    const acctPrice = computed(() => resolveUnitPrice(acctCtx.type, acctCtx.account === UNNAMED ? "" : acctCtx.account));
+    const acctBalance = computed(() => ALD.round2(holding.value * acctPrice.value));
+    const lastEditText = computed(() => {
+      const latest = latestOf(acctRecs.value);
+      const m = latest && dtKey(latest).match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/);
+      return m ? `${m[1]}/${Number(m[2])}/${Number(m[3])} ${m[4]}:${m[5]}` : "—";
+    });
+
+    const adjSign = computed(() => (adj.dir === "in" ? 1 : -1));
+    const adjQty = computed(() => Number(adj.qty) || 0);
+    const adjTradePrice = computed(() => (Number(adj.price) > 0 ? Number(adj.price) : acctPrice.value));
+    const repayTotal = computed(() => ALD.round2((Number(adj.principal) || 0) + (Number(adj.interest) || 0)));
+    const adjAfter = computed(() => {
+      if (acctKind.value === "repay") {
+        return r6(holding.value - (Number(adj.principal) || 0) / (acctPrice.value || 1));
+      }
+      return r6(holding.value + adjSign.value * adjQty.value);
+    });
+
+    // 對方帳戶可選清單（D5）：設定中該類別的帳戶，排除自己，也排除「已有紀錄但全部是其他幣別」的帳戶
+    function peerOptions(type) {
+      return ALD.accountsForCategory(store.accounts, type).filter((name) => {
+        if (type === acctCtx.type && name === acctCtx.account) return false;
+        const recs = store.records.filter((r) => r.type === type && r.account === name);
+        return recs.length === 0 || recs.some((r) => (r.currency || "TWD") === acctCtx.currency);
+      });
+    }
+    const xOptions = computed(() => peerOptions(adj.xType));
+    const settleOptions = computed(() => peerOptions("流動資金"));
+
+    const adjValid = computed(() => {
+      if (acctKind.value === "repay") {
+        if (adj.principal === "" || adj.interest === "") return false;
+        const p = Number(adj.principal), i = Number(adj.interest);
+        return isFinite(p) && isFinite(i) && p >= 0 && i >= 0 && p + i > 0;
+      }
+      if (!(Number(adj.qty) > 0)) return false;
+      if (acctKind.value === "invest" && adj.price !== "" && !(Number(adj.price) > 0)) return false;
+      return true;
+    });
+    const adjBtnText = computed(() => {
+      if (acctKind.value === "repay") return "儲存";
+      if (acctKind.value === "invest") return adj.dir === "in" ? "確認買入" : "確認賣出";
+      return adj.dir === "in" ? "確認存入" : "確認提取";
+    });
+
+    // 組出這次操作要寫入的所有紀錄（本帳戶＋對方帳戶），同一個時間戳，並在同一個 tick 推入 store.records
+    function buildAdjustRecords() {
+      const ts = ALD.nowStr();
+      const cur = acctCtx.currency;
+      const fx = ALD.currencyRate(settings, cur) || 1;
+      const selfName = acctCtx.account === UNNAMED ? "" : acctCtx.account;
+      const mk = (type, account, units, unitPrice, note) =>
+        ALD.normalizeRec({
+          ...ALD.emptyRecord(type),
+          account,
+          currency: cur,
+          fxRate: fx,
+          unitPrice,
+          units: r6(units),
+          leverage: resolveLeverage(type, account),
+          note,
+          excluded: 0,
+          date: ts,
+        });
+      const recs = [];
+      const kind = acctKind.value;
+      if (kind === "cash") {
+        const internal = adj.kind === "internal";
+        const note = adj.note.trim() || (internal ? "轉移" : adj.dir === "in" ? "存入" : "支出");
+        const selfPrice = acctPrice.value;
+        recs.push(mk(acctCtx.type, selfName, adjSign.value * adjQty.value, selfPrice, note));
+        if (internal && adj.xAccount) {
+          const peerPrice = resolveUnitPrice(adj.xType, adj.xAccount);
+          recs.push(
+            mk(adj.xType, adj.xAccount, (-adjSign.value * adjQty.value * selfPrice) / peerPrice, peerPrice, note)
+          );
+        }
+      } else if (kind === "invest") {
+        const label = adj.dir === "in" ? "買入" : "賣出";
+        const price = adjTradePrice.value;
+        recs.push(mk(acctCtx.type, selfName, adjSign.value * adjQty.value, price, label));
+        if (adj.settleAccount) {
+          const sp = resolveUnitPrice("流動資金", adj.settleAccount);
+          recs.push(
+            mk("流動資金", adj.settleAccount, (-adjSign.value * adjQty.value * price) / sp, sp, label + " " + acctCtx.account)
+          );
+        }
+      } else {
+        const principal = Number(adj.principal) || 0;
+        if (principal > 0) recs.push(mk(acctCtx.type, selfName, -principal / acctPrice.value, acctPrice.value, "還款"));
+        if (adj.settleAccount) {
+          const sp = resolveUnitPrice("流動資金", adj.settleAccount);
+          recs.push(mk("流動資金", adj.settleAccount, -repayTotal.value / sp, sp, "還款 " + acctCtx.account));
+        }
+      }
+      return recs;
+    }
+
+    function saveAdjust() {
+      if (sheetSaving || !adjValid.value) return;
+      const reduces = acctKind.value === "repay" || adj.dir === "out";
+      if (reduces && adjAfter.value < 0) {
+        if (!window.confirm("調整後數量為 " + plain(adjAfter.value) + "，小於 0，仍要儲存嗎？")) return;
+      }
+      sheetSaving = true;
+      try {
+        buildAdjustRecords().forEach((r) => store.records.push(r));
+        closeSheet();
+      } finally {
+        sheetSaving = false;
+      }
+    }
+
+    // ---------- 帳戶彈窗：[編輯] 與 [紀錄] ----------
+    // [編輯] 只可調整持有數量與備註：差值 = 輸入 − 目前持有，非 0 才新增一筆差額紀錄，不修改既有紀錄
+    const editForm = reactive({ units: "", note: "" });
+    const editMsg = ref("");
+    const editRec = computed(() => {
+      const rec = {
+        unitPrice: acctPrice.value,
+        units: Number(editForm.units) || 0,
+        fxRate: ALD.currencyRate(settings, acctCtx.currency) || 1,
+        leverage: resolveLeverage(acctCtx.type, acctCtx.account === UNNAMED ? "" : acctCtx.account),
+      };
+      return { ...rec, amount: ALD.amountTWD(rec), exposure: ALD.exposureTWD(rec) };
+    });
+    const editValid = computed(() => editForm.units !== "" && isFinite(Number(editForm.units)));
+    function selectSheetTab(tab) {
+      sheetTab.value = tab;
+      editMsg.value = "";
+      if (tab === "edit") {
+        editForm.units = holding.value;
+        editForm.note = "";
+      }
+    }
+    function saveEdit() {
+      if (sheetSaving || !editValid.value) return;
+      const target = Number(editForm.units);
+      const diff = r6(target - holding.value);
+      if (diff === 0) {
+        editMsg.value = "持有數量未變更，不需寫入紀錄";
+        return;
+      }
+      if (target < 0 && !window.confirm("持有數量設為 " + plain(target) + "，小於 0，仍要儲存嗎？")) return;
+      sheetSaving = true;
+      try {
+        const invest = acctCtx.type === "投資";
+        const fixedNote = invest ? (diff > 0 ? "買入" : "賣出") : diff > 0 ? "收入" : "支出";
+        const account = acctCtx.account === UNNAMED ? "" : acctCtx.account;
+        store.records.push(
+          ALD.normalizeRec({
+            ...ALD.emptyRecord(acctCtx.type),
+            account,
+            currency: acctCtx.currency,
+            fxRate: ALD.currencyRate(settings, acctCtx.currency) || 1,
+            unitPrice: acctPrice.value,
+            units: diff,
+            leverage: resolveLeverage(acctCtx.type, account),
+            note: editForm.note.trim() || fixedNote,
+            excluded: 0,
+            date: ALD.nowStr(),
+          })
+        );
+        closeSheet();
+      } finally {
+        sheetSaving = false;
+      }
+    }
+    // 刪除此資產：刪除該帳戶（含不計入）的所有明細紀錄；不刪除「設定 > 資產帳戶」中的帳戶
+    function deleteAccountRecords() {
+      const ids = new Set(acctRecs.value.map((r) => r.id));
+      if (ids.size === 0) return;
+      const msg =
+        "確定要刪除「" + acctCtx.account + "」（" + acctCtx.currency + "）的全部 " + ids.size +
+        " 筆明細紀錄嗎？此操作無法復原（設定中的帳戶不會被刪除）。";
+      if (!window.confirm(msg)) return;
+      for (let i = store.records.length - 1; i >= 0; i--) {
+        if (ids.has(store.records[i].id)) store.records.splice(i, 1);
+      }
+      closeSheet();
+    }
+
+    // [紀錄]：唯讀卡片，固定依完整日期時間新到舊（同時間者後寫入的在前），展開狀態獨立於明細頁
+    const logExpanded = ref(new Set());
+    const logRecords = computed(() =>
+      acctRecs.value
+        .map((r, i) => ({ r, i, k: dtKey(r) }))
+        .sort((a, b) => (a.k < b.k ? 1 : a.k > b.k ? -1 : b.i - a.i))
+        .map((x) => x.r)
+    );
+    const logOpen = (id) => logExpanded.value.has(id);
+    function toggleLog(id) {
+      const set = logExpanded.value;
+      if (set.has(id)) set.delete(id);
+      else set.add(id);
+    }
+    const logDateMD = (d) => (typeof d === "string" && d.length >= 10 ? d.slice(5, 10) : d || "");
+    const logAmount = (rec) => ALD.amountTWD(rec);
+    const logExposure = (rec) => ALD.exposureTWD(rec);
+
     return {
+      editForm,
+      editMsg,
+      editRec,
+      editValid,
+      selectSheetTab,
+      saveEdit,
+      deleteAccountRecords,
+      logRecords,
+      logOpen,
+      toggleLog,
+      logDateMD,
+      logAmount,
+      logExposure,
+      datePart: ALD.datePart,
+      acctCtx,
+      sheetTab,
+      adj,
+      TRANSFER_TYPES,
+      acctKind,
+      holding,
+      acctPrice,
+      acctBalance,
+      lastEditText,
+      adjAfter,
+      repayTotal,
+      xOptions,
+      settleOptions,
+      adjValid,
+      adjBtnText,
+      openAccountSheet,
+      onXTypeChange,
+      saveAdjust,
+      sheet,
+      closeSheet,
+      openNewAccount,
+      onNewTypeChange,
+      newForm,
+      newTypes,
+      newAccountOptions,
+      currencyOptions,
+      newPreview,
+      newValid,
+      saveNewAccount,
+      plain,
       view: assetsView,
       totalAssets,
       breakdown,
@@ -575,11 +993,22 @@ const TabDetail = {
       else set.add(id);
     }
 
-    // 收合摘要用日期顯示：只取 MM-DD，實際欄位（rec.date）仍完整保留 YYYY-MM-DD，
+    // 收合摘要用日期顯示：只取 MM-DD，實際欄位（rec.date）仍完整保留 yyyy-mm-dd hh:mi:ss，
     // 編輯與儲存皆不受影響（此函式僅用於畫面顯示）。
     function dateMD(d) {
       if (!d || typeof d !== "string" || d.length < 10) return d || "";
-      return d.slice(5);
+      return d.slice(5, 10);
+    }
+
+    // 展開卡片的日期欄：原生 date input 只處理日期部分，改日期時保留原本的時分秒；清空則寫入 ""。
+    function onRecDateChange(rec, event) {
+      const v = event.target.value;
+      if (!v) {
+        rec.date = "";
+        return;
+      }
+      const time = typeof rec.date === "string" && rec.date.length >= 19 ? rec.date.slice(10) : " 00:00:00";
+      rec.date = v + time;
     }
 
     const isInvest = computed(() => activeType.value === "投資");
@@ -647,7 +1076,7 @@ const TabDetail = {
         list = list.filter((r) => !ALD.isExcluded(r));
       }
       if (dateFilterActive.value) {
-        list = list.filter((r) => r.date === dateFilterValue.value);
+        list = list.filter((r) => ALD.datePart(r.date) === dateFilterValue.value);
       }
       return list;
     });
@@ -737,11 +1166,12 @@ const TabDetail = {
     // 依單一排序條件比較兩筆資料；空值/無效日期一律排在最後（不論升冪或降冪）
     function compareByRule(a, b, rule) {
       if (rule.field === "date") {
-        const va = a.date, vb = b.date;
-        const validA = isValidDateStr(va), validB = isValidDateStr(vb);
+        const validA = isValidDateStr(ALD.datePart(a.date)), validB = isValidDateStr(ALD.datePart(b.date));
         if (!validA && !validB) return 0;
         if (!validA) return 1;
         if (!validB) return -1;
+        // 以完整日期時間比較；Array.prototype.sort 為穩定排序，同時間維持原順序
+        const va = ALD.normalizeDateTime(a.date), vb = ALD.normalizeDateTime(b.date);
         const cmp = va < vb ? -1 : va > vb ? 1 : 0;
         return rule.order === "desc" ? -cmp : cmp;
       }
@@ -941,6 +1371,8 @@ const TabDetail = {
       isExpanded,
       toggleExpand,
       dateMD,
+      datePart: ALD.datePart,
+      onRecDateChange,
       hasActiveFilter,
       clearFilters,
       sortRules,
@@ -1716,7 +2148,19 @@ app.config.errorHandler = (err, instance, info) => {
     }
   } else {
     initialSettings = mergeSettings(rawSettings);
+    const rawDates = Array.isArray(rawRecords) ? rawRecords.map((r) => r && r.date) : [];
     initialRecords = Array.isArray(rawRecords) ? rawRecords.map(ALD.normalizeRec) : [];
+    // 日期擴欄一次性遷移：normalizeRec 已把純日期補成 yyyy-mm-dd hh:mi:ss，有任何一筆被補時間就整批寫回。
+    // 寫回失敗只顯示錯誤，不中止啟動（記憶體中的資料已是新格式，之後 store 的 watch 會再次嘗試寫回）。
+    if (initialRecords.some((r, i) => r.date !== rawDates[i])) {
+      try {
+        await ALD_DB.replaceRecords(initialRecords);
+      } catch (e) {
+        const detail = e && e.stack ? e.stack : e && e.message ? e.message : String(e);
+        console.error("日期格式遷移寫回 IndexedDB 失敗：", e);
+        if (window.__showAppError) window.__showAppError("日期格式遷移寫回 IndexedDB 失敗：\n" + detail);
+      }
+    }
     initialAccounts = Array.isArray(rawAccounts)
       ? rawAccounts.map((a, i) => normalizeAccount(a, i + 1))
       : [];
