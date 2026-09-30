@@ -1173,12 +1173,11 @@ const TabDetail = {
       // 不改變 dateFilterActive；v-model 已同步 dateFilterValue，此函式保留供後續擴充。
     }
 
-    // 套用帳戶/幣別（多選 OR）、不計入、日期三種篩選後，實際顯示於下方明細的資料。
-    // 帳戶/幣別多選之間為 OR，選取結果再與不計入、日期條件做 AND；
-    // 此為唯一計算篩選結果的地方，資料新增/刪除/修改後（store.records 變動）
-    // 會自動重新計算，不需額外處理。
+    // 未命名紀錄在目前類別內永遠顯示；命名紀錄才套用帳戶/幣別（多選 OR）、不計入、日期篩選。
+    // 這個例外不跨類別，且不改變 store.records 的原始資料。
     const visibleRecords = computed(() => {
-      let list = typeRecords.value;
+      const unnamed = typeRecords.value.filter((r) => !String(r.account || "").trim());
+      let list = typeRecords.value.filter((r) => String(r.account || "").trim());
       const sel = selectedAccountFilters.value;
       if (sel.length > 0) {
         list = list.filter((r) =>
@@ -1195,7 +1194,7 @@ const TabDetail = {
       if (dateFilterActive.value) {
         list = list.filter((r) => ALD.datePart(r.date) === dateFilterValue.value);
       }
-      return list;
+      return { unnamed, named: list };
     });
 
     // 目前是否有任何一種篩選條件生效（供摘要列與空狀態顯示判斷）
@@ -1302,20 +1301,23 @@ const TabDetail = {
       return rule.order === "desc" ? -cmp : cmp;
     }
 
-    // 先套用既有篩選（visibleRecords），再依排序條件排序；用 slice() 複製陣列後排序，
-    // 不直接對原始資料呼叫 sort()，故不會影響 store.records 與 IndexedDB 的儲存順序。
+    // 命名紀錄先套用既有篩選及排序；未命名紀錄獨立保留並固定排在最前。
+    // 所有排序皆對複製陣列執行，不會影響 store.records 與 IndexedDB 的儲存順序。
     const sortedRecords = computed(() => {
       const rules = sortRules.value;
-      const arr = visibleRecords.value.slice();
-      if (rules.length === 0) return arr;
-      arr.sort((a, b) => {
-        for (const rule of rules) {
-          const cmp = compareByRule(a, b, rule);
-          if (cmp !== 0) return cmp;
-        }
-        return 0;
-      });
-      return arr;
+      const sort = (records) => {
+        const arr = records.slice();
+        if (rules.length === 0) return arr;
+        arr.sort((a, b) => {
+          for (const rule of rules) {
+            const cmp = compareByRule(a, b, rule);
+            if (cmp !== 0) return cmp;
+          }
+          return 0;
+        });
+        return arr;
+      };
+      return [...sort(visibleRecords.value.unnamed), ...sort(visibleRecords.value.named)];
     });
 
     // 幣別分組標籤：投資用「台股/美股」，非投資用「台幣/美元」
