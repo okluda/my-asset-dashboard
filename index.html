@@ -254,28 +254,29 @@
       <div class="card rebalance-result">
         <div v-if="pool <= 0" class="empty-hint">尚無流動資金或投資資料</div>
         <template v-else>
-          <div class="rebalance-advice-row" :class="actionLeveraged.type">
-            <template v-if="actionLeveraged.type === 'hold'">
-              <div class="rebalance-hold">{{ actionLeveraged.label }}</div>
-            </template>
-            <template v-else>
-              <div class="reb-icon-circle" :class="actionLeveraged.type">{{ actionLeveraged.type === 'buy' ? '↓' : '↑' }}</div>
-              <div class="rebalance-advice-label">
-                <span>{{ actionLeveraged.label }}</span>
-                <span class="rebalance-leverage-note">（槓桿&gt;1）</span>
-              </div>
-              <div class="rebalance-advice-amount">{{ fmt(actionLeveraged.amount) }}</div>
-            </template>
-          </div>
-          <div class="rebalance-advice-divider"></div>
           <div class="rebalance-advice-row" :class="action.type">
             <template v-if="action.type === 'hold'">
               <div class="rebalance-hold">{{ action.label }}</div>
             </template>
             <template v-else>
               <div class="reb-icon-circle" :class="action.type">{{ action.type === 'buy' ? '↓' : '↑' }}</div>
-              <div class="rebalance-advice-label">{{ action.label }}</div>
-              <div class="rebalance-advice-amount">{{ fmt(action.amount) }}</div>
+              <div class="rebalance-advice-text">
+                <div class="rebalance-advice-title">再平衡建議</div>
+                <div class="rebalance-advice-main">{{ action.label }} {{ fmt(action.amount) }}</div>
+              </div>
+            </template>
+          </div>
+          <div class="rebalance-advice-divider"></div>
+          <div class="rebalance-advice-row" :class="actionLeveraged.type">
+            <template v-if="actionLeveraged.type === 'hold'">
+              <div class="rebalance-hold">{{ actionLeveraged.label }}</div>
+            </template>
+            <template v-else>
+              <div class="reb-icon-circle" :class="actionLeveraged.type">{{ actionLeveraged.type === 'buy' ? '↓' : '↑' }}</div>
+              <div class="rebalance-advice-text">
+                <div class="rebalance-advice-title">再平衡建議（槓桿&gt;1）</div>
+                <div class="rebalance-advice-main">{{ actionLeveraged.label }} {{ fmt(actionLeveraged.amount) }}</div>
+              </div>
             </template>
           </div>
         </template>

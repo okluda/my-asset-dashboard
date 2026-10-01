@@ -516,13 +516,28 @@ table.detail-table input, table.detail-table select {
   background: var(--border);
 }
 
-.rebalance-advice-label {
+/* 文字區與圖示同高：標題靠上、買入/賣出＋金額靠下 */
+.rebalance-advice-text {
   min-width: 0;
+  min-height: 36px;
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  font-size: calc(14px * var(--font-scale, 1));
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.rebalance-advice-title {
+  font-size: calc(12px * var(--font-scale, 1));
+  font-weight: 400;
+  line-height: 1.2;
+}
+
+.rebalance-advice-main {
+  font-size: calc(16px * var(--font-scale, 1));
   font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .reb-icon-circle {
@@ -546,25 +561,13 @@ table.detail-table input, table.detail-table select {
   color: var(--accent-2);
 }
 
-.rebalance-leverage-note {
-  margin-top: 2px;
-  font-size: calc(10px * var(--font-scale, 1));
-}
-
-.rebalance-advice-amount {
-  margin-left: auto;
-  font-size: calc(14px * var(--font-scale, 1));
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.rebalance-advice-row.sell .rebalance-advice-label,
-.rebalance-advice-row.sell .rebalance-advice-amount {
+.rebalance-advice-row.sell .rebalance-advice-title,
+.rebalance-advice-row.sell .rebalance-advice-main {
   color: var(--danger);
 }
 
-.rebalance-advice-row.buy .rebalance-advice-label,
-.rebalance-advice-row.buy .rebalance-advice-amount {
+.rebalance-advice-row.buy .rebalance-advice-title,
+.rebalance-advice-row.buy .rebalance-advice-main {
   color: var(--accent-2);
 }
 
@@ -1442,7 +1445,7 @@ button.set-row:disabled {
   justify-content: flex-end;
   flex: 1 1 auto;
   min-width: 0;
-  max-width: 65%;
+  /* max-width: 65%; */
 }
 
 .set-select select {
