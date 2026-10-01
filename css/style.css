@@ -457,61 +457,72 @@ table.detail-table input, table.detail-table select {
 .summary-group:last-child { border-bottom: none; }
 
 /* ---------- 再平衡：配置概況及再平衡 ---------- */
-.reb-ratio-row {
-  display: flex;
-  justify-content: space-between;
+.reb-data-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 4.5em;
+  column-gap: 10px;
   align-items: baseline;
-  padding-bottom: 10px;
-  margin-bottom: 6px;
+  padding: 7px 0;
   border-bottom: 1px solid var(--border);
+  font-size: calc(14px * var(--font-scale, 1));
 }
 
-.reb-ratio-value {
-  font-weight: 700;
-  font-size: calc(16px * var(--font-scale, 1));
+.reb-data-row > span:not(:first-child) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
-.reb-ratio-label {
-  font-size: calc(13px * var(--font-scale, 1));
-}
-
-.reb-sub-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 4px 0 4px 14px;
-  font-size: calc(12px * var(--font-scale, 1));
+.reb-data-row > span:last-child {
   color: var(--text-sub);
+  font-weight: 700;
+}
+
+.reb-data-row-two {
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .reb-ratio-select-row {
-  margin-top: 10px;
-  margin-bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 10px;
+  font-size: calc(14px * var(--font-scale, 1));
 }
 
 .rebalance-hold {
   text-align: center;
-  padding: 18px 10px;
+  width: 100%;
+  padding: 10px;
   color: var(--text-sub);
-  font-size: calc(16px * var(--font-scale, 1));
+  font-size: calc(14px * var(--font-scale, 1));
   font-weight: 700;
 }
 
-/* 再平衡建議：圖案 + 標題/金額，依買入/賣出套用不同底色 */
-.rebalance-advice-box {
+.rebalance-result {
+  padding: 0;
+}
+
+.rebalance-advice-row {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px;
-  border-radius: 14px;
-  text-align: left;
+  gap: 10px;
+  min-height: 64px;
+  padding: 12px 14px;
 }
 
-.rebalance-advice-box.sell {
-  background: rgba(255, 107, 107, 0.15);
+.rebalance-advice-divider {
+  height: 1px;
+  margin: 0 var(--card-divider-inset);
+  background: var(--border);
 }
 
-.rebalance-advice-box.buy {
-  background: rgba(53, 201, 143, 0.15);
+.rebalance-advice-label {
+  min-width: 0;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  font-size: calc(14px * var(--font-scale, 1));
+  font-weight: 700;
 }
 
 .reb-icon-circle {
@@ -535,24 +546,25 @@ table.detail-table input, table.detail-table select {
   color: var(--accent-2);
 }
 
-.rebalance-advice-title {
-  font-size: calc(15px * var(--font-scale, 1));
-  font-weight: 700;
+.rebalance-leverage-note {
+  margin-top: 2px;
+  font-size: calc(10px * var(--font-scale, 1));
 }
 
 .rebalance-advice-amount {
-  font-size: calc(18px * var(--font-scale, 1));
+  margin-left: auto;
+  font-size: calc(14px * var(--font-scale, 1));
   font-weight: 700;
-  margin-top: 2px;
+  white-space: nowrap;
 }
 
-.rebalance-advice-box.sell .rebalance-advice-title,
-.rebalance-advice-box.sell .rebalance-advice-amount {
+.rebalance-advice-row.sell .rebalance-advice-label,
+.rebalance-advice-row.sell .rebalance-advice-amount {
   color: var(--danger);
 }
 
-.rebalance-advice-box.buy .rebalance-advice-title,
-.rebalance-advice-box.buy .rebalance-advice-amount {
+.rebalance-advice-row.buy .rebalance-advice-label,
+.rebalance-advice-row.buy .rebalance-advice-amount {
   color: var(--accent-2);
 }
 
@@ -567,9 +579,8 @@ table.detail-table input, table.detail-table select {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex: 1 1 auto;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  flex: 0 1 auto;
+  justify-content: flex-start;
 }
 
 .date-nav-btn {
@@ -641,7 +652,7 @@ table.detail-table input, table.detail-table select {
   /* 大圓角讓左右兩端呈半圓弧（pill 膠囊形）：半徑 ≥ 高度一半即為完整半圓 */
   border-radius: 999px;
   display: flex;
-  padding: 5px;
+  padding: 4px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
   border: 1px solid var(--border);
   z-index: 20;
@@ -688,14 +699,14 @@ table.detail-table input, table.detail-table select {
   background: transparent;
   border: none;
   color: var(--text-sub);
-  padding: 7px 4px;
+  padding: 4px;
   border-radius: 999px;
   font-size: calc(13px * var(--font-scale, 1));
   font-weight: 600;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 1px;
 }
 
 .tab-btn.active {
@@ -704,7 +715,7 @@ table.detail-table input, table.detail-table select {
 }
 
 .tab-icon {
-  font-size: calc(18px * var(--font-scale, 1));
+  font-size: calc(16px * var(--font-scale, 1));
   line-height: 1;
 }
 
@@ -833,14 +844,13 @@ table.detail-table input, table.detail-table select {
 /* 不計入三態篩選：全部／已勾選不計入／未勾選不計入 */
 .excl-filter-row {
   display: flex;
-  flex-wrap: wrap;
   gap: 6px;
-  margin-bottom: 12px;
+  margin: 0;
 }
 
 .excl-filter-btn {
-  flex: 1 1 auto;
-  min-width: 84px;
+  flex: 0 0 auto;
+  min-width: 0;
   text-align: center;
   background: var(--card-bg-2);
   border: 1px solid var(--border);
@@ -863,9 +873,10 @@ table.detail-table input, table.detail-table select {
 .sort-row {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
   margin-bottom: 12px;
+  overflow-x: auto;
 }
 
 .sort-label {
@@ -909,8 +920,9 @@ table.detail-table input, table.detail-table select {
 
 .sum-group-head {
   display: flex;
-  justify-content: space-between;
-  font-size: calc(14px * var(--font-scale, 1));
+  justify-content: flex-start;
+  gap: 10px;
+  font-size: calc(16px * var(--font-scale, 1));
   font-weight: 600;
   color: var(--text-main);
   margin-bottom: 2px;
@@ -957,14 +969,14 @@ table.detail-table input, table.detail-table select {
 .sum-acc-name {
   color: var(--text-main);
   font-weight: 600;
-  font-size: calc(13px * var(--font-scale, 1));
+  font-size: calc(15px * var(--font-scale, 1));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .sum-acc-amt {
-  font-size: calc(14px * var(--font-scale, 1));
+  font-size: calc(16px * var(--font-scale, 1));
   font-weight: 600;
   white-space: nowrap;
   flex: 0 0 auto;
@@ -1592,10 +1604,14 @@ button.set-row:disabled {
   gap: 4px;
 }
 
+.ov-net-label-row {
+  justify-content: center;
+  font-size: calc(17px * var(--font-scale, 1));
+}
+
 .ov-net-row {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  justify-content: center;
   margin: 0 0 14px;
 }
 
@@ -1651,6 +1667,7 @@ button.set-row:disabled {
   align-items: center;
   gap: 5px;
   white-space: nowrap;
+  font-weight: 700;
 }
 
 .ratio-dot {
@@ -1664,30 +1681,40 @@ button.set-row:disabled {
 /* 分隔線以有內縮的線段實作（不用 border），橫線左右不接卡片邊框 */
 .ov-hr {
   height: 1px;
-  margin: 14px 8px;
+  margin: 14px 0;
   background: var(--border);
 }
 
 .ov-split {
   position: relative;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 0.8fr 1fr;
 }
 
-/* 縱線畫在兩欄中間，上下各留間距，不碰到橫線與卡片邊框 */
+/* 縱線僅對齊摘要文字區，不碰觸上方橫線或卡片外框。 */
 .ov-split::before {
   content: "";
   position: absolute;
-  left: 50%;
-  top: 8px;
-  bottom: 8px;
+  left: calc(64.2857% - 0.4px);
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  background: var(--border);
+}
+
+.ov-split-col:nth-child(2)::before {
+  content: "";
+  position: absolute;
+  left: 35.7%;
+  top: 4px;
+  bottom: 4px;
   width: 1px;
   background: var(--border);
 }
 
 .ov-split-col {
   min-width: 0;
-  padding: 4px 8px;
+  padding: 4px 6px;
   text-align: center;
 }
 
@@ -1703,10 +1730,22 @@ button.set-row:disabled {
   word-break: break-all;
 }
 
-.ov-split-sub {
-  margin-top: 2px;
-  font-size: calc(11px * var(--font-scale, 1));
-  color: var(--text-sub);
+.ov-split-ratio {
+  margin-top: 4px;
+  font-size: calc(16px * var(--font-scale, 1));
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.ov-hero > .ratio-legend {
+  gap: 3px 8px;
+  margin-top: 7px;
+  font-size: calc(8px * var(--font-scale, 1));
+}
+
+.ov-hero > .ratio-legend .ratio-dot {
+  width: 6px;
+  height: 6px;
 }
 
 .pf-head {
@@ -1725,7 +1764,7 @@ button.set-row:disabled {
   grid-template-columns: 1fr auto 4.5em;
   column-gap: 10px;
   align-items: baseline;
-  padding: 8px 0;
+  padding: 2px 0;
   font-size: calc(14px * var(--font-scale, 1));
 }
 
@@ -1735,8 +1774,19 @@ button.set-row:disabled {
   font-variant-numeric: tabular-nums;
 }
 
-.pf-pct {
+.pf-amt {
   color: var(--text-sub);
+}
+
+.pf-pct {
+  color: var(--text-main);
+  font-weight: 700;
+}
+
+@media (max-width: 600px) {
+  .pf-amt {
+    transform: translateX(1ch);
+  }
 }
 
 /* ---------- 資產（負債）分頁（as-*） ---------- */
@@ -1849,7 +1899,7 @@ button.set-row:disabled {
 }
 
 .as-group + .as-group {
-  margin-top: 16px;
+  margin-top: 12px;
 }
 
 .as-group-head {
@@ -1857,31 +1907,43 @@ button.set-row:disabled {
   justify-content: space-between;
   align-items: baseline;
   gap: 10px;
-  padding: 0 4px 8px;
-  font-size: calc(14px * var(--font-scale, 1));
+  padding: 0 4px 6px;
+  font-size: calc(16px * var(--font-scale, 1));
   font-weight: 700;
 }
 
 .as-group-meta {
-  color: var(--text-sub);
-  font-size: calc(12px * var(--font-scale, 1));
-  font-weight: 400;
+  color: var(--text-main);
+  font-size: calc(14px * var(--font-scale, 1));
+  font-weight: 700;
   white-space: nowrap;
 }
 
 .as-accounts-section {
-  margin-top: 14px;
+  margin-top: 6px;
 }
 
-.as-accounts-section .pf-head {
-  margin: 0 4px 12px;
+.as-accounts-divider {
+  height: 1px;
+  margin: 0 0 10px;
+  background: var(--border);
+}
+
+.as-excluded-toggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 0 4px 10px;
+  font-size: calc(13px * var(--font-scale, 1));
+  color: var(--text-sub);
 }
 
 .as-acct {
   display: grid;
   grid-template-columns: 3.5em minmax(0, 1fr) auto;
   column-gap: 10px;
-  align-items: start;
+  align-items: center;
+  min-height: 72px;
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: 18px;
@@ -1922,10 +1984,11 @@ button.set-row:disabled {
 
 .as-acct-name {
   word-break: break-all;
+  font-size: calc(16px * var(--font-scale, 1));
 }
 
 .as-acct-sub {
-  font-size: calc(12px * var(--font-scale, 1));
+  font-size: calc(10px * var(--font-scale, 1));
   color: var(--text-sub);
 }
 
@@ -1933,6 +1996,7 @@ button.set-row:disabled {
   text-align: right;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  font-size: calc(16px * var(--font-scale, 1));
 }
 
 .as-ratio-legend {

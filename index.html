@@ -186,10 +186,13 @@
             <div class="ov-split-label">總資產</div>
             <div class="ov-split-value">{{ fmt(totalAssets) }}</div>
           </div>
+          <div class="ov-split-col ov-liability-ratio">
+            <div class="ov-split-label">負債比</div>
+            <div class="ov-split-ratio">{{ pct(liabilityRatio) }}</div>
+          </div>
           <div class="ov-split-col">
             <div class="ov-split-label">總負債</div>
             <div class="ov-split-value">{{ fmt(totalLiabilities) }}</div>
-            <div class="ov-split-sub">負債比 {{ pct(liabilityRatio) }}</div>
           </div>
         </div>
       </div>
@@ -212,52 +215,68 @@
     <div class="page-content">
       <div class="card">
         <div class="section-title">配置概況及再平衡</div>
-        <div class="reb-ratio-row">
-          <span class="reb-ratio-label">曝險比</span>
-          <span class="reb-ratio-value">{{ pct(exposureRatio) }}</span>
+        <div class="reb-data-row">
+          <span>排除現金曝險</span>
+          <span>{{ fmt(exposureTotal) }}</span>
+          <span>{{ pct(exposureRatio) }}</span>
         </div>
-        <div class="reb-ratio-row">
-          <span class="reb-ratio-label">曝險比（槓桿）</span>
-          <span class="reb-ratio-value">{{ pct(exposureLeveragedRatio) }}</span>
+        <div class="reb-data-row">
+          <span>排除現金曝險（槓桿&gt;1）</span>
+          <span>{{ fmt(exposureLeveragedTotal) }}</span>
+          <span>{{ pct(exposureLeveragedRatio) }}</span>
         </div>
-        <div class="summary-group"><span>曝險金額</span><span>{{ fmt(exposureTotal) }}</span></div>
-        <div class="summary-group"><span>資金部位</span><span>{{ fmt(pool) }}</span></div>
-        <div class="reb-sub-row"><span>{{ catName('流動資金') }}</span><span>{{ fmt(liquidTWD) }}（{{ pct(liquidRatio) }}）</span></div>
-        <div class="reb-sub-row"><span>{{ catName('投資') }}</span><span>{{ fmt(investTWD) }}（{{ pct(investRatio) }}）</span></div>
-        <div class="form-row reb-ratio-select-row">
-          <label>投資配置比</label>
-          <select v-model.number="settings.rebalanceRatio" @change="onRatioChange">
-            <option v-for="r in ratioOptions" :key="r" :value="r">
-              {{ r }}%
-            </option>
-          </select>
+        <div class="reb-data-row reb-data-row-two">
+          <span>資金部位</span>
+          <span>{{ fmt(pool) }}</span>
         </div>
-      </div>
-
-      <div class="card rebalance-result">
-        <div v-if="pool <= 0" class="empty-hint">尚無流動資金或投資資料</div>
-        <template v-else>
-          <div v-if="action.type === 'hold'" class="rebalance-hold">{{ action.label }}</div>
-          <div v-else class="rebalance-advice-box" :class="action.type">
-            <div class="reb-icon-circle" :class="action.type">{{ action.type === 'buy' ? '↓' : '↑' }}</div>
-            <div class="rebalance-advice-text">
-              <div class="rebalance-advice-title">再平衡建議</div>
-              <div class="rebalance-advice-amount">{{ action.label }} {{ fmt(action.amount) }}</div>
-            </div>
+        <div class="reb-data-row">
+          <span>{{ catName('流動資金') }}</span>
+          <span>{{ fmt(liquidTWD) }}</span>
+          <span>{{ pct(liquidRatio) }}</span>
+        </div>
+        <div class="reb-data-row">
+          <span>{{ catName('投資') }}</span>
+          <span>{{ fmt(investTWD) }}</span>
+          <span>{{ pct(investRatio) }}</span>
+        </div>
+        <div class="reb-ratio-select-row">
+          <span>投資配置比</span>
+          <div class="set-select">
+            <select v-model.number="settings.rebalanceRatio" @change="onRatioChange">
+              <option v-for="r in ratioOptions" :key="r" :value="r">
+                {{ r }}%
+              </option>
+            </select>
           </div>
-        </template>
+        </div>
       </div>
 
       <div class="card rebalance-result">
         <div v-if="pool <= 0" class="empty-hint">尚無流動資金或投資資料</div>
         <template v-else>
-          <div v-if="actionLeveraged.type === 'hold'" class="rebalance-hold">{{ actionLeveraged.label }}</div>
-          <div v-else class="rebalance-advice-box" :class="actionLeveraged.type">
-            <div class="reb-icon-circle" :class="actionLeveraged.type">{{ actionLeveraged.type === 'buy' ? '↓' : '↑' }}</div>
-            <div class="rebalance-advice-text">
-              <div class="rebalance-advice-title">槓桿再平衡建議</div>
-              <div class="rebalance-advice-amount">{{ actionLeveraged.label }} {{ fmt(actionLeveraged.amount) }}</div>
-            </div>
+          <div class="rebalance-advice-row" :class="actionLeveraged.type">
+            <template v-if="actionLeveraged.type === 'hold'">
+              <div class="rebalance-hold">{{ actionLeveraged.label }}</div>
+            </template>
+            <template v-else>
+              <div class="reb-icon-circle" :class="actionLeveraged.type">{{ actionLeveraged.type === 'buy' ? '↓' : '↑' }}</div>
+              <div class="rebalance-advice-label">
+                <span>{{ actionLeveraged.label }}</span>
+                <span class="rebalance-leverage-note">（槓桿&gt;1）</span>
+              </div>
+              <div class="rebalance-advice-amount">{{ fmt(actionLeveraged.amount) }}</div>
+            </template>
+          </div>
+          <div class="rebalance-advice-divider"></div>
+          <div class="rebalance-advice-row" :class="action.type">
+            <template v-if="action.type === 'hold'">
+              <div class="rebalance-hold">{{ action.label }}</div>
+            </template>
+            <template v-else>
+              <div class="reb-icon-circle" :class="action.type">{{ action.type === 'buy' ? '↓' : '↑' }}</div>
+              <div class="rebalance-advice-label">{{ action.label }}</div>
+              <div class="rebalance-advice-amount">{{ fmt(action.amount) }}</div>
+            </template>
           </div>
         </template>
       </div>
@@ -326,9 +345,14 @@
         </div>
 
         <div class="as-accounts-section">
-          <div class="pf-head">
-            <div class="section-title">帳戶匯總</div>
-          </div>
+          <div class="as-accounts-divider"></div>
+          <label class="as-excluded-toggle">
+            <span>顯示不計入帳戶</span>
+            <span class="set-switch">
+              <input type="checkbox" v-model="showExcludedAccounts" aria-label="顯示不計入帳戶" />
+              <span class="set-switch-track"></span>
+            </span>
+          </label>
           <div v-if="groups.length === 0" class="empty-hint">此範圍尚無資產資料，請至「明細」新增</div>
           <div v-for="g in groups" :key="g.key" class="as-group">
             <div class="as-group-head">
@@ -336,14 +360,14 @@
               <span class="as-group-meta">{{ fmtNum(g.amount) }} · {{ g.accounts.length }} 筆</span>
             </div>
             <div v-for="a in g.accounts" :key="a.account" class="as-acct as-acct-tap" :class="{ 'as-acct-invest': g.invest }" role="button" tabindex="0" @click="openAccountSheet(g.type, a.account, g.cur)">
-                <span class="as-acct-ratio" :style="{ '--ratio': (a.ratio * 360) + 'deg' }">{{ pct(a.ratio) }}</span>
+                <span class="as-acct-ratio" :style="{ '--ratio': (Math.round(a.ratio * 100) / 100 * 360) + 'deg' }">{{ pctWhole(a.ratio) }}</span>
                 <span class="as-acct-main">
                   <span class="as-acct-name">{{ a.account }}</span>
                   <template v-if="g.invest">
-                    <span class="as-acct-sub">價格 {{ a.priceText }}</span>
-                    <span class="as-acct-sub">總股數 {{ num(a.units) }}</span>
+                      <span class="as-acct-sub">{{ a.priceText }}</span>
+                      <span class="as-acct-sub">{{ num(a.units) }}股</span>
                   </template>
-                  <span v-else class="as-acct-sub">{{ a.origText }}</span>
+                    <span v-else-if="g.isForeign" class="as-acct-sub">{{ a.origText }}</span>
                 </span>
                 <span class="as-amt">{{ fmtNum(a.amountTWD) }}</span>
             </div>
@@ -806,7 +830,7 @@
             <span>{{ fmt(g.subtotalTWD) }}</span>
           </div>
           <div v-if="g.isForeign" class="sum-group-orig">
-            <span class="sum-orig">({{ num(g.subtotalOrig) }})</span>
+            <span class="sum-orig">${{ num(g.subtotalOrig) }}</span>
           </div>
           <!-- 第三層：帳戶/項目，可點選作為下方明細的篩選條件（依所屬幣別分組，
                篩選時同時比對「帳戶＋幣別」，避免不同幣別但同名帳戶互相混淆） -->
@@ -821,11 +845,10 @@
                 <span class="sum-acc-name">{{ a.account }}</span>
                 <span class="sum-acc-amt">{{ fmt(a.amountTWD) }}</span>
               </div>
-              <div v-if="isInvest || a.isForeign" class="sum-acc-row2">
+              <div v-if="a.isForeign" class="sum-acc-row2">
                 <span class="sum-acc-sub">
-                  <template v-if="isInvest && a.isForeign">{{ num(a.units) }} 單位 ({{ num(a.amountOrig) }})</template>
-                  <template v-else-if="isInvest">{{ num(a.units) }} 單位</template>
-                  <template v-else>({{ num(a.amountOrig) }})</template>
+                  <template v-if="isInvest">{{ a.currency }} ${{ num(a.amountOrig) }} · {{ num(a.units) }}股</template>
+                  <template v-else>{{ a.currency }} ${{ num(a.amountOrig) }}</template>
                 </span>
               </div>
             </div>
@@ -836,28 +859,6 @@
       <div class="detail-controls">
         <div class="detail-toolbar">
           <div class="date-filter-group" role="group" aria-label="日期篩選">
-            <button
-              type="button"
-              class="btn secondary date-nav-btn"
-              @click="goPrevDay"
-              aria-label="前一天"
-              title="前一天"
-            >‹</button>
-            <button
-              class="btn secondary date-filter-btn"
-              :class="{ active: dateFilterActive }"
-              @click="onDateFilterClick"
-              :aria-pressed="dateFilterActive"
-              :aria-label="'日期篩選：' + dateFilterValue + (dateFilterActive ? '（篩選中）' : '') + '。點一下套用或取消此日期篩選'"
-              title="點一下：套用或取消此日期篩選"
-            >{{ dateFilterValue }}</button>
-            <button
-              type="button"
-              class="btn secondary date-nav-btn"
-              @click="goNextDay"
-              aria-label="後一天"
-              title="後一天"
-            >›</button>
             <div class="date-cal-wrap">
               <span class="date-cal-icon" aria-hidden="true">📅</span>
               <input
@@ -869,29 +870,29 @@
                 title="開啟日曆選擇日期"
               />
             </div>
+            <button
+              class="btn secondary date-filter-btn"
+              :class="{ active: dateFilterActive }"
+              @click="onDateFilterClick"
+              :aria-pressed="dateFilterActive"
+              :aria-label="'日期篩選：' + dateFilterValue + (dateFilterActive ? '（篩選中）' : '') + '。點一下套用或取消此日期篩選'"
+              title="點一下：套用或取消此日期篩選"
+            >{{ dateFilterValue }}</button>
           </div>
-        </div>
-
-        <!-- 不計入三態篩選：全部／已勾選不計入／未勾選不計入。僅影響顯示，不修改原始資料 -->
-        <div class="excl-filter-row" role="group" aria-label="不計入篩選">
+          <div class="excl-filter-row" role="group" aria-label="不計入篩選">
           <button
             type="button"
             class="excl-filter-btn"
-            :class="{ active: excludedStatus === 'all' }"
-            @click="excludedStatus = 'all'"
-          >全部</button>
+            :class="{ active: excludedFilters.excluded }"
+            @click="excludedFilters.excluded = !excludedFilters.excluded"
+          >勾選不計</button>
           <button
             type="button"
             class="excl-filter-btn"
-            :class="{ active: excludedStatus === 'excluded' }"
-            @click="excludedStatus = 'excluded'"
-          >已勾選不計入</button>
-          <button
-            type="button"
-            class="excl-filter-btn"
-            :class="{ active: excludedStatus === 'included' }"
-            @click="excludedStatus = 'included'"
-          >未勾選不計入</button>
+            :class="{ active: excludedFilters.included }"
+            @click="excludedFilters.included = !excludedFilters.included"
+          >未勾不計</button>
+          </div>
         </div>
 
         <div v-if="hasActiveFilter" class="filter-hint">
@@ -904,9 +905,9 @@
             {{ s.account }}／{{ s.currency }}
             <button type="button" class="filter-chip-x" @click="removeAccountFilter(s.account, s.currency)" aria-label="移除帳戶篩選">×</button>
           </span>
-          <span v-if="excludedStatus !== 'all'" class="filter-chip">
-            {{ excludedStatus === 'excluded' ? '已勾選不計入' : '未勾選不計入' }}
-            <button type="button" class="filter-chip-x" @click="excludedStatus = 'all'" aria-label="移除不計入篩選">×</button>
+          <span v-if="!excludedFilters.excluded || !excludedFilters.included" class="filter-chip">
+            {{ excludedFilters.excluded ? '未勾不計' : '勾選不計' }}
+            <button type="button" class="filter-chip-x" @click="excludedFilters.excluded = true; excludedFilters.included = true" aria-label="移除不計入篩選">×</button>
           </span>
           <span v-if="dateFilterActive" class="filter-chip">
             {{ dateFilterValue }}
@@ -926,24 +927,10 @@
           >
             <button
               type="button"
-              class="sort-chip-move"
-              :disabled="idx === 0"
-              @click="moveSortRule(idx, -1)"
-              aria-label="提高優先順序"
-            >↑</button>
-            <button
-              type="button"
-              class="sort-chip-move"
-              :disabled="idx === sortRules.length - 1"
-              @click="moveSortRule(idx, 1)"
-              aria-label="降低優先順序"
-            >↓</button>
-            <button
-              type="button"
               class="sort-chip-order"
               @click="toggleSortOrder(idx)"
               :aria-label="'切換' + sortFieldLabel(rule.field) + '排序方向'"
-            >{{ sortFieldLabel(rule.field) }} {{ sortOrderLabel(rule) }}</button>
+            >{{ rule.order === 'desc' ? '↓' : '↑' }} {{ sortFieldLabel(rule.field) }}</button>
             <button
               type="button"
               class="filter-chip-x"
@@ -957,10 +944,10 @@
             @change="onAddSortField($event)"
             aria-label="新增排序條件"
           >
-            <option value="">＋新增排序條件</option>
+            <option value="">＋新增排序</option>
             <option v-for="f in availableSortFields" :key="f" :value="f">{{ sortFieldLabel(f) }}</option>
           </select>
-          <button type="button" class="btn small" @click="resetSort">重設排序</button>
+          <button type="button" class="btn small" @click="resetSort">重設</button>
         </div>
       </div>
 
@@ -977,9 +964,9 @@
         <div v-for="rec in sortedRecords" :key="rec.id" class="rec-card" :class="{ 'rec-excluded': rec.excluded }">
           <!-- 收合摘要列：預設收合，點擊展開/收合；日期僅顯示 MM-DD，rec.date 本身仍為 YYYY-MM-DD -->
           <div class="rec-summary" @click="toggleExpand(rec.id)">
-            <span class="rec-summary-date">{{ dateMD(rec.date) }}</span>
+            <span class="rec-summary-date">{{ dateDisplay(rec.date) }}</span>
             <span class="rec-summary-account">{{ rec.account || '(未命名)' }}</span>
-            <span class="rec-summary-amount">{{ num(money(rec)) }}</span>
+            <span class="rec-summary-amount">{{ fmt(money(rec)) }}</span>
             <span class="rec-toggle-arrow" :class="{ expanded: isExpanded(rec.id) }">›</span>
           </div>
 
@@ -1148,14 +1135,17 @@
 
       <div class="set-section-title">資料管理</div>
       <div class="set-group">
-        <button type="button" class="set-row" @click="loadSample">
-          <span class="set-row-label">載入模擬資料</span>
+        <button type="button" class="set-row" @click="openDetail">
+          <span class="set-row-label">查看資料明細</span>
         </button>
         <button type="button" class="set-row" @click="exportCsv">
           <span class="set-row-label">匯出備份CSV</span>
         </button>
         <button type="button" class="set-row" @click="$refs.fileInput.click()">
           <span class="set-row-label">從備份CSV還原</span>
+        </button>
+        <button type="button" class="set-row" @click="loadSample">
+          <span class="set-row-label">載入模擬資料</span>
         </button>
         <button type="button" class="set-row set-row-danger" @click="resetData">
           <span class="set-row-label">清除所有資料</span>

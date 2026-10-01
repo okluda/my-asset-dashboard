@@ -240,8 +240,16 @@ const TabAssets = {
     const pctWhole = (v) => `${Math.round((Number(v) || 0) * 100)}%`;
     const catName = (t) => ALD.categoryDisplayName(settings, t);
 
+    const showExcludedAccounts = ref(false);
     const assetRecs = computed(() =>
       store.records.filter((r) => !r.excluded && ALD.ASSET_TYPES.includes(r.type))
+    );
+    const accountAssetRecs = computed(() =>
+      store.records.filter(
+        (r) =>
+          ALD.ASSET_TYPES.includes(r.type) &&
+          (showExcludedAccounts.value || !r.excluded)
+      )
     );
     const totalAssets = computed(() =>
       ALD.round2(assetRecs.value.reduce((s, r) => s + ALD.amountTWD(r), 0))
@@ -336,11 +344,11 @@ const TabAssets = {
       ensure("inv", "USD");
       ensure("recv", "");
       ensure("fixed", "");
-      assetRecs.value.forEach((r) => {
+      accountAssetRecs.value.forEach((r) => {
         const { kind, cur } = segmentKeyOf(r);
         const seg = ensure(kind, cur);
         seg.records.push(r);
-        seg.amount = ALD.round2(seg.amount + ALD.amountTWD(r));
+        if (!r.excluded) seg.amount = ALD.round2(seg.amount + ALD.amountTWD(r));
       });
       return Object.values(map).sort((a, b) => a.order - b.order || (a.key < b.key ? -1 : 1));
     });
@@ -418,7 +426,7 @@ const TabAssets = {
               acctMap[name] = { account: name, amountTWD: 0, amountOrig: 0, units: 0 };
             }
             const a = acctMap[name];
-            a.amountTWD = ALD.round2(a.amountTWD + ALD.amountTWD(r));
+            if (!r.excluded) a.amountTWD = ALD.round2(a.amountTWD + ALD.amountTWD(r));
             a.amountOrig = ALD.round2(a.amountOrig + ALD.origAmount(r));
             a.units = ALD.round2(a.units + (Number(r.units) || 0));
           });
@@ -428,14 +436,12 @@ const TabAssets = {
             if (group.invest) {
               let price = ALD.lookupAccountPrice(store.accounts, "投資", a.account);
               if (!price) price = a.units > 0 ? a.amountOrig / a.units : 0;
-              priceText =
-                (group.cur ? group.cur + " " : "") +
-                (Number(price) || 0).toLocaleString("zh-TW", { maximumFractionDigits: 4 });
+              priceText = "$" + (Number(price) || 0).toLocaleString("zh-TW", { maximumFractionDigits: 4 });
             }
             return {
               ...a,
               ratio: denominator.value > 0 ? a.amountTWD / denominator.value : 0,
-              origText: isForeign ? group.cur + " " + num(a.amountOrig) : num(a.amountOrig),
+              origText: isForeign ? group.cur + " $" + num(a.amountOrig) : "",
               priceText,
             };
           });
@@ -948,6 +954,7 @@ const TabAssets = {
       groups,
       liabilityAccounts,
       totalLiabilities,
+      showExcludedAccounts,
       fmt,
       fmtNum,
       num,
@@ -995,20 +1002,6 @@ const TabRebalance = {
     );
     const exposureRatio = computed(() => (pool.value > 0 ? exposureTotal.value / pool.value : 0));
 
-    // 曝險比（槓桿）：只計入「投資」類別中槓桿倍數不等於 1 倍的曝險金額，
-    // 分母沿用同一個資金部位（流動資金＋投資），排除「不計入」資料。
-    // leverage 需以正規化後的數值比較（normalizeRec 已保證非 null/NaN），避免字串或空值誤判。
-    const exposureLeveragedTotal = computed(() =>
-      ALD.round2(
-        store.records
-          .filter((r) => !r.excluded && r.type === "投資" && Number(r.leverage) !== 1)
-          .reduce((sum, r) => sum + ALD.exposureTWD(r), 0)
-      )
-    );
-    const exposureLeveragedRatio = computed(() =>
-      pool.value > 0 ? exposureLeveragedTotal.value / pool.value : 0
-    );
-
     // 1 倍槓桿投資合計（台幣換算），供槓桿再平衡建議使用；排除「不計入」資料。
     const invest1xTWD = computed(() =>
       ALD.round2(
@@ -1016,6 +1009,12 @@ const TabRebalance = {
           .filter((r) => !r.excluded && r.type === "投資" && Number(r.leverage) === 1)
           .reduce((sum, r) => sum + ALD.amountTWD(r), 0)
       )
+    );
+    const exposureLeveragedTotal = computed(() =>
+      ALD.round2(exposureTotal.value - invest1xTWD.value)
+    );
+    const exposureLeveragedRatio = computed(() =>
+      pool.value > 0 ? exposureLeveragedTotal.value / pool.value : 0
     );
 
     // 目標：投資佔比 = rebalanceRatio(%)，流動資金佔比 = 100 - rebalanceRatio
@@ -1096,7 +1095,7 @@ const TabDetail = {
     const selectedAccountFilters = ref([]);
     // 不計入三態篩選：'all' 全部 / 'excluded' 已勾選不計入 / 'included' 未勾選不計入。
     // 僅影響「顯示」，不會修改任何一筆資料的 excluded 值。
-    const excludedStatus = ref("all");
+    const excludedFilters = reactive({ excluded: true, included: true });
 
     // 明細卡片收折：依 record.id 管理是否展開，預設全部收合；不寫入原始資料，
     // 也不受篩選/排序/新增/刪除影響（僅是額外的 UI 狀態，用 Set 記錄哪些 id 已展開）。
@@ -1112,9 +1111,9 @@ const TabDetail = {
 
     // 收合摘要用日期顯示：只取 MM-DD，實際欄位（rec.date）仍完整保留 yyyy-mm-dd hh:mi:ss，
     // 編輯與儲存皆不受影響（此函式僅用於畫面顯示）。
-    function dateMD(d) {
+    function dateDisplay(d) {
       if (!d || typeof d !== "string" || d.length < 10) return d || "";
-      return d.slice(5, 10);
+      return d.slice(0, 16);
     }
 
     // 展開卡片的日期欄：原生 date input 只處理日期部分，改日期時保留原本的時分秒；清空則寫入 ""。
@@ -1186,10 +1185,10 @@ const TabDetail = {
           )
         );
       }
-      if (excludedStatus.value === "excluded") {
-        list = list.filter((r) => ALD.isExcluded(r));
-      } else if (excludedStatus.value === "included") {
-        list = list.filter((r) => !ALD.isExcluded(r));
+      if (!excludedFilters.excluded || !excludedFilters.included) {
+        list = list.filter((r) =>
+          ALD.isExcluded(r) ? excludedFilters.excluded : excludedFilters.included
+        );
       }
       if (dateFilterActive.value) {
         list = list.filter((r) => ALD.datePart(r.date) === dateFilterValue.value);
@@ -1199,7 +1198,7 @@ const TabDetail = {
 
     // 目前是否有任何一種篩選條件生效（供摘要列與空狀態顯示判斷）
     const hasActiveFilter = computed(
-      () => selectedAccountFilters.value.length > 0 || excludedStatus.value !== "all" || dateFilterActive.value
+      () => selectedAccountFilters.value.length > 0 || !excludedFilters.excluded || !excludedFilters.included || dateFilterActive.value
     );
 
     // 清除全部篩選：帳戶/幣別（全部取消選取）、不計入、日期篩選狀態與卡片高亮一併重設。
@@ -1207,7 +1206,8 @@ const TabDetail = {
     // 避免清除後按鈕仍停留在使用者先前長按選過的日期，造成混淆。
     function clearFilters() {
       selectedAccountFilters.value = [];
-      excludedStatus.value = "all";
+      excludedFilters.excluded = true;
+      excludedFilters.included = true;
       dateFilterActive.value = false;
       dateFilterValue.value = ALD.todayStr();
     }
@@ -1496,11 +1496,11 @@ const TabDetail = {
       toggleAccountFilter,
       isAccountSelected,
       removeAccountFilter,
-      excludedStatus,
+      excludedFilters,
       expandedIds,
       isExpanded,
       toggleExpand,
-      dateMD,
+      dateDisplay,
       datePart: ALD.datePart,
       onRecDateChange,
       hasActiveFilter,
@@ -1997,6 +1997,10 @@ const TabSettings = {
       }
     }
 
+    function openDetail() {
+      window.dispatchEvent(new Event("ald-open-detail"));
+    }
+
     async function importCsv(evt) {
       const file = evt.target.files[0];
       if (!file) return;
@@ -2065,6 +2069,7 @@ const TabSettings = {
       syncLogMax: ALD.SYNC_LOG_MAX,
       settingsSubPage,
       openSubPage,
+      openDetail,
       assetCategoryKeys,
       types,
       syncing,
@@ -2138,7 +2143,7 @@ const App = {
     <component :is="activeComponent"></component>
     <nav class="tab-bar">
       <button
-        v-for="tab in tabs"
+        v-for="tab in visibleTabs"
         :key="tab.key"
         class="tab-btn"
         :class="{ active: activeTab === tab.key }"
@@ -2158,11 +2163,12 @@ const App = {
   setup() {
     const tabs = [
       { key: "overview", label: "總覽", icon: "⬠", component: "TabOverview" },
-      { key: "rebalance", label: "再平衡", icon: "⟠", component: "TabRebalance" },
       { key: "assets", label: "資產", icon: "◧", component: "TabAssets" },
+      { key: "rebalance", label: "再平衡", icon: "⟠", component: "TabRebalance" },
       { key: "detail", label: "明細", icon: "≣", component: "TabDetail" },
       { key: "settings", label: "設定", icon: "⛯", component: "TabSettings" },
     ];
+    const visibleTabs = computed(() => tabs.filter((tab) => tab.key !== "detail"));
     // 主分頁狀態改由 settings.lastTab 還原，重新整理頁面後可維持上次所在分頁；
     // settings.lastTab 不存在（舊資料）或非上述五種合法值時，一律回退為 overview。
     const validTabKeys = tabs.map((t) => t.key);
@@ -2176,6 +2182,12 @@ const App = {
       // 沿用既有 settings 機制回寫 IndexedDB（由既有的 store.settings watch 統一 debounce 儲存）。
       store.settings.lastTab = key;
     }
+    function openDetailFromSettings() {
+      setActiveTab("detail");
+      window.scrollTo(0, 0);
+    }
+    onMounted(() => window.addEventListener("ald-open-detail", openDetailFromSettings));
+    onUnmounted(() => window.removeEventListener("ald-open-detail", openDetailFromSettings));
     const inSettingsSubPage = computed(
       () => activeTab.value === "settings" && !!settingsSubPage.value
     );
@@ -2265,6 +2277,7 @@ const App = {
       activeTab,
       setActiveTab,
       tabs,
+      visibleTabs,
       tabTitles,
       tabLabel,
       assetsView,
