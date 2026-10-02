@@ -9,7 +9,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="theme-color" content="#1c1c2e" />
   <title>fishbubble</title>
-  <link rel="stylesheet" href="css/style.css?v=2026100201" />
+  <link rel="stylesheet" href="css/style.css?v=2026100301" />
 </head>
 <body>
   <!-- 錯誤顯示橫幅：手機上沒有開發者工具可看 console，發生例外時直接顯示在畫面上。
@@ -765,13 +765,13 @@
                     </div>
                     <div class="rec-field">
                       <label>價格</label>
-                      <input type="text" :value="plain(rec.unitPrice)" readonly />
+                      <input type="text" :value="plain(effPrice(rec))" readonly />
                     </div>
                   </div>
                   <div class="rec-row" v-if="rec.type === '投資'">
                     <div class="rec-field">
                       <label>槓桿倍數</label>
-                      <input type="text" :value="plain(rec.leverage)" readonly />
+                      <input type="text" :value="plain(effLeverage(rec))" readonly />
                     </div>
                     <div class="rec-field">
                       <label>曝險金額</label>
@@ -781,15 +781,25 @@
                   <div class="rec-row">
                     <div class="rec-field">
                       <label>幣別</label>
-                      <input type="text" :value="rec.currency" readonly />
+                      <input type="text" :value="effCurrency(rec)" readonly />
                     </div>
                     <div class="rec-field">
                       <label>匯率</label>
-                      <input type="text" :value="plain(rec.fxRate)" readonly />
+                      <input type="text" :value="plain(effFxRate(rec))" readonly />
                     </div>
                     <div class="rec-field">
                       <label>單位</label>
                       <input type="text" :value="plain(rec.units)" readonly />
+                    </div>
+                  </div>
+                  <div class="rec-row">
+                    <div class="rec-field">
+                      <label>成交價</label>
+                      <input type="text" :value="plain(rec.tradePrice)" readonly />
+                    </div>
+                    <div class="rec-field">
+                      <label>成交匯率</label>
+                      <input type="text" :value="plain(rec.tradeFxRate)" readonly />
                     </div>
                   </div>
                   <div class="rec-row rec-row-inline">
@@ -1024,14 +1034,14 @@
               </div>
               <div class="rec-field">
                 <label>價格</label>
-                <input type="number" :value="rec.unitPrice" readonly />
+                <input type="number" :value="effPrice(rec)" readonly />
               </div>
             </div>
 
             <div class="rec-row" v-if="rec.type === '投資'">
               <div class="rec-field">
                 <label>槓桿倍數</label>
-                <input type="number" step="0.1" v-model.number="rec.leverage" />
+                <input type="number" :value="effLeverage(rec)" readonly />
               </div>
               <div class="rec-field">
                 <label>曝險金額</label>
@@ -1042,17 +1052,28 @@
             <div class="rec-row">
               <div class="rec-field">
                 <label>幣別</label>
-                <select v-model="rec.currency" @change="onCurrencyChange(rec)">
+                <select v-model="rec.currency" :disabled="isMappedAccount(rec)" @change="onCurrencyChange(rec)">
                   <option v-for="c in currencyOptions" :key="c" :value="c">{{ c }}</option>
                 </select>
               </div>
               <div class="rec-field">
                 <label>匯率</label>
-                <input type="number" :value="rec.fxRate" readonly />
+                <input type="number" :value="effFxRate(rec)" readonly />
               </div>
               <div class="rec-field">
                 <label>單位</label>
-                <input type="number" v-model.number="rec.units" @change="recalc(rec)" />
+                <input type="number" v-model.number="rec.units" />
+              </div>
+            </div>
+
+            <div class="rec-row">
+              <div class="rec-field">
+                <label>成交價</label>
+                <input type="number" :value="rec.tradePrice" readonly />
+              </div>
+              <div class="rec-field">
+                <label>成交匯率</label>
+                <input type="number" :value="rec.tradeFxRate" readonly />
               </div>
             </div>
 
@@ -1272,7 +1293,6 @@
               type="number"
               v-model.number="cur.rate"
               :disabled="cur.code === settings.baseCurrency"
-              @change="applyFxToRecords"
             />
             <button
               class="btn small danger"
@@ -1322,7 +1342,7 @@
           <div class="acc-cfg-grid">
             <div class="rec-field">
               <label>類別</label>
-              <select v-model="acc.category" @change="onAccountCategoryChangeAndApply(acc)">
+              <select v-model="acc.category" @change="onAccountCategoryChange(acc)">
                 <option v-for="t in types" :key="t" :value="t">{{ catName(t) }}</option>
               </select>
             </div>
@@ -1338,11 +1358,11 @@
             </div>
             <div class="rec-field">
               <label>價格</label>
-              <input type="number" v-model.number="acc.price" @change="applyAccountsToRecords" />
+              <input type="number" v-model.number="acc.price" />
             </div>
             <div class="rec-field">
               <label>槓桿倍數</label>
-              <input type="number" v-model.number="acc.leverage" @change="applyAccountsToRecords" />
+              <input type="number" v-model.number="acc.leverage" />
             </div>
           </div>
           <div class="acc-cfg-actions">
@@ -1355,7 +1375,7 @@
           <span class="set-row-label">＋新增帳戶/項目</span>
         </button>
       </div>
-      <div class="set-footnote">帳戶/項目名稱在所有類別中必須唯一；每個帳戶只能設定一種幣別，相關明細必須使用相同幣別。修改價格、槓桿倍數、類別或帳戶/項目名稱後，會自動套用至相符的明細並重算金額；設定頁「同步 > 同步價格」與「從資產帳戶CSV還原」完成後亦會自動套用。</div>
+      <div class="set-footnote">帳戶/項目名稱在所有類別中必須唯一；每個帳戶只能設定一種幣別，相關明細必須使用相同幣別。明細不另存價格與槓桿倍數，金額與曝險一律依此處的價格、槓桿倍數及幣別匯率即時計算；修改帳戶/項目名稱時，相同名稱的明細會一併改名。明細中的成交價/成交匯率僅作歷史紀錄，只在查無對應帳戶時作為估值備援。</div>
       </template>
 
       <!-- ===== 台股報價來源子分頁 ===== -->
@@ -1565,9 +1585,9 @@
   <!-- 本地程式檔（store/db/services/app）：?v= 為快取破壞參數，比照上方 CDN 的 ?cb= 慣例。
        修改這 4 個檔案任何內容後，務必同步更新此版本號，避免瀏覽器/CDN 快取舊版程式碼，
        導致「畫面（index.html）看起來是新版、但實際執行邏輯是舊版」的不一致問題。 -->
-  <script src="js/store.js?v=2026100201"></script>
-  <script src="js/db.js?v=2026100201"></script>
-  <script src="js/services.js?v=2026100201"></script>
-  <script src="js/app.js?v=2026100201"></script>
+  <script src="js/store.js?v=2026100301"></script>
+  <script src="js/db.js?v=2026100301"></script>
+  <script src="js/services.js?v=2026100301"></script>
+  <script src="js/app.js?v=2026100301"></script>
 </body>
 </html>
