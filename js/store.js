@@ -6,7 +6,7 @@
  */
 
 const ALD = (() => {
-  // 資料來源類型（依規格固定五種）
+  // 資料來源資債類型（依規格固定五種）
   const TYPES = ["流動資金", "投資", "固定資產", "應收款", "負債"];
 
   // 屬於「資產」的類型（用於總覽資產加總、負債比計算）
@@ -41,8 +41,8 @@ const ALD = (() => {
     customColor: "#707070", // 自訂配色（themeColor === 'custom' 時生效）
     fontFamily: "system", // 字型（見 FONT_FAMILIES）
     fontSize: "md", // 字型大小（見 FONT_SIZES）
-    // 資產子類別顯示名稱：可自訂 4 個資產類別的呈現名稱，空白時以內部鍵為預設。
-    // 影響畫面呈現（總覽/明細/再平衡）與 CSV 匯出入的「類型」欄位值。負債名稱固定不可改。
+    // 資債類型顯示名稱：可自訂 4 個資債類型的呈現名稱，空白時以內部鍵為預設。
+    // 影響畫面呈現（總覽/明細/再平衡）與 CSV 匯出入的「資債類型」欄位值。負債名稱固定不可改。
     categoryNames: {
       流動資金: "流動資金",
       投資: "投資",
@@ -109,6 +109,13 @@ const ALD = (() => {
     return `${y}-${m}-${day}`;
   }
 
+  // 取得「本地時區」目前時間字串（hh-mi-ss）。
+  function timeStr() {
+    const d = new Date();
+    const p2 = (n) => String(n).padStart(2, "0");
+    return `${p2(d.getHours())}-${p2(d.getMinutes())}-${p2(d.getSeconds())}`;
+  }
+  
   // 取得「本地時區」目前時間字串（yyyy-mm-dd hh:mi:ss），同樣不使用 toISOString() 以避免 UTC 偏移。
   function nowStr() {
     const d = new Date();
@@ -218,8 +225,8 @@ const ALD = (() => {
     return { code: "", rate: 0 };
   }
 
-  // ---------- 資產子類別顯示名稱 ----------
-  // 取得類別 key 的顯示名稱；空白或無設定時回傳內部鍵。負債固定為「負債」。
+  // ---------- 資債類型顯示名稱 ----------
+  // 取得資債類型 key 的顯示名稱；空白或無設定時回傳內部鍵。負債固定為「負債」。
   function categoryDisplayName(settings, key) {
     if (key === "負債") return "負債";
     const names = (settings && settings.categoryNames) || {};
@@ -227,7 +234,7 @@ const ALD = (() => {
     return n && String(n).trim() ? String(n).trim() : key;
   }
 
-  // 建立「顯示名稱/內部鍵 -> 內部鍵」的反查表（供 CSV 匯入時把類型名稱轉回內部鍵）
+  // 建立「顯示名稱/內部鍵 -> 內部鍵」的反查表（供 CSV 匯入時把資債類型名稱轉回內部鍵）
   function buildTypeNameToKey(settings) {
     const map = {};
     TYPES.forEach((k) => {
@@ -237,9 +244,9 @@ const ALD = (() => {
     return map;
   }
 
-  // ---------- 帳戶/項目設定 ----------
-  // 每筆：{ id, category(內部類別鍵), account(全域唯一帳戶/項目名稱), currency(限制幣別), price(價格), leverage(槓桿倍數), sortOrder(顯示順序) }
-  // 槓桿倍數預設：類別為「投資」時為 1，其餘為 0。
+  // ---------- 存放帳戶設定 ----------
+  // 每筆：{ id, category(內部類型鍵), account(全域唯一存放帳戶名稱), currency(限制幣別), price(價格), leverage(槓桿倍數), sortOrder(顯示順序) }
+  // 槓桿倍數預設：資債類型為「投資」時為 1，其餘為 0。
   // sortOrder 由呼叫端指派（例如新增帳戶時取目前最大值 + 1），此函式不自行依陣列長度計算，
   // 避免呼叫端尚未把新帳戶塞入陣列時算出重複或錯誤的順序。
   function emptyAccount(category, sortOrder, currency) {
@@ -268,25 +275,25 @@ const ALD = (() => {
     return raw.map((r, i) => ({ id: uid(), ...r, sortOrder: i + 1 }));
   }
 
-  // 帳戶/項目名稱在所有類別中全域唯一，category 參數為既有呼叫端相容保留。
+  // 存放帳戶名稱在所有資債類型中全域唯一，category 參數為既有呼叫端相容保留。
   function lookupAccount(accounts, category, account) {
     if (!Array.isArray(accounts) || !String(account == null ? "" : account).trim()) return null;
     return accounts.find((a) => a.account === account) || null;
   }
 
-  // 依全域唯一帳戶/項目名稱查對應價格；找不到回傳 null
+  // 依全域唯一存放帳戶名稱查對應價格；找不到回傳 null
   function lookupAccountPrice(accounts, category, account) {
     const found = lookupAccount(accounts, category, account);
     return found ? Number(found.price) || 0 : null;
   }
 
-  // 依全域唯一帳戶/項目名稱查對應槓桿倍數；找不到回傳 null
+  // 依全域唯一存放帳戶名稱查對應槓桿倍數；找不到回傳 null
   function lookupAccountLeverage(accounts, category, account) {
     const found = lookupAccount(accounts, category, account);
     return found ? Number(found.leverage) || 0 : null;
   }
 
-  // 取某類別下的所有帳戶/項目名稱（供明細下拉選單使用）
+  // 取某資債類型下的所有存放帳戶名稱（供明細下拉選單使用）
   function accountsForCategory(accounts, category) {
     if (!Array.isArray(accounts)) return [];
     return accounts
@@ -301,16 +308,16 @@ const ALD = (() => {
       const name = String(account && account.account != null ? account.account : "").trim();
       if (!name) {
         if (allowBlank) continue;
-        return { valid: false, message: "帳戶/項目名稱不可空白。" };
+        return { valid: false, message: "存放帳戶名稱不可空白。" };
       }
       if (names.has(name)) {
-        return { valid: false, message: `帳戶/項目名稱「${name}」重複；名稱必須全域唯一。` };
+        return { valid: false, message: `存放帳戶名稱「${name}」重複；名稱必須全域唯一。` };
       }
       names.add(name);
       if (!codes.has(account.currency)) {
         return {
           valid: false,
-          message: `帳戶/項目「${name}」的幣別「${account.currency || "未設定"}」不在幣別設定中。`,
+          message: `存放帳戶「${name}」的幣別「${account.currency || "未設定"}」不在幣別設定中。`,
         };
       }
     }
@@ -324,7 +331,7 @@ const ALD = (() => {
         return {
           valid: false,
           message:
-            `帳戶/項目「${account.account}」設定為 ${account.currency}，` +
+            `存放帳戶「${account.account}」設定為 ${account.currency}，` +
             `但存在 ${rec.currency || "未設定"} 的明細紀錄；請先修正資料後再啟動。`,
         };
       }
@@ -391,7 +398,7 @@ const ALD = (() => {
     return Number(rec.tradeFxRate) > 0 ? Number(rec.tradeFxRate) : 1;
   }
 
-  // 有效槓桿：有對應帳戶用帳戶槓桿，否則依類別預設（投資=1，其餘=0）
+  // 有效槓桿：有對應帳戶用帳戶槓桿，否則依資債類型預設（投資=1，其餘=0）
   function effLeverage(rec) {
     const a = boundAccount(rec);
     if (a) return Number(a.leverage) || 0;
@@ -454,8 +461,8 @@ const ALD = (() => {
   // ---------- CSV 匯出/匯入（使用 PapaParse） ----------
   // 價格/匯率/槓桿倍數/金額/曝險金額匯出「實際用於估值」的有效值；成交價/成交匯率為明細的歷史紀錄。
   const CSV_COLUMNS = [
-    { key: "type", label: "類型" },
-    { key: "account", label: "帳戶/項目" },
+    { key: "type", label: "資債類型" },
+    { key: "account", label: "存放帳戶" },
     { key: "date", label: "日期" },
     { key: "note", label: "備註" },
     { key: "currency", label: "幣別" },
@@ -499,7 +506,7 @@ const ALD = (() => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `資產負債明細_${todayStr()}.csv`;
+    a.download = `資產負債明細_${todayStr()}_${timeStr()}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -556,7 +563,7 @@ const ALD = (() => {
                 if (key) raw[key] = row[label];
               });
 
-              // 類型：接受內部鍵或自訂顯示名稱，轉回內部鍵；不符或空則跳過整列
+              // 資債類型：接受內部鍵或自訂顯示名稱，轉回內部鍵；不符或空則跳過整列
               const rawType = String(raw.type == null ? "" : raw.type).trim();
               const type = typeNameToKey[rawType];
               if (!type) {
@@ -566,7 +573,7 @@ const ALD = (() => {
 
               const rec = emptyRecord(type);
               rec.type = type;
-              // 帳戶/項目、備註：文字，空值可匯入
+              // 存放帳戶、備註：文字，空值可匯入
               rec.account = String(raw.account == null ? "" : raw.account).trim();
               rec.note = String(raw.note == null ? "" : raw.note).trim();
               // 日期：yyyy/mm/dd、yyyy-mm-dd 或含時分秒，空值可匯入（留空）；輸出統一為 yyyy-mm-dd hh:mi:ss
@@ -588,7 +595,7 @@ const ALD = (() => {
               const cfgAccount = lookupAccount(accounts, type, rec.account);
               if (cfgAccount && rec.currency !== cfgAccount.currency) {
                 throw new Error(
-                  `CSV 第 ${records.length + skipped + 2} 列的帳戶/項目「${rec.account}」` +
+                  `CSV 第 ${records.length + skipped + 2} 列的存放帳戶「${rec.account}」` +
                     `必須使用設定幣別 ${cfgAccount.currency}。`
                 );
               }
@@ -610,11 +617,11 @@ const ALD = (() => {
     });
   }
 
-  // ---------- 帳戶/項目設定 CSV 匯出/匯入 ----------
-  // 欄位：類別（顯示名稱）、帳戶/項目、幣別、價格、槓桿倍數
+  // ---------- 存放帳戶設定 CSV 匯出/匯入 ----------
+  // 欄位：資債類型（顯示名稱）、存放帳戶、幣別、價格、槓桿倍數
   const ACCOUNT_CSV_COLUMNS = [
-    { key: "category", label: "類別" },
-    { key: "account", label: "帳戶/項目" },
+    { key: "category", label: "資債類型" },
+    { key: "account", label: "存放帳戶" },
     { key: "currency", label: "幣別" },
     { key: "price", label: "價格" },
     { key: "leverage", label: "槓桿倍數" },
@@ -625,8 +632,8 @@ const ALD = (() => {
       throw new Error("PapaParse 函式庫未載入（CDN 連線失敗），無法匯出 CSV。");
     }
     const rows = (accounts || []).map((a) => ({
-      類別: categoryDisplayName(settings, a.category),
-      "帳戶/項目": a.account,
+      資債類型: categoryDisplayName(settings, a.category),
+      存放帳戶: a.account,
       幣別: a.currency,
       價格: Number(a.price) || 0,
       槓桿倍數: Number(a.leverage) || 0,
@@ -637,14 +644,14 @@ const ALD = (() => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `帳戶項目設定_${todayStr()}.csv`;
+    a.download = `類型帳戶設定_${todayStr()}_${timeStr()}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }
 
-  // 解析帳戶/項目設定 CSV，回傳帳戶物件陣列（含新 id）。類別、名稱或幣別不符時拒絕整份匯入。
+  // 解析存放帳戶設定 CSV，回傳帳戶物件陣列（含新 id）。類型、名稱或幣別不符時拒絕整份匯入。
   function parseAccountsCSV(file, settings) {
     return new Promise((resolve, reject) => {
       if (typeof Papa === "undefined") {
@@ -665,16 +672,16 @@ const ALD = (() => {
                 const k = Object.keys(row).find((x) => x.trim() === label);
                 return k ? row[k] : "";
               };
-              // 類別：接受內部鍵或自訂顯示名稱，轉回內部鍵；不符或空則跳過整列
-              const rawCat = String(get("類別") || "").trim();
+              // 資債類型：接受內部鍵或自訂顯示名稱，轉回內部鍵；不符或空則跳過整列
+              const rawCat = String(get("資債類型") || "").trim();
               const category = typeNameToKey[rawCat];
               if (!category) {
                 skipped++;
                 return;
               }
-              const account = String(get("帳戶/項目") || "").trim();
+              const account = String(get("存放帳戶") || "").trim();
               if (!account) {
-                throw new Error(`CSV 第 ${accounts.length + skipped + 2} 列的帳戶/項目名稱不可空白。`);
+                throw new Error(`CSV 第 ${accounts.length + skipped + 2} 列的存放帳戶名稱不可空白。`);
               }
               const currency = String(get("幣別") || "").trim().toUpperCase();
               if (!currencyCodes(settings).includes(currency)) {
@@ -683,7 +690,7 @@ const ALD = (() => {
                 );
               }
               const price = numOr(get("價格"), 1);
-              // 槓桿倍數：空值預設依類別（投資=1，其餘=0）
+              // 槓桿倍數：空值預設依類型（投資=1，其餘=0）
               const leverage = numOr(get("槓桿倍數"), category === "投資" ? 1 : 0);
               // CSV 格式不含 sortOrder 欄位，依匯入（解析）順序補上 1,2,3...，
               // 確保重新整理後帳戶順序與匯入時一致。
@@ -746,7 +753,7 @@ const ALD = (() => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `同步記錄_${todayStr()}.json`;
+    a.download = `同步記錄_${todayStr()}_${timeStr()}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -805,6 +812,7 @@ const ALD = (() => {
     emptyRecord,
     uid,
     todayStr,
+    timeStr,
     nowStr,
     normalizeDateTime,
     datePart,

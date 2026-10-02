@@ -1236,7 +1236,7 @@ input[type="date"].date-native-input::-webkit-datetime-edit-year-field {
   gap: 8px;
 }
 
-/* 資產類別：兩欄（類別 / 名稱），以間距與分隔線區分欄位 */
+/* 資債類型：兩欄（資債類型 / 名稱），以間距與分隔線區分欄位 */
 .cfg-row {
   display: grid;
   grid-template-columns: 1fr 1.6fr;
@@ -1258,7 +1258,7 @@ input[type="date"].date-native-input::-webkit-datetime-edit-year-field {
   margin-bottom: 2px;
 }
 
-/* 類別欄：獨立成一個欄位方塊，不與名稱輸入框相連 */
+/* 資債類型欄：獨立成一個欄位方塊，不與名稱輸入框相連 */
 .cfg-cat {
   font-size: calc(14px * var(--font-scale, 1));
   padding: 6px 10px;
@@ -1284,7 +1284,7 @@ input[type="date"].date-native-input::-webkit-datetime-edit-year-field {
   opacity: 0.7;
 }
 
-/* 帳戶/項目：五欄同一排（類別 / 帳戶項目 / 幣別 / 價格 / 槓桿），刪除鈕獨立一行 */
+/* 存放帳戶：五欄同一排（資債類型 / 存放帳戶 / 幣別 / 目前價格 / 槓桿），刪除鈕獨立一行 */
 .acc-cfg-card {
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -1576,7 +1576,7 @@ button.set-row:disabled {
   white-space: nowrap;
 }
 
-/* 幣別/資產類別的欄位表頭列 */
+/* 幣別/資債類型的欄位表頭列 */
 .set-row-head {
   min-height: 0;
   padding-top: 8px;

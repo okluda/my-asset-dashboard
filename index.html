@@ -456,7 +456,7 @@
             <div class="bs-section-title">帳戶資訊</div>
             <div class="bs-group">
               <div class="bs-row">
-                <label class="bs-label" for="bs-new-acct">存放位置</label>
+                <label class="bs-label" for="bs-new-acct">存放帳戶</label>
                 <input id="bs-new-acct" class="bs-input" type="text" list="bs-new-acct-list" autocomplete="off" placeholder="輸入或選擇帳戶名稱" v-model="newForm.account" @change="onNewAccountNameChange" />
                 <datalist id="bs-new-acct-list">
                   <option v-for="a in newAccountOptions" :key="a" :value="a"></option>
@@ -695,7 +695,7 @@
               <div class="bs-section-title">帳戶資訊</div>
               <div class="bs-group">
                 <div class="bs-row">
-                  <span class="bs-label">存放位置</span>
+                  <span class="bs-label">存放帳戶</span>
                   <span class="bs-value">{{ acctCtx.account }}</span>
                 </div>
                 <div class="bs-row">
@@ -750,35 +750,29 @@
                       <input type="text" :value="datePart(rec.date)" readonly />
                     </div>
                     <div class="rec-field">
-                      <label>帳戶/項目</label>
-                      <input type="text" :value="rec.account || '(未命名)'" readonly />
+                      <label>持有數量</label>
+                      <input type="text" :value="plain(rec.units)" readonly />
                     </div>
-                    <div class="rec-field">
+                    <!--<div class="rec-field">
                       <label>金額</label>
                       <input type="text" :value="plain(logAmount(rec))" readonly />
-                    </div>
+                    </div>--> 
                   </div>
                   <div class="rec-row">
                     <div class="rec-field">
-                      <label>類別</label>
+                      <label>資債類型</label>
                       <input type="text" :value="catName(rec.type)" readonly />
                     </div>
                     <div class="rec-field">
-                      <label>價格</label>
-                      <input type="text" :value="plain(effPrice(rec))" readonly />
-                    </div>
-                  </div>
-                  <div class="rec-row" v-if="rec.type === '投資'">
-                    <div class="rec-field">
-                      <label>槓桿倍數</label>
-                      <input type="text" :value="plain(effLeverage(rec))" readonly />
-                    </div>
-                    <div class="rec-field">
-                      <label>曝險金額</label>
-                      <input type="text" :value="plain(logExposure(rec))" readonly />
+                      <label>存放帳戶</label>
+                      <input type="text" :value="rec.account || '(未命名)'" readonly />
                     </div>
                   </div>
                   <div class="rec-row">
+                    <div class="rec-field">
+                      <label>目前價格</label>
+                      <input type="text" :value="plain(effPrice(rec))" readonly />
+                    </div>
                     <div class="rec-field">
                       <label>幣別</label>
                       <input type="text" :value="effCurrency(rec)" readonly />
@@ -786,10 +780,6 @@
                     <div class="rec-field">
                       <label>匯率</label>
                       <input type="text" :value="plain(effFxRate(rec))" readonly />
-                    </div>
-                    <div class="rec-field">
-                      <label>單位</label>
-                      <input type="text" :value="plain(rec.units)" readonly />
                     </div>
                   </div>
                   <div class="rec-row">
@@ -800,6 +790,16 @@
                     <div class="rec-field">
                       <label>成交匯率</label>
                       <input type="text" :value="plain(rec.tradeFxRate)" readonly />
+                    </div>
+                  </div>
+                  <div class="rec-row" v-if="rec.type === '投資'">
+                    <div class="rec-field">
+                      <label>槓桿倍數</label>
+                      <input type="text" :value="plain(effLeverage(rec))" readonly />
+                    </div>
+                    <div class="rec-field">
+                      <label>曝險金額</label>
+                      <input type="text" :value="plain(logExposure(rec))" readonly />
                     </div>
                   </div>
                   <div class="rec-row rec-row-inline">
@@ -824,7 +824,7 @@
 
   <script type="text/x-template" id="tpl-detail">
     <div class="page-content">
-      <!-- 5 個資產/負債類別子分頁 -->
+      <!-- 5 個資產/負債類型子分頁 -->
       <div class="subtab-bar">
         <button
           v-for="t in types"
@@ -847,7 +847,7 @@
           <span class="sum-total-amt">{{ fmt(summary.exposureTotal) }}</span>
         </div>
 
-        <div v-if="summary.groups.length === 0" class="empty-hint">此類別尚無資料</div>
+        <div v-if="summary.groups.length === 0" class="empty-hint">此資債類型尚無資料</div>
         <div v-for="g in summary.groups" :key="g.key" class="sum-group">
           <!-- 第二層：幣別合計。外幣原幣金額換行顯示在第二行右對齊，避免撐長第一行；
                台幣或基準幣別維持單行。 -->
@@ -858,7 +858,7 @@
           <div v-if="g.isForeign" class="sum-group-orig">
             <span class="sum-orig">${{ num(g.subtotalOrig) }}</span>
           </div>
-          <!-- 第三層：帳戶/項目，可點選作為下方明細的篩選條件（依所屬幣別分組，
+          <!-- 第三層：存放帳戶，可點選作為下方明細的篩選條件（依所屬幣別分組，
                篩選時同時比對「帳戶＋幣別」，避免不同幣別但同名帳戶互相混淆） -->
             <div
               v-for="a in g.accounts"
@@ -981,7 +981,7 @@
       <div class="detail-record-card">
         <button type="button" class="detail-add-btn" @click="addRow">＋新增</button>
         <div v-if="sortedRecords.length === 0" class="empty-hint">
-          此類別尚無明細
+          此資債類型尚無明細
           <template v-if="hasActiveFilter">（符合目前篩選條件）</template>
           <template v-else>，請按上方「＋新增」開始</template>
           <button v-if="hasActiveFilter" class="btn small" @click="clearFilters">清除篩選</button>
@@ -1013,43 +1013,36 @@
                 </div>
               </div>
               <div class="rec-field">
-                <label>帳戶/項目</label>
-                <select v-model="rec.account" @change="onAccountChange(rec)">
-                  <option value="">（請選擇）</option>
-                  <option v-for="a in accountOptions(rec)" :key="a" :value="a">{{ a }}</option>
-                </select>
+                <label>持有數量</label>
+                <input type="number" v-model.number="rec.units" />
               </div>
-              <div class="rec-field">
+              <!--<div class="rec-field">
                 <label>金額</label>
                 <input type="text" :value="num(money(rec))" readonly />
-              </div>
+              </div>-->
             </div>
 
             <div class="rec-row">
               <div class="rec-field">
-                <label>類別</label>
+                <label>資債類型</label>
                 <select v-model="rec.type" @change="onTypeChange(rec)">
                   <option v-for="t in types" :key="t" :value="t">{{ catName(t) }}</option>
                 </select>
               </div>
               <div class="rec-field">
-                <label>價格</label>
-                <input type="number" :value="effPrice(rec)" readonly />
-              </div>
-            </div>
-
-            <div class="rec-row" v-if="rec.type === '投資'">
-              <div class="rec-field">
-                <label>槓桿倍數</label>
-                <input type="number" :value="effLeverage(rec)" readonly />
-              </div>
-              <div class="rec-field">
-                <label>曝險金額</label>
-                <input type="text" :value="exposure(rec).toLocaleString()" readonly />
+                <label>存放帳戶</label>
+                <select v-model="rec.account" @change="onAccountChange(rec)">
+                  <option value="">（請選擇）</option>
+                  <option v-for="a in accountOptions(rec)" :key="a" :value="a">{{ a }}</option>
+                </select>
               </div>
             </div>
 
             <div class="rec-row">
+              <div class="rec-field">
+                <label>目前價格</label>
+                <input type="number" :value="effPrice(rec)" readonly />
+              </div>
               <div class="rec-field">
                 <label>幣別</label>
                 <select v-model="rec.currency" :disabled="isMappedAccount(rec)" @change="onCurrencyChange(rec)">
@@ -1059,10 +1052,6 @@
               <div class="rec-field">
                 <label>匯率</label>
                 <input type="number" :value="effFxRate(rec)" readonly />
-              </div>
-              <div class="rec-field">
-                <label>單位</label>
-                <input type="number" v-model.number="rec.units" />
               </div>
             </div>
 
@@ -1074,6 +1063,17 @@
               <div class="rec-field">
                 <label>成交匯率</label>
                 <input type="number" :value="rec.tradeFxRate" readonly />
+              </div>
+            </div>
+
+            <div class="rec-row" v-if="rec.type === '投資'">
+              <div class="rec-field">
+                <label>槓桿倍數</label>
+                <input type="number" :value="effLeverage(rec)" readonly />
+              </div>
+              <div class="rec-field">
+                <label>曝險金額</label>
+                <input type="text" :value="exposure(rec).toLocaleString()" readonly />
               </div>
             </div>
 
@@ -1112,6 +1112,9 @@
           <span class="set-row-label">同步價格</span>
           <span v-if="syncing" class="set-row-value">同步中…</span>
         </button>
+        <button type="button" class="set-row" @click="openDetail">
+          <span class="set-row-label">查看資料明細</span>
+        </button>
       </div>
 
       <div class="set-section-title">一般設定</div>
@@ -1135,21 +1138,21 @@
         </button>
       </div>
 
-      <div class="set-section-title">資產帳戶設定</div>
+      <div class="set-section-title">資債類型帳戶設定</div>
       <div class="set-group">
         <button type="button" class="set-row" @click="openSubPage('category')">
-          <span class="set-row-label">資產類別</span>
+          <span class="set-row-label">資債類型</span>
           <span class="set-chevron">›</span>
         </button>
         <button type="button" class="set-row" @click="openSubPage('accounts')">
-          <span class="set-row-label">資產帳戶</span>
+          <span class="set-row-label">存放帳戶</span>
           <span class="set-chevron">›</span>
         </button>
         <button type="button" class="set-row" @click="exportAccountsCsv">
-          <span class="set-row-label">匯出資產帳戶CSV</span>
+          <span class="set-row-label">匯出資債類型帳戶CSV</span>
         </button>
         <button type="button" class="set-row" @click="$refs.accFileInput.click()">
-          <span class="set-row-label">從資產帳戶CSV還原</span>
+          <span class="set-row-label">從資債類型帳戶CSV還原</span>
         </button>
       </div>
       <input type="file" ref="accFileInput" accept=".csv" style="display:none" @change="importAccountsCsv" />
@@ -1172,9 +1175,6 @@
 
       <div class="set-section-title">資料管理</div>
       <div class="set-group">
-        <button type="button" class="set-row" @click="openDetail">
-          <span class="set-row-label">查看資料明細</span>
-        </button>
         <button type="button" class="set-row" @click="exportCsv">
           <span class="set-row-label">匯出備份CSV</span>
         </button>
@@ -1206,7 +1206,7 @@
         Log 紀錄：記錄同步價格/匯率的詳細執行資訊（含 API 請求與回應內容）。目前筆數：{{ syncLogs.length }} / {{ syncLogMax }}（超過上限會自動捨棄最舊的記錄）。
         開關預設關閉，僅在需要排查「同步價格」「同步匯率」失敗原因時再手動開啟；開啟後才會於每次同步時寫入。
       </div>
-      <div class="set-footnote">所有資料僅儲存在目前瀏覽器的 IndexedDB，清除瀏覽器資料或更換裝置/瀏覽器將會遺失，請定期使用「匯出備份CSV」備份。「從備份CSV還原」與「載入模擬資料」皆為「附加」至現有資料，重複匯入會產生重複資料；若要用備份 CSV 還原改版前資料，建議先按「清除所有資料」清空後再匯入。「從資產帳戶CSV還原」則是「取代」現有資產帳戶設定（匯入前會另外跳出確認）。iOS Safari 中「設定 > Safari > 清除瀏覽記錄與網站資料」或「清除 Cookie」也會一併清除本 App 的資料，請務必先備份再操作。</div>
+      <div class="set-footnote">所有資料僅儲存在目前瀏覽器的 IndexedDB，清除瀏覽器資料或更換裝置/瀏覽器將會遺失，請定期使用「匯出備份CSV」備份。「從備份CSV還原」與「載入模擬資料」皆為「附加」至現有資料，重複匯入會產生重複資料；若要用備份 CSV 還原改版前資料，建議先按「清除所有資料」清空後再匯入。「從資債類型帳戶CSV還原」則是「取代」現有資債類型帳戶設定（匯入前會另外跳出確認）。iOS Safari 中「設定 > Safari > 清除瀏覽記錄與網站資料」或「清除 Cookie」也會一併清除本 App 的資料，請務必先備份再操作。</div>
       <div class="set-footnote">Web Inspector 疑難排解：若畫面出現「Script error.」等看不到細節的錯誤，可用 Mac 連接 iPhone，於 iPhone「設定 > Safari > 進階」開啟「網頁檢閱器」，再於 Mac Safari「開發」選單中開啟本頁面即可看到完整錯誤堆疊。</div>
       </template>
 
@@ -1308,12 +1308,12 @@
       <div class="set-footnote">基準幣別 {{ settings.baseCurrency }} 匯率固定為 1，不可刪除或修改。設定頁「同步 > 同步匯率」會抓取各幣別對 {{ settings.baseCurrency }} 的即時匯率。明細輸入與 CSV 匯出入的幣別/匯率皆與此連動。</div>
       </template>
 
-      <!-- ===== 資產類別子分頁 ===== -->
+      <!-- ===== 資產/負債類型子分頁 ===== -->
       <template v-else-if="settingsSubPage === 'category'">
       <div class="set-group">
         <div class="set-row set-row-block set-row-head">
           <div class="cfg-row">
-            <span>類別</span>
+            <span>資債類型</span>
             <span>名稱</span>
           </div>
         </div>
@@ -1332,23 +1332,23 @@
       <div class="set-footnote">名稱可修改（空白會自動帶回預設），行數固定 4 個。此名稱會套用於畫面呈現與 CSV 匯出入的「類型」欄位值。</div>
       </template>
 
-      <!-- ===== 資產帳戶子分頁 ===== -->
+      <!-- ===== 存放帳戶子分頁 ===== -->
       <template v-else-if="settingsSubPage === 'accounts'">
       <div class="set-group">
         <div v-if="accounts.length === 0" class="set-row">
-          <span class="set-row-label set-row-empty">尚無帳戶/項目，點「＋新增帳戶/項目」開始</span>
+          <span class="set-row-label set-row-empty">尚無存放帳戶，點「＋新增存放帳戶」開始</span>
         </div>
         <div class="set-row set-row-block" v-for="(acc, idx) in accounts" :key="acc.id">
           <div class="acc-cfg-grid">
             <div class="rec-field">
-              <label>類別</label>
+              <label>資債類型</label>
               <select v-model="acc.category" @change="onAccountCategoryChange(acc)">
                 <option v-for="t in types" :key="t" :value="t">{{ catName(t) }}</option>
               </select>
             </div>
             <div class="rec-field">
-              <label>帳戶/項目</label>
-              <input type="text" v-model="acc.account" placeholder="帳戶/項目" @focus="rememberAccountName(acc)" @change="onAccountNameChange(acc)" />
+              <label>存放帳戶</label>
+              <input type="text" v-model="acc.account" placeholder="存放帳戶" @focus="rememberAccountName(acc)" @change="onAccountNameChange(acc)" />
             </div>
             <div class="rec-field">
               <label>幣別</label>
@@ -1357,7 +1357,7 @@
               </select>
             </div>
             <div class="rec-field">
-              <label>價格</label>
+              <label>目前價格</label>
               <input type="number" v-model.number="acc.price" />
             </div>
             <div class="rec-field">
@@ -1372,10 +1372,10 @@
           </div>
         </div>
         <button type="button" class="set-row set-row-action" @click="addAccount">
-          <span class="set-row-label">＋新增帳戶/項目</span>
+          <span class="set-row-label">＋新增存放帳戶</span>
         </button>
       </div>
-      <div class="set-footnote">帳戶/項目名稱在所有類別中必須唯一；每個帳戶只能設定一種幣別，相關明細必須使用相同幣別。明細不另存價格與槓桿倍數，金額與曝險一律依此處的價格、槓桿倍數及幣別匯率即時計算；修改帳戶/項目名稱時，相同名稱的明細會一併改名。明細中的成交價/成交匯率僅作歷史紀錄，只在查無對應帳戶時作為估值備援。</div>
+      <div class="set-footnote">存放帳戶名稱在所有資債類型中必須唯一；每個存放帳戶只能設定一種幣別，相關明細必須使用相同幣別。明細不另存價格與槓桿倍數，金額與曝險一律依此處的價格、槓桿倍數及幣別匯率即時計算；修改存放帳戶名稱時，相同名稱的明細會一併改名。明細中的成交價/成交匯率僅作歷史紀錄，只在查無對應帳戶時作為估值備援。</div>
       </template>
 
       <!-- ===== 台股報價來源子分頁 ===== -->
@@ -1417,7 +1417,7 @@
               <input type="text" v-model="settings.customStockApiTW" placeholder="例：https://example.com/api/quote?symbol={symbol}" />
             </div>
             <div class="set-row set-row-stack">
-              <span class="set-row-label">價格 JSON Path</span>
+              <span class="set-row-label">報價 JSON Path</span>
               <input type="text" v-model="settings.customPricePathTW" placeholder="例：data.quote.close" />
             </div>
           </template>
@@ -1476,14 +1476,14 @@
               <input type="text" v-model="settings.customStockApiUS" placeholder="例：https://example.com/api/quote?symbol={symbol}" />
             </div>
             <div class="set-row set-row-stack">
-              <span class="set-row-label">價格 JSON Path</span>
+              <span class="set-row-label">報價 JSON Path</span>
               <input type="text" v-model="settings.customPricePathUS" placeholder="例：chart.result.0.meta.regularMarketPrice" />
             </div>
           </template>
         </template>
       </div>
       <!--<div class="empty-hint" style="text-align:left">
-        預設為手動輸入。於「設定 &gt; 帳戶」的「同步價格」按鈕可一次更新所有帳戶/項目的價格（投資取即時市價），
+        預設為手動輸入。於「設定 &gt; 帳戶」的「同步價格」按鈕可一次更新所有存放帳戶的價格（投資取即時市價），
         查詢失敗請改回手動輸入。內部網路無法連外時更新會失敗，屬正常現象。
       </div>-->
       </template>
@@ -1504,7 +1504,7 @@
             <div>Provider：{{ testResultTW.provider }}　Connection：{{ testResultTW.connection }}</div>
             <div>Request URL：{{ testResultTW.requestUrl || '（無）' }}</div>
             <div>HTTP Status：{{ testResultTW.httpStatus ?? '（無）' }}　Latency：{{ testResultTW.latencyMs }}ms</div>
-            <div v-if="testResultTW.ok">價格：{{ testResultTW.value }}</div>
+            <div v-if="testResultTW.ok">報價：{{ testResultTW.value }}</div>
             <div v-else>Error Code：{{ testResultTW.errorCode }}　{{ testResultTW.errorMessage }}</div>
             <div class="test-preview">Response Preview：{{ testResultTW.responseText || '（無）' }}</div>
           </div>
@@ -1525,7 +1525,7 @@
             <div>Provider：{{ testResultUS.provider }}　Connection：{{ testResultUS.connection }}</div>
             <div>Request URL：{{ testResultUS.requestUrl || '（無）' }}</div>
             <div>HTTP Status：{{ testResultUS.httpStatus ?? '（無）' }}　Latency：{{ testResultUS.latencyMs }}ms</div>
-            <div v-if="testResultUS.ok">價格：{{ testResultUS.value }}</div>
+            <div v-if="testResultUS.ok">報價：{{ testResultUS.value }}</div>
             <div v-else>Error Code：{{ testResultUS.errorCode }}　{{ testResultUS.errorMessage }}</div>
             <div class="test-preview">Response Preview：{{ testResultUS.responseText || '（無）' }}</div>
           </div>
@@ -1555,7 +1555,7 @@
           </div>
         </template>
         <div class="set-row set-row-stack">
-          <span class="set-row-label">價格 JSON Path（選填）</span>
+          <span class="set-row-label">報價 JSON Path（選填）</span>
           <input type="text" v-model="testEndpointPricePath" placeholder="例：chart.result.0.meta.regularMarketPrice" />
         </div>
         <button type="button" class="set-row set-row-action" @click="runTestEndpoint" :disabled="testingEndpoint">
@@ -1565,13 +1565,13 @@
           <div class="test-result" :class="{ ok: testEndpointResult.ok, fail: !testEndpointResult.ok }">
             <div>Request URL：{{ testEndpointResult.requestUrl || '（無）' }}</div>
             <div>HTTP Status：{{ testEndpointResult.httpStatus ?? '（無）' }}　Latency：{{ testEndpointResult.latencyMs }}ms</div>
-            <div v-if="testEndpointPricePath">解析結果：{{ testEndpointResult.parsedValue ?? '（無）' }}</div>
+            <div v-if="testEndpointPricePath">報價解析結果：{{ testEndpointResult.parsedValue ?? '（無）' }}</div>
             <div v-if="!testEndpointResult.ok || testEndpointResult.errorCode">Error Code：{{ testEndpointResult.errorCode }}　{{ testEndpointResult.errorMessage }}</div>
             <div class="test-preview">Response Preview：{{ testEndpointResult.responseText || '（無）' }}</div>
           </div>
         </div>
       </div>
-      <div class="set-footnote">自行輸入任意網址測試連線（可選擇是否經 Proxy 轉發、選填 JSON Path 驗證解析），僅供診斷，不會更新任何帳戶價格或明細資料。</div>
+      <div class="set-footnote">自行輸入任意網址測試連線（可選擇是否經 Proxy 轉發、選填 JSON Path 驗證解析），僅供診斷，不會更新任何存放帳戶價格或明細資料。</div>
       </template>
     </div>
   </script>
