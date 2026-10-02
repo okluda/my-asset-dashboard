@@ -6,7 +6,7 @@
  */
 
 const ALD = (() => {
-  // 資料來源類型（依規格固定五種）
+  // 資料來源資債類型（依規格固定五種）
   const TYPES = ["流動資金", "投資", "固定資產", "應收款", "負債"];
 
   // 屬於「資產」的類型（用於總覽資產加總、負債比計算）
@@ -41,8 +41,8 @@ const ALD = (() => {
     customColor: "#707070", // 自訂配色（themeColor === 'custom' 時生效）
     fontFamily: "system", // 字型（見 FONT_FAMILIES）
     fontSize: "md", // 字型大小（見 FONT_SIZES）
-    // 資產子類別顯示名稱：可自訂 4 個資產類別的呈現名稱，空白時以內部鍵為預設。
-    // 影響畫面呈現（總覽/明細/再平衡）與 CSV 匯出入的「類型」欄位值。負債名稱固定不可改。
+    // 資債類型顯示名稱：可自訂 4 個資債類型的呈現名稱，空白時以內部鍵為預設。
+    // 影響畫面呈現（總覽/明細/再平衡）與 CSV 匯出入的「資債類型」欄位值。負債名稱固定不可改。
     categoryNames: {
       流動資金: "流動資金",
       投資: "投資",
@@ -109,6 +109,13 @@ const ALD = (() => {
     return `${y}-${m}-${day}`;
   }
 
+  // 取得「本地時區」目前時間字串（hh-mi-ss）。
+  function timeStr() {
+    const d = new Date();
+    const p2 = (n) => String(n).padStart(2, "0");
+    return `${p2(d.getHours())}-${p2(d.getMinutes())}-${p2(d.getSeconds())}`;
+  }
+  
   // 取得「本地時區」目前時間字串（yyyy-mm-dd hh:mi:ss），同樣不使用 toISOString() 以避免 UTC 偏移。
   function nowStr() {
     const d = new Date();
@@ -134,51 +141,52 @@ const ALD = (() => {
     return typeof val === "string" ? val.slice(0, 10) : "";
   }
 
+  // 明細正規化後只保存交易事實：價格/匯率/槓桿/金額改由帳戶設定與幣別設定即時解析（見 eff* 解析器）。
+  // tradePrice／tradeFxRate 為成交當下的歷史紀錄，僅在查無帳戶或幣別設定時作為備援。
   function emptyRecord(type) {
     const t = type || "流動資金";
-    const isInvest = t === "投資";
     return {
       id: uid(),
       type: t,
       account: "",
       date: nowStr(),
       note: "",
-      unitPrice: 1, // 非投資固定為 1；投資可由市價帶入
       currency: "TWD",
-      fxRate: 1,
+      tradePrice: 1,
+      tradeFxRate: 1,
       units: 0,
-      amount: 0,
-      leverage: isInvest ? 1 : 0, // 非投資固定為 0
       excluded: 0, // 1=不計入所有計算，0=計入
     };
   }
 
-  // 正規化單筆資料：確保數值型別並重算金額。
-  // 價格改由「設定 > 帳戶」帶入，故此處不再強制非投資單價=1，保留原有價格快照。
-  // 槓桿倍數改由「設定 > 帳戶」帶入（可套用於任一類別），故不再強制非投資槓桿=0，保留既有值。
-  // 同時提供舊資料遷移：舊版非投資把金額存在 amount，這裡改用 單位 承載。
+  // 已由正規化移除的明細欄位（遷移時刪除；開機時據此判斷是否需寫回 IndexedDB）
+  const LEGACY_RECORD_FIELDS = ["unitPrice", "fxRate", "leverage", "amount"];
+
+  function hasLegacyFields(rec) {
+    return !!rec && LEGACY_RECORD_FIELDS.some((k) => k in rec);
+  }
+
+  // 正規化單筆資料：確保數值型別，並把舊版反正規化欄位遷移為正規化欄位。
+  // 遷移規則：unitPrice → tradePrice、fxRate → tradeFxRate；leverage／amount 直接刪除（改由帳戶設定與即時計算取得）。
+  // 舊資料遷移：舊版非投資把金額存在 amount，這裡改用 單位 承載。
   function normalizeRec(rec) {
-    rec.unitPrice = Number(rec.unitPrice) || 0;
+    if (rec.tradePrice == null && rec.unitPrice != null) rec.tradePrice = rec.unitPrice;
+    if (rec.tradeFxRate == null && rec.fxRate != null) rec.tradeFxRate = rec.fxRate;
+    if (rec.type !== "投資" && !Number(rec.units) && Number(rec.amount)) {
+      rec.units = Number(rec.amount) || 0;
+    }
     rec.units = Number(rec.units) || 0;
-    rec.fxRate = Number(rec.fxRate) || 1;
-    // 槓桿倍數：缺值時依類別帶預設（投資=1，其餘=0）
-    rec.leverage =
-      rec.leverage == null || isNaN(Number(rec.leverage))
-        ? (rec.type === "投資" ? 1 : 0)
-        : Number(rec.leverage);
+    rec.tradePrice = Number(rec.tradePrice) || 0;
+    // 舊資料相容：非投資若無有效價格，帶入預設 1（維持 金額 = 1 × 單位 × 匯率）
+    if (rec.type !== "投資" && !rec.tradePrice) rec.tradePrice = 1;
+    rec.tradeFxRate = Number(rec.tradeFxRate) || 1;
     rec.excluded = rec.excluded ? 1 : 0;
     // 日期擴欄遷移：純日期（yyyy-mm-dd / yyyy/mm/dd）補 " 00:00:00"；空值或無法解析者維持原樣
     if (rec.date) {
       const dt = normalizeDateTime(rec.date);
       if (dt) rec.date = dt;
     }
-    if (rec.type !== "投資") {
-      // 舊資料遷移：非投資若無單位但有金額，把金額搬到單位
-      if (!rec.units && Number(rec.amount)) rec.units = Number(rec.amount) || 0;
-      // 舊資料相容：非投資若無有效價格，帶入預設 1（維持 金額 = 1 × 單位 × 匯率）
-      if (!rec.unitPrice) rec.unitPrice = 1;
-    }
-    rec.amount = round2(rec.unitPrice * rec.units * rec.fxRate);
+    LEGACY_RECORD_FIELDS.forEach((k) => delete rec[k]);
     return rec;
   }
 
@@ -217,8 +225,8 @@ const ALD = (() => {
     return { code: "", rate: 0 };
   }
 
-  // ---------- 資產子類別顯示名稱 ----------
-  // 取得類別 key 的顯示名稱；空白或無設定時回傳內部鍵。負債固定為「負債」。
+  // ---------- 資債類型顯示名稱 ----------
+  // 取得資債類型 key 的顯示名稱；空白或無設定時回傳內部鍵。負債固定為「負債」。
   function categoryDisplayName(settings, key) {
     if (key === "負債") return "負債";
     const names = (settings && settings.categoryNames) || {};
@@ -226,7 +234,7 @@ const ALD = (() => {
     return n && String(n).trim() ? String(n).trim() : key;
   }
 
-  // 建立「顯示名稱/內部鍵 -> 內部鍵」的反查表（供 CSV 匯入時把類型名稱轉回內部鍵）
+  // 建立「顯示名稱/內部鍵 -> 內部鍵」的反查表（供 CSV 匯入時把資債類型名稱轉回內部鍵）
   function buildTypeNameToKey(settings) {
     const map = {};
     TYPES.forEach((k) => {
@@ -236,9 +244,9 @@ const ALD = (() => {
     return map;
   }
 
-  // ---------- 帳戶/項目設定 ----------
-  // 每筆：{ id, category(內部類別鍵), account(全域唯一帳戶/項目名稱), currency(限制幣別), price(價格), leverage(槓桿倍數), sortOrder(顯示順序) }
-  // 槓桿倍數預設：類別為「投資」時為 1，其餘為 0。
+  // ---------- 存放帳戶設定 ----------
+  // 每筆：{ id, category(內部類型鍵), account(全域唯一存放帳戶名稱), currency(限制幣別), price(價格), leverage(槓桿倍數), sortOrder(顯示順序) }
+  // 槓桿倍數預設：資債類型為「投資」時為 1，其餘為 0。
   // sortOrder 由呼叫端指派（例如新增帳戶時取目前最大值 + 1），此函式不自行依陣列長度計算，
   // 避免呼叫端尚未把新帳戶塞入陣列時算出重複或錯誤的順序。
   function emptyAccount(category, sortOrder, currency) {
@@ -267,25 +275,25 @@ const ALD = (() => {
     return raw.map((r, i) => ({ id: uid(), ...r, sortOrder: i + 1 }));
   }
 
-  // 帳戶/項目名稱在所有類別中全域唯一，category 參數為既有呼叫端相容保留。
+  // 存放帳戶名稱在所有資債類型中全域唯一，category 參數為既有呼叫端相容保留。
   function lookupAccount(accounts, category, account) {
     if (!Array.isArray(accounts) || !String(account == null ? "" : account).trim()) return null;
     return accounts.find((a) => a.account === account) || null;
   }
 
-  // 依全域唯一帳戶/項目名稱查對應價格；找不到回傳 null
+  // 依全域唯一存放帳戶名稱查對應價格；找不到回傳 null
   function lookupAccountPrice(accounts, category, account) {
     const found = lookupAccount(accounts, category, account);
     return found ? Number(found.price) || 0 : null;
   }
 
-  // 依全域唯一帳戶/項目名稱查對應槓桿倍數；找不到回傳 null
+  // 依全域唯一存放帳戶名稱查對應槓桿倍數；找不到回傳 null
   function lookupAccountLeverage(accounts, category, account) {
     const found = lookupAccount(accounts, category, account);
     return found ? Number(found.leverage) || 0 : null;
   }
 
-  // 取某類別下的所有帳戶/項目名稱（供明細下拉選單使用）
+  // 取某資債類型下的所有存放帳戶名稱（供明細下拉選單使用）
   function accountsForCategory(accounts, category) {
     if (!Array.isArray(accounts)) return [];
     return accounts
@@ -300,16 +308,16 @@ const ALD = (() => {
       const name = String(account && account.account != null ? account.account : "").trim();
       if (!name) {
         if (allowBlank) continue;
-        return { valid: false, message: "帳戶/項目名稱不可空白。" };
+        return { valid: false, message: "存放帳戶名稱不可空白。" };
       }
       if (names.has(name)) {
-        return { valid: false, message: `帳戶/項目名稱「${name}」重複；名稱必須全域唯一。` };
+        return { valid: false, message: `存放帳戶名稱「${name}」重複；名稱必須全域唯一。` };
       }
       names.add(name);
       if (!codes.has(account.currency)) {
         return {
           valid: false,
-          message: `帳戶/項目「${name}」的幣別「${account.currency || "未設定"}」不在幣別設定中。`,
+          message: `存放帳戶「${name}」的幣別「${account.currency || "未設定"}」不在幣別設定中。`,
         };
       }
     }
@@ -323,7 +331,7 @@ const ALD = (() => {
         return {
           valid: false,
           message:
-            `帳戶/項目「${account.account}」設定為 ${account.currency}，` +
+            `存放帳戶「${account.account}」設定為 ${account.currency}，` +
             `但存在 ${rec.currency || "未設定"} 的明細紀錄；請先修正資料後再啟動。`,
         };
       }
@@ -336,16 +344,16 @@ const ALD = (() => {
   function seedRecords() {
     const today = nowStr();
     const raw = [
-      { type: "流動資金", account: "銀行活存-台幣", currency: "TWD", fxRate: 1, unitPrice: 1, units: 300000, leverage: 0 },
-      { type: "流動資金", account: "銀行活存-美金", currency: "USD", fxRate: 32.5, unitPrice: 1, units: 5000, leverage: 0 },
-      { type: "投資", account: "0050 元大台灣50", currency: "TWD", fxRate: 1, unitPrice: 140, units: 2000, leverage: 1 },
-      { type: "投資", account: "VOO", currency: "USD", fxRate: 32.5, unitPrice: 480, units: 30, leverage: 1.5, note: "美股ETF" },
-      { type: "固定資產", account: "自住房產", currency: "TWD", fxRate: 1, unitPrice: 1, units: 8000000, leverage: 0 },
-      { type: "應收款", account: "親友借款", currency: "TWD", fxRate: 1, unitPrice: 1, units: 100000, leverage: 0 },
-      { type: "負債", account: "房屋貸款", currency: "TWD", fxRate: 1, unitPrice: 1, units: 5000000, leverage: 0 },
+      { type: "流動資金", account: "銀行活存-台幣", currency: "TWD", tradeFxRate: 1, tradePrice: 1, units: 300000 },
+      { type: "流動資金", account: "銀行活存-美金", currency: "USD", tradeFxRate: 32.5, tradePrice: 1, units: 5000 },
+      { type: "投資", account: "0050 元大台灣50", currency: "TWD", tradeFxRate: 1, tradePrice: 140, units: 2000 },
+      { type: "投資", account: "VOO", currency: "USD", tradeFxRate: 32.5, tradePrice: 480, units: 30, note: "美股ETF" },
+      { type: "固定資產", account: "自住房產", currency: "TWD", tradeFxRate: 1, tradePrice: 1, units: 8000000 },
+      { type: "應收款", account: "親友借款", currency: "TWD", tradeFxRate: 1, tradePrice: 1, units: 100000 },
+      { type: "負債", account: "房屋貸款", currency: "TWD", tradeFxRate: 1, tradePrice: 1, units: 5000000 },
     ];
     return raw.map((r) =>
-      normalizeRec({ id: uid(), date: today, note: r.note || "", amount: 0, ...r })
+      normalizeRec({ id: uid(), date: today, note: r.note || "", excluded: 0, ...r })
     );
   }
 
@@ -353,22 +361,68 @@ const ALD = (() => {
     return Math.round((Number(n) || 0) * 100) / 100;
   }
 
-  // 原幣金額（未換算台幣）＝ 單價 × 單位/額數
+  // ---------- 有效值解析（明細 → 帳戶設定／幣別設定） ----------
+  // 開機時綁定 reactive store（需含 accounts 與 settings），每次解析即時讀取，
+  // 讓 Vue computed 能追蹤帳戶價格/槓桿與幣別匯率的變更；未綁定時只用明細自身的備援值。
+  let boundSource = null;
+
+  function bindRefs(source) {
+    boundSource = source || null;
+  }
+
+  function boundAccount(rec) {
+    if (!boundSource || !rec) return null;
+    return lookupAccount(boundSource.accounts, rec.type, rec.account);
+  }
+
+  // 有效幣別：有對應帳戶用帳戶幣別，否則用明細幣別
+  function effCurrency(rec) {
+    const a = boundAccount(rec);
+    if (a) return a.currency;
+    const base = boundSource && boundSource.settings ? boundSource.settings.baseCurrency : "";
+    return rec.currency || base || "TWD";
+  }
+
+  // 有效價格：有對應帳戶用帳戶價格，否則用成交價，再沒有用 1
+  function effPrice(rec) {
+    const a = boundAccount(rec);
+    if (a) return Number(a.price) || 0;
+    return Number(rec.tradePrice) > 0 ? Number(rec.tradePrice) : 1;
+  }
+
+  // 有效匯率：有對應幣別設定用目前匯率，否則用成交匯率，再沒有用 1
+  function effFxRate(rec) {
+    const settings = boundSource && boundSource.settings;
+    const rate = settings ? currencyRate(settings, effCurrency(rec)) : null;
+    if (rate != null) return rate || 1;
+    return Number(rec.tradeFxRate) > 0 ? Number(rec.tradeFxRate) : 1;
+  }
+
+  // 有效槓桿：有對應帳戶用帳戶槓桿，否則依資債類型預設（投資=1，其餘=0）
+  function effLeverage(rec) {
+    const a = boundAccount(rec);
+    if (a) return Number(a.leverage) || 0;
+    return rec && rec.type === "投資" ? 1 : 0;
+  }
+
+  // 依指定價格/單位/匯率計算台幣金額（供彈窗預覽等尚未寫入的虛擬資料使用）
+  function calcAmountTWD(price, units, fx) {
+    return round2((Number(price) || 0) * (Number(units) || 0) * (Number(fx) || 1));
+  }
+
+  // 原幣金額（未換算台幣）＝ 有效價格 × 單位/額數
   function origAmount(rec) {
-    return round2((Number(rec.unitPrice) || 0) * (Number(rec.units) || 0));
+    return round2(effPrice(rec) * (Number(rec.units) || 0));
   }
 
-  // 金額（台幣）＝ 單價 × 單位/額數 × 匯率
+  // 金額（台幣）＝ 有效價格 × 單位/額數 × 有效匯率
   function amountTWD(rec) {
-    return round2(
-      (Number(rec.unitPrice) || 0) * (Number(rec.units) || 0) * (Number(rec.fxRate) || 1)
-    );
+    return calcAmountTWD(effPrice(rec), rec.units, effFxRate(rec));
   }
 
-  // 曝險金額 = 台幣金額 * 槓桿倍數（非投資槓桿=0，曝險金額即為 0）
+  // 曝險金額 = 台幣金額 × 有效槓桿（槓桿=0 時曝險金額即為 0）
   function exposureTWD(rec) {
-    const lev = Number(rec.leverage);
-    return round2(amountTWD(rec) * (isNaN(lev) ? 1 : lev));
+    return round2(amountTWD(rec) * effLeverage(rec));
   }
 
   // 判斷單筆資料是否為「不計入」：統一處理 1/true 為不計入，0/false/null/undefined/
@@ -405,9 +459,10 @@ const ALD = (() => {
   }
 
   // ---------- CSV 匯出/匯入（使用 PapaParse） ----------
+  // 價格/匯率/槓桿倍數/金額/曝險金額匯出「實際用於估值」的有效值；成交價/成交匯率為明細的歷史紀錄。
   const CSV_COLUMNS = [
-    { key: "type", label: "類型" },
-    { key: "account", label: "帳戶/項目" },
+    { key: "type", label: "資債類型" },
+    { key: "account", label: "存放帳戶" },
     { key: "date", label: "日期" },
     { key: "note", label: "備註" },
     { key: "currency", label: "幣別" },
@@ -418,10 +473,12 @@ const ALD = (() => {
     { key: "leverage", label: "槓桿倍數" },
     { key: "exposure", label: "曝險金額" },
     { key: "excluded", label: "不計入" },
+    { key: "tradePrice", label: "成交價" },
+    { key: "tradeFxRate", label: "成交匯率" },
   ];
 
-  // 匯入時忽略的欄位（金額、曝險金額為計算欄位，以程式計算為準）
-  const CSV_IGNORE_ON_IMPORT = ["amount", "exposure"];
+  // 匯入時忽略的欄位（金額、曝險金額為計算欄位；槓桿倍數以帳戶設定為準）
+  const CSV_IGNORE_ON_IMPORT = ["amount", "exposure", "leverage"];
 
   function exportCSV(records, settings) {
     if (typeof Papa === "undefined") {
@@ -432,6 +489,10 @@ const ALD = (() => {
       CSV_COLUMNS.forEach((c) => {
         if (c.key === "amount") o[c.label] = amountTWD(r);
         else if (c.key === "exposure") o[c.label] = exposureTWD(r);
+        else if (c.key === "unitPrice") o[c.label] = effPrice(r);
+        else if (c.key === "fxRate") o[c.label] = effFxRate(r);
+        else if (c.key === "leverage") o[c.label] = effLeverage(r);
+        else if (c.key === "currency") o[c.label] = effCurrency(r);
         else if (c.key === "excluded") o[c.label] = r.excluded ? 1 : 0;
         else if (c.key === "date") o[c.label] = normalizeDateTime(r.date);
         else if (c.key === "type") o[c.label] = categoryDisplayName(settings, r.type);
@@ -445,7 +506,7 @@ const ALD = (() => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `資產負債明細_${todayStr()}.csv`;
+    a.download = `資產負債明細_${todayStr()}_${timeStr()}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -502,7 +563,7 @@ const ALD = (() => {
                 if (key) raw[key] = row[label];
               });
 
-              // 類型：接受內部鍵或自訂顯示名稱，轉回內部鍵；不符或空則跳過整列
+              // 資債類型：接受內部鍵或自訂顯示名稱，轉回內部鍵；不符或空則跳過整列
               const rawType = String(raw.type == null ? "" : raw.type).trim();
               const type = typeNameToKey[rawType];
               if (!type) {
@@ -512,44 +573,36 @@ const ALD = (() => {
 
               const rec = emptyRecord(type);
               rec.type = type;
-              // 帳戶/項目、備註：文字，空值可匯入
+              // 存放帳戶、備註：文字，空值可匯入
               rec.account = String(raw.account == null ? "" : raw.account).trim();
               rec.note = String(raw.note == null ? "" : raw.note).trim();
               // 日期：yyyy/mm/dd、yyyy-mm-dd 或含時分秒，空值可匯入（留空）；輸出統一為 yyyy-mm-dd hh:mi:ss
               rec.date = normalizeDateTime(raw.date);
-              // 單價：數字，空值預設 1
-              rec.unitPrice = numOr(raw.unitPrice, 1);
               // 幣別：值域為「設定 > 幣別」清單，空值或不符預設 baseCurrency
               const cur = String(raw.currency == null ? "" : raw.currency).trim().toUpperCase();
               const codes = currencyCodes(settings);
               rec.currency = codes.includes(cur) ? cur : settings.baseCurrency || "TWD";
-              // 匯率：與「設定 > 幣別」連動——依幣別代入設定匯率；查無則退回 CSV 值或 1
+              // 成交價：「成交價」欄位優先，舊版 CSV 退回「價格」欄位，空值預設 1；
+              // 舊版 CSV 的非投資價格固定 1（維持舊版匯入行為）
+              const hasTradePrice = String(raw.tradePrice == null ? "" : raw.tradePrice).trim() !== "";
+              rec.tradePrice = hasTradePrice ? numOr(raw.tradePrice, 1) : numOr(raw.unitPrice, 1);
+              if (!hasTradePrice && type !== "投資") rec.tradePrice = 1;
+              // 成交匯率：「成交匯率」欄位優先，舊版 CSV 退回「匯率」欄位，再沒有用設定匯率或 1
               const settingRate = currencyRate(settings, rec.currency);
-              rec.fxRate = settingRate != null ? settingRate : numOr(raw.fxRate, 1);
+              rec.tradeFxRate = numOr(raw.tradeFxRate, numOr(raw.fxRate, settingRate != null ? settingRate : 1));
               // 單位數：空值預設 0
               rec.units = numOr(raw.units, 0);
               const cfgAccount = lookupAccount(accounts, type, rec.account);
               if (cfgAccount && rec.currency !== cfgAccount.currency) {
                 throw new Error(
-                  `CSV 第 ${records.length + skipped + 2} 列的帳戶/項目「${rec.account}」` +
+                  `CSV 第 ${records.length + skipped + 2} 列的存放帳戶「${rec.account}」` +
                     `必須使用設定幣別 ${cfgAccount.currency}。`
                 );
               }
-              // 槓桿倍數：優先讀取「設定 > 帳戶」對應項目的設定值並寫入明細；
-              // 查無設定時退回 CSV 值（空值預設：投資=1，其餘=0）
-              const cfgLev = lookupAccountLeverage(accounts, type, rec.account);
-              rec.leverage =
-                cfgLev != null ? cfgLev : numOr(raw.leverage, type === "投資" ? 1 : 0);
+              // 槓桿倍數、金額、曝險金額（CSV_IGNORE_ON_IMPORT）不匯入：槓桿以帳戶設定為準，金額即時計算
               // 不計入：值域 0/1，空值預設 0
               rec.excluded = numOr(raw.excluded, 0) === 1 ? 1 : 0;
-
-              // 非投資：價格固定 1（槓桿倍數改由帳戶設定決定，不再固定 0）
-              if (rec.type !== "投資") {
-                rec.unitPrice = 1;
-              }
-
-              // 金額、曝險金額為計算欄位，匯入時不寫入，由功能計算
-              rec.amount = amountTWD(rec);
+              normalizeRec(rec);
               rec.id = uid();
               records.push(rec);
             });
@@ -564,11 +617,11 @@ const ALD = (() => {
     });
   }
 
-  // ---------- 帳戶/項目設定 CSV 匯出/匯入 ----------
-  // 欄位：類別（顯示名稱）、帳戶/項目、幣別、價格、槓桿倍數
+  // ---------- 存放帳戶設定 CSV 匯出/匯入 ----------
+  // 欄位：資債類型（顯示名稱）、存放帳戶、幣別、價格、槓桿倍數
   const ACCOUNT_CSV_COLUMNS = [
-    { key: "category", label: "類別" },
-    { key: "account", label: "帳戶/項目" },
+    { key: "category", label: "資債類型" },
+    { key: "account", label: "存放帳戶" },
     { key: "currency", label: "幣別" },
     { key: "price", label: "價格" },
     { key: "leverage", label: "槓桿倍數" },
@@ -579,8 +632,8 @@ const ALD = (() => {
       throw new Error("PapaParse 函式庫未載入（CDN 連線失敗），無法匯出 CSV。");
     }
     const rows = (accounts || []).map((a) => ({
-      類別: categoryDisplayName(settings, a.category),
-      "帳戶/項目": a.account,
+      資債類型: categoryDisplayName(settings, a.category),
+      存放帳戶: a.account,
       幣別: a.currency,
       價格: Number(a.price) || 0,
       槓桿倍數: Number(a.leverage) || 0,
@@ -591,14 +644,14 @@ const ALD = (() => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `帳戶項目設定_${todayStr()}.csv`;
+    a.download = `類型帳戶設定_${todayStr()}_${timeStr()}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }
 
-  // 解析帳戶/項目設定 CSV，回傳帳戶物件陣列（含新 id）。類別、名稱或幣別不符時拒絕整份匯入。
+  // 解析存放帳戶設定 CSV，回傳帳戶物件陣列（含新 id）。類型、名稱或幣別不符時拒絕整份匯入。
   function parseAccountsCSV(file, settings) {
     return new Promise((resolve, reject) => {
       if (typeof Papa === "undefined") {
@@ -619,16 +672,16 @@ const ALD = (() => {
                 const k = Object.keys(row).find((x) => x.trim() === label);
                 return k ? row[k] : "";
               };
-              // 類別：接受內部鍵或自訂顯示名稱，轉回內部鍵；不符或空則跳過整列
-              const rawCat = String(get("類別") || "").trim();
+              // 資債類型：接受內部鍵或自訂顯示名稱，轉回內部鍵；不符或空則跳過整列
+              const rawCat = String(get("資債類型") || "").trim();
               const category = typeNameToKey[rawCat];
               if (!category) {
                 skipped++;
                 return;
               }
-              const account = String(get("帳戶/項目") || "").trim();
+              const account = String(get("存放帳戶") || "").trim();
               if (!account) {
-                throw new Error(`CSV 第 ${accounts.length + skipped + 2} 列的帳戶/項目名稱不可空白。`);
+                throw new Error(`CSV 第 ${accounts.length + skipped + 2} 列的存放帳戶名稱不可空白。`);
               }
               const currency = String(get("幣別") || "").trim().toUpperCase();
               if (!currencyCodes(settings).includes(currency)) {
@@ -637,7 +690,7 @@ const ALD = (() => {
                 );
               }
               const price = numOr(get("價格"), 1);
-              // 槓桿倍數：空值預設依類別（投資=1，其餘=0）
+              // 槓桿倍數：空值預設依類型（投資=1，其餘=0）
               const leverage = numOr(get("槓桿倍數"), category === "投資" ? 1 : 0);
               // CSV 格式不含 sortOrder 欄位，依匯入（解析）順序補上 1,2,3...，
               // 確保重新整理後帳戶順序與匯入時一致。
@@ -700,7 +753,7 @@ const ALD = (() => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `同步記錄_${todayStr()}.json`;
+    a.download = `同步記錄_${todayStr()}_${timeStr()}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -759,10 +812,18 @@ const ALD = (() => {
     emptyRecord,
     uid,
     todayStr,
+    timeStr,
     nowStr,
     normalizeDateTime,
     datePart,
     round2,
+    bindRefs,
+    effCurrency,
+    effPrice,
+    effFxRate,
+    effLeverage,
+    calcAmountTWD,
+    hasLegacyFields,
     origAmount,
     amountTWD,
     exposureTWD,

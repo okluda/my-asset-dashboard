@@ -56,7 +56,7 @@ function mergeSettings(raw) {
 }
 
 // 帳戶設定正規化規則：確保 IndexedDB 讀到的帳戶資料型別正確、缺值時帶入合理預設值
-// （與 ALD.emptyAccount 的預設規則一致：投資類別槓桿倍數預設 1，其餘為 0）。
+// （與 ALD.emptyAccount 的預設規則一致：投資類型槓桿倍數預設 1，其餘為 0）。
 // fallbackOrder：舊資料（IndexedDB getAll() 讀出，不保證順序）若無 sortOrder，
 // 依目前載入順序補值（呼叫端傳入 1-based 索引），確保重新整理後仍有明確順序可排序。
 function normalizeAccount(a, fallbackOrder, settings, records) {
@@ -64,7 +64,7 @@ function normalizeAccount(a, fallbackOrder, settings, records) {
   const account = String(a.account == null ? "" : a.account).trim();
   const configuredCurrency = String(a.currency == null ? "" : a.currency).trim().toUpperCase();
   if (configuredCurrency && !ALD.currencyCodes(settings).includes(configuredCurrency)) {
-    throw new Error(`帳戶/項目「${account || "(未命名)"}」的幣別「${configuredCurrency}」不在幣別設定中。`);
+    throw new Error(`存放帳戶「${account || "(未命名)"}」的幣別「${configuredCurrency}」不在幣別設定中。`);
   }
   const recordCurrencies = [
     ...new Set(
@@ -74,7 +74,7 @@ function normalizeAccount(a, fallbackOrder, settings, records) {
     ),
   ];
   if (recordCurrencies.length > 1) {
-    throw new Error(`帳戶/項目「${account}」的既有明細使用多種幣別：${recordCurrencies.join("、")}。`);
+    throw new Error(`存放帳戶「${account}」的既有明細使用多種幣別：${recordCurrencies.join("、")}。`);
   }
   const currency =
     ALD.currencyCodes(settings).includes(configuredCurrency)
@@ -218,7 +218,7 @@ const TabOverview = {
 // 不寫入設定，重新整理後回到「我的資產」。
 const assetsView = ref("asset");
 
-// 區段（segment）排序：現金 → 投資 → 應收款 → 固定資產；同類別內台幣/台股 → 美元/美股 → 其他幣別
+// 區段（segment）排序：現金 → 投資 → 應收款 → 固定資產；同類型內台幣/台股 → 美元/美股 → 其他幣別
 const SEGMENT_KIND_ORDER = { cash: 0, inv: 1, recv: 2, fixed: 3 };
 const SEGMENT_CUR_LABEL = {
   cash: { TWD: "台幣", USD: "美元" },
@@ -423,14 +423,13 @@ const TabAssets = {
           group.records.forEach((r) => {
             const name = r.account || "(未命名)";
             if (!acctMap[name]) {
-              acctMap[name] = { account: name, amountTWD: 0, amountOrig: 0, units: 0, exposureTWD: 0, leverage: 1 };
+              acctMap[name] = { account: name, amountTWD: 0, amountOrig: 0, units: 0, exposureTWD: 0, leverage: ALD.effLeverage(r) };
             }
             const a = acctMap[name];
             if (!r.excluded) {
               a.amountTWD = ALD.round2(a.amountTWD + ALD.amountTWD(r));
               a.exposureTWD = ALD.round2(a.exposureTWD + ALD.exposureTWD(r));
             }
-            if (isFinite(Number(r.leverage))) a.leverage = Number(r.leverage);
             a.amountOrig = ALD.round2(a.amountOrig + ALD.origAmount(r));
             a.units = ALD.round2(a.units + (Number(r.units) || 0));
           });
@@ -523,7 +522,7 @@ const TabAssets = {
       newForm.leverage = defaultLeverage(newForm.type);
     }
 
-    // 單價：設定中帳戶價格；查無（或為 0）時用該帳戶最新一筆紀錄的單價，再查無用 1
+    // 單價：設定中帳戶價格；查無（或為 0）時用該帳戶最新一筆紀錄的成交價，再查無用 1
     function resolveUnitPrice(type, account) {
       const cfg = ALD.lookupAccountPrice(store.accounts, type, account);
       if (cfg) return cfg;
@@ -532,9 +531,9 @@ const TabAssets = {
         if (r.type !== type || r.account !== account) return;
         if (!latest || ALD.normalizeDateTime(r.date) > ALD.normalizeDateTime(latest.date)) latest = r;
       });
-      return latest && Number(latest.unitPrice) > 0 ? Number(latest.unitPrice) : 1;
+      return latest && Number(latest.tradePrice) > 0 ? Number(latest.tradePrice) : 1;
     }
-    // 槓桿：設定中帳戶槓桿；查無時依類別預設（投資 1，其餘 0）
+    // 槓桿：設定中帳戶槓桿；查無時依類型預設（投資 1，其餘 0）
     function resolveLeverage(type, account) {
       const cfg = ALD.lookupAccountLeverage(store.accounts, type, account);
       return cfg != null ? cfg : type === "投資" ? 1 : 0;
@@ -545,7 +544,7 @@ const TabAssets = {
     const currencyOptions = computed(() => ALD.currencyCodes(settings));
     const newAccountName = computed(() => newForm.account.trim());
     const configuredNewAccount = computed(() => ALD.lookupAccount(store.accounts, newForm.type, newAccountName.value));
-    // 輸入的名稱不在「設定 > 資產帳戶」中 → 視為新帳戶，儲存時一併加入設定
+    // 輸入的名稱不在「設定 > 存放帳戶」中 → 視為新帳戶，儲存時一併加入設定
     const newIsNewAccount = computed(
       () => !!newAccountName.value && !configuredNewAccount.value
     );
@@ -564,7 +563,9 @@ const TabAssets = {
         fxRate: ALD.currencyRate(settings, newForm.currency) || 1,
         leverage: !account ? 0 : isNew ? Number(newForm.leverage) || 0 : resolveLeverage(newForm.type, account),
       };
-      return { ...rec, amount: ALD.amountTWD(rec), exposure: ALD.exposureTWD(rec) };
+      // 預覽資料尚未寫入（新帳戶也尚未加入設定），以指定的價格/匯率/槓桿計算
+      const amount = ALD.calcAmountTWD(rec.unitPrice, rec.units, rec.fxRate);
+      return { ...rec, amount, exposure: ALD.round2(amount * rec.leverage) };
     });
     const newValid = computed(() => {
       if (!newAccountName.value || !(Number(newForm.units) > 0)) return false;
@@ -601,10 +602,9 @@ const TabAssets = {
           ...ALD.emptyRecord(newForm.type),
           account: accountName,
           currency: newForm.currency,
-          fxRate: p.fxRate,
-          unitPrice: p.unitPrice,
+          tradeFxRate: p.fxRate,
+          tradePrice: p.unitPrice,
           units: p.units,
-          leverage: p.leverage,
           note: newForm.note.trim() || "初始建倉",
           excluded: newForm.excluded ? 1 : 0,
           date: ALD.nowStr(),
@@ -617,8 +617,8 @@ const TabAssets = {
     }
 
     // ---------- 帳戶彈窗：[增減]（流動資金類／投資）與 [還款]（負債） ----------
-    // 帳戶識別鍵（D1）：類別 + 帳戶 + 幣別。應收款／固定資產／負債在匯總區塊只依名稱分組，
-    // 因此只用「類別 + 帳戶」比對紀錄，寫入時的幣別取該帳戶最新一筆紀錄的幣別。
+    // 帳戶識別鍵（D1）：資債類型 + 帳戶 + 幣別。應收款／固定資產／負債在匯總區塊只依名稱分組，
+    // 因此只用「資債類型 + 帳戶」比對紀錄，寫入時的幣別取該帳戶最新一筆紀錄的幣別。
     const acctCtx = reactive({ type: "", account: "", currency: "" });
     const sheetTab = ref("adjust");
     const TRANSFER_TYPES = ["流動資金", "固定資產", "應收款"];
@@ -714,7 +714,7 @@ const TabAssets = {
       return r6(holding.value + adjSign.value * adjQty.value);
     });
 
-    // 對方帳戶可選清單（D5）：設定中該類別的帳戶，排除自己，也排除「已有紀錄但全部是其他幣別」的帳戶
+    // 對方帳戶可選清單（D5）：設定中該資債類型的帳戶，排除自己，也排除「已有紀錄但全部是其他幣別」的帳戶
     function peerOptions(type) {
       return ALD.accountsForCategory(store.accounts, type).filter((name) => {
         if (type === acctCtx.type && name === acctCtx.account) return false;
@@ -749,15 +749,14 @@ const TabAssets = {
       const selfName = acctCtx.account === UNNAMED ? "" : acctCtx.account;
       // 「不計入」僅出現在流動資金類的 [增減]，本筆與對方帳戶紀錄一併套用
       const excluded = acctKind.value === "cash" && adj.excluded ? 1 : 0;
-      const mk = (type, account, units, unitPrice, note) =>
+      const mk = (type, account, units, tradePrice, note) =>
         ALD.normalizeRec({
           ...ALD.emptyRecord(type),
           account,
           currency: cur,
-          fxRate: fx,
-          unitPrice,
+          tradeFxRate: fx,
+          tradePrice,
           units: r6(units),
-          leverage: resolveLeverage(type, account),
           note,
           excluded,
           date: ts,
@@ -822,7 +821,8 @@ const TabAssets = {
         fxRate: ALD.currencyRate(settings, acctCtx.currency) || 1,
         leverage: resolveLeverage(acctCtx.type, acctCtx.account === UNNAMED ? "" : acctCtx.account),
       };
-      return { ...rec, amount: ALD.amountTWD(rec), exposure: ALD.exposureTWD(rec) };
+      const amount = ALD.calcAmountTWD(rec.unitPrice, rec.units, rec.fxRate);
+      return { ...rec, amount, exposure: ALD.round2(amount * rec.leverage) };
     });
     const editValid = computed(() => editForm.units !== "" && isFinite(Number(editForm.units)));
     function selectSheetTab(tab) {
@@ -853,10 +853,9 @@ const TabAssets = {
             ...ALD.emptyRecord(acctCtx.type),
             account,
             currency: acctCtx.currency,
-            fxRate: ALD.currencyRate(settings, acctCtx.currency) || 1,
-            unitPrice: acctPrice.value,
+            tradeFxRate: ALD.currencyRate(settings, acctCtx.currency) || 1,
+            tradePrice: acctPrice.value,
             units: diff,
-            leverage: resolveLeverage(acctCtx.type, account),
             note: editForm.note.trim() || fixedNote,
             excluded: editForm.excluded ? 1 : 0,
             date: ALD.nowStr(),
@@ -867,7 +866,7 @@ const TabAssets = {
         sheetSaving = false;
       }
     }
-    // 刪除此資產：刪除該帳戶（含不計入）的所有明細紀錄；不刪除「設定 > 資產帳戶」中的帳戶
+    // 刪除此資產：刪除該帳戶（含不計入）的所有明細紀錄；不刪除「設定 > 存放帳戶」中的帳戶
     function deleteAccountRecords() {
       const ids = new Set(acctRecs.value.map((r) => r.id));
       if (ids.size === 0) return;
@@ -895,7 +894,7 @@ const TabAssets = {
       if (set.has(id)) set.delete(id);
       else set.add(id);
     }
-    const logDateMD = (d) => (typeof d === "string" && d.length >= 10 ? d.slice(5, 10) : d || "");
+    const logDateMD = (d) => (typeof d === "string" && d.length >= 10 ? d.slice(0, 16) : d || "");
     const logAmount = (rec) => ALD.amountTWD(rec);
     const logExposure = (rec) => ALD.exposureTWD(rec);
 
@@ -913,6 +912,10 @@ const TabAssets = {
       logDateMD,
       logAmount,
       logExposure,
+      effPrice: ALD.effPrice,
+      effFxRate: ALD.effFxRate,
+      effLeverage: ALD.effLeverage,
+      effCurrency: ALD.effCurrency,
       datePart: ALD.datePart,
       acctCtx,
       sheetTab,
@@ -1013,7 +1016,7 @@ const TabRebalance = {
     const invest1xTWD = computed(() =>
       ALD.round2(
         store.records
-          .filter((r) => !r.excluded && r.type === "投資" && Number(r.leverage) === 1)
+          .filter((r) => !r.excluded && r.type === "投資" && ALD.effLeverage(r) === 1)
           .reduce((sum, r) => sum + ALD.amountTWD(r), 0)
       )
     );
@@ -1136,7 +1139,7 @@ const TabDetail = {
 
     const isInvest = computed(() => activeType.value === "投資");
 
-    // 目前子分頁類別的所有明細
+    // 目前子分頁資債類型的所有明細
     const typeRecords = computed(() =>
       store.records.filter((r) => r.type === activeType.value)
     );
@@ -1179,8 +1182,8 @@ const TabDetail = {
       // 不改變 dateFilterActive；v-model 已同步 dateFilterValue，此函式保留供後續擴充。
     }
 
-    // 未命名紀錄在目前類別內永遠顯示；命名紀錄才套用帳戶/幣別（多選 OR）、不計入、日期篩選。
-    // 這個例外不跨類別，且不改變 store.records 的原始資料。
+    // 未命名紀錄在目前資債類型內永遠顯示；命名紀錄才套用帳戶/幣別（多選 OR）、不計入、日期篩選。
+    // 這個例外不跨資債類型，且不改變 store.records 的原始資料。
     const visibleRecords = computed(() => {
       const unnamed = typeRecords.value.filter((r) => !String(r.account || "").trim());
       let list = typeRecords.value.filter((r) => String(r.account || "").trim());
@@ -1337,7 +1340,7 @@ const TabDetail = {
       return m[currency] || currency;
     }
 
-    // 依幣別 -> 帳戶/項目 兩層分組彙總。金額一律用「金額(台幣)」加總。
+    // 依幣別 -> 存放帳戶 兩層分組彙總。金額一律用「金額(台幣)」加總。
     const summary = computed(() => {
       const recs = typeRecords.value.filter((r) => !ALD.isExcluded(r));
       const invest = activeType.value === "投資";
@@ -1390,15 +1393,15 @@ const TabDetail = {
       return { groups, totalTWD, exposureTotal, invest };
     });
 
-    // 切換子分頁時，帳戶/幣別篩選對象已不存在於新類別中，故重設；
-    // 不計入、日期篩選為跨類別的通用條件，維持不變。
+    // 切換子分頁時，帳戶/幣別篩選對象已不存在於新資債類型中，故重設；
+    // 不計入、日期篩選為跨資債類型的通用條件，維持不變。
     watch(activeType, () => {
       selectedAccountFilters.value = [];
     });
 
-    // 點選幣別分組下的帳戶卡片：多選（OR）。以「帳戶＋幣別」為篩選條件（幣別取自
+    // 點選幣別分組下的存放帳戶卡片：多選（OR）。以「存放帳戶＋幣別」為篩選條件（幣別取自
     // 該卡片所屬分組，不寫死 TWD/USD，動態支援設定中新增的任何幣別）。
-    // 點擊未選帳戶為加入選取，點擊已選帳戶則從選取清單移除（取消）。
+    // 點擊未選存放帳戶為加入選取，點擊已選存放帳戶則從選取清單移除（取消）。
     function toggleAccountFilter(account, currency) {
       const arr = selectedAccountFilters.value;
       const idx = arr.findIndex((s) => s.account === account && s.currency === currency);
@@ -1419,7 +1422,7 @@ const TabDetail = {
       if (idx !== -1) arr.splice(idx, 1);
     }
 
-    // 新增時預設帶入目前子分頁的類別
+    // 新增時預設帶入目前子分頁的資債類型
     function addRow() {
       store.records.push(ALD.emptyRecord(activeType.value));
     }
@@ -1430,57 +1433,40 @@ const TabDetail = {
       expandedIds.value.delete(id); // 清除已刪除項目殘留的展開狀態，避免累積無用資料
     }
 
-    // 金額 = 價格 × 單位 × 匯率（計算欄位）
-    function recalc(rec) {
-      rec.amount = ALD.amountTWD(rec);
-    }
-
-    // 依「設定 > 帳戶」中該類別對應帳戶/項目的價格與槓桿倍數，寫入此筆明細
+    // 依「設定 > 帳戶」對應存放帳戶帶入幣別（維持明細幣別與帳戶幣別一致的驗證契約）；
+    // 價格/匯率/槓桿/金額已改由 ALD.eff* 即時解析，不再寫入明細
     function applyAccountConfig(rec) {
       const account = ALD.lookupAccount(store.accounts, rec.type, rec.account);
-      const p = ALD.lookupAccountPrice(store.accounts, rec.type, rec.account);
-      if (p !== null) rec.unitPrice = p;
-      const lev = ALD.lookupAccountLeverage(store.accounts, rec.type, rec.account);
-      if (lev !== null) rec.leverage = lev;
-      if (account) {
-        rec.currency = account.currency;
-        const rate = ALD.currencyRate(store.settings, account.currency);
-        if (rate !== null) rec.fxRate = rate;
-      }
+      if (account) rec.currency = account.currency;
     }
 
-    // 該類別可選的帳戶/項目清單（含目前值，避免現有資料的帳戶不在清單時消失）
+    // 該資債類型可選的存放帳戶清單（含目前值，避免現有資料的帳戶不在清單時消失）
     function accountOptions(rec) {
       const opts = ALD.accountsForCategory(store.accounts, rec.type);
       if (rec.account && !opts.includes(rec.account)) return [rec.account, ...opts];
       return opts;
     }
 
-    // 選擇帳戶/項目時，帶入對應價格與槓桿倍數並重算金額
+    // 選擇存放帳戶時，帶入對應幣別
     function onAccountChange(rec) {
       applyAccountConfig(rec);
-      recalc(rec);
     }
 
-    // 類別變更時，重新帶入對應價格/槓桿倍數並重算金額
+    // 資債類型變更時，重新帶入對應幣別
     function onTypeChange(rec) {
       applyAccountConfig(rec);
-      recalc(rec);
     }
 
     // 幣別下拉選項：取自「設定 > 幣別」
     const currencyOptions = computed(() => ALD.currencyCodes(store.settings));
 
-    // 選擇幣別時，依「設定 > 幣別」帶入對應匯率並重算金額
+    // 選擇幣別時，已對應帳戶者只能使用帳戶幣別
     function onCurrencyChange(rec) {
       const account = ALD.lookupAccount(store.accounts, rec.type, rec.account);
       if (account && rec.currency !== account.currency) {
         rec.currency = account.currency;
-        alert(`帳戶/項目「${account.account}」只能使用 ${account.currency}。`);
+        alert(`存放帳戶「${account.account}」只能使用 ${account.currency}。`);
       }
-      const r = ALD.currencyRate(store.settings, rec.currency);
-      if (r !== null) rec.fxRate = r;
-      recalc(rec);
     }
 
     function money(rec) {
@@ -1489,6 +1475,24 @@ const TabDetail = {
 
     function exposure(rec) {
       return ALD.exposureTWD(rec);
+    }
+
+    // 明細頁唯讀顯示用：實際用於估值的價格/匯率/槓桿
+    function effPrice(rec) {
+      return ALD.effPrice(rec);
+    }
+
+    function effFxRate(rec) {
+      return ALD.effFxRate(rec);
+    }
+
+    function effLeverage(rec) {
+      return ALD.effLeverage(rec);
+    }
+
+    // 是否已對應「設定 > 帳戶」：已對應時幣別以帳戶設定為準，明細幣別改為唯讀
+    function isMappedAccount(rec) {
+      return !!ALD.lookupAccount(store.accounts, rec.type, rec.account);
     }
 
     return {
@@ -1524,7 +1528,6 @@ const TabDetail = {
       sortedRecords,
       addRow,
       removeRow,
-      recalc,
       onTypeChange,
       onAccountChange,
       accountOptions,
@@ -1532,6 +1535,10 @@ const TabDetail = {
       onCurrencyChange,
       money,
       exposure,
+      effPrice,
+      effFxRate,
+      effLeverage,
+      isMappedAccount,
       dateFilterValue,
       dateFilterActive,
       goPrevDay,
@@ -1552,8 +1559,8 @@ const settingsSubPage = ref(null);
 const SETTINGS_SUBPAGE_TITLES = {
   appearance: "外觀",
   currency: "幣別",
-  category: "資產類別",
-  accounts: "資產帳戶",
+  category: "資債類型",
+  accounts: "存放帳戶",
   quoteTW: "台股",
   quoteUS: "美股",
   test: "連線測試",
@@ -1587,7 +1594,7 @@ const TabSettings = {
       console.error(prefix, e);
     }
 
-    // 資產子類別名稱：留空時回填預設（等於鍵）
+    // 資債類型名稱：留空時回填預設（等於鍵）
     function onCategoryNameBlur(key) {
       if (!settings.categoryNames[key] || !settings.categoryNames[key].trim()) {
         settings.categoryNames[key] = key;
@@ -1606,25 +1613,15 @@ const TabSettings = {
       if (idx !== -1) settings.currencies.splice(idx, 1);
     }
 
-    // 幣別代碼輸入完成：正規化（大寫、去重、確保基準幣別），並套回明細
+    // 幣別代碼輸入完成：正規化（大寫、去重、確保基準幣別）；明細匯率由 ALD.effFxRate 即時解析
     function onCurrencyCodeBlur() {
       ALD.normalizeCurrencies(settings);
-      applyFxToRecords();
-    }
-
-    // 依「設定 > 幣別」的匯率，套回所有明細的匯率並重算金額
-    function applyFxToRecords() {
-      for (const rec of store.records) {
-        const r = ALD.currencyRate(store.settings, rec.currency);
-        if (r !== null) rec.fxRate = r;
-        rec.amount = ALD.amountTWD(rec);
-      }
     }
 
     // 記錄一筆同步執行資訊（僅在 settings.syncLogEnabled 開啟時才寫入，避免預設就累積資料；
     // 但 logKind === 'connectionTest' 時一律寫入，因為那是使用者於「連線測試中心」明確觸發的
     // 診斷動作，需要保留結果供排查，不受一般同步記錄開關影響）。
-    // syncType：'fxRate' | 'stockPrice' | 'endpoint'；target：幣別代碼或帳戶/項目名稱或測試網址。
+    // syncType：'fxRate' | 'stockPrice' | 'endpoint'；target：幣別代碼或存放帳戶名稱或測試網址。
     // logKind：'sync'（預設，正式同步） | 'connectionTest'（連線測試中心）。
     function recordSyncLog(syncType, target, success, errorMessage, requestUrl, responseText, logKind) {
       const kind = logKind || "sync";
@@ -1664,7 +1661,7 @@ const TabSettings = {
       }
     }
 
-    // 同步各幣別對基準幣別的即時匯率，完成後套回明細
+    // 同步各幣別對基準幣別的即時匯率；明細估值由 ALD.effFxRate 即時讀取幣別匯率
     async function syncFxRates() {
       if (syncingFx.value) return;
       syncingFx.value = true;
@@ -1687,7 +1684,6 @@ const TabSettings = {
             recordSyncLog("fxRate", cur.code, false, e && e.message, e && e.requestUrl, e && e.responseText);
           }
         }
-        applyFxToRecords();
         alert(
           "匯率同步完成：成功 " + ok + " 筆，失敗 " + fail + " 筆" +
             (fail > 0 ? "（失敗可能因無法連外，請改用手動輸入）" : "")
@@ -1699,7 +1695,7 @@ const TabSettings = {
       }
     }
 
-    // 新增一筆帳戶/項目設定，預設類別為第一個資產子類別；sortOrder 由呼叫端指派為目前最大值 + 1，
+    // 新增一筆存放帳戶設定，預設資債類型為第一個資債類型；sortOrder 由呼叫端指派為目前最大值 + 1，
     // 確保新帳戶固定排在最後（Test 6：A、B、C 新增 D → A、B、C、D）。
     function addAccount() {
       const nextOrder =
@@ -1736,7 +1732,7 @@ const TabSettings = {
       moveAccount(id, 1);
     }
 
-    // 帳戶類別變更時，若槓桿倍數仍為預設值則依新類別調整（投資=1，其餘=0）
+    // 存放帳戶變更時，若槓桿倍數仍為預設值則依新存放帳戶調整（投資=1，其餘=0）
     function onAccountCategoryChange(acc) {
       const cur = Number(acc.leverage) || 0;
       if (cur === 0 || cur === 1) {
@@ -1778,7 +1774,13 @@ const TabSettings = {
         alert(currencyValidation.message);
         return;
       }
-      applyAccountsToRecords();
+      // 帳戶改名連動：把舊名稱的明細改為新名稱，避免明細變成查無帳戶設定的孤兒紀錄
+      if (previous && previous !== acc.account) {
+        store.records.forEach((rec) => {
+          if (rec.account === previous) rec.account = acc.account;
+        });
+      }
+      accountNamesBeforeEdit.set(acc.id, acc.account);
     }
 
     function onAccountCurrencyChange(acc) {
@@ -1795,39 +1797,9 @@ const TabSettings = {
         alert(currencyValidation.message);
         return;
       }
-      applyAccountsToRecords();
     }
 
-    // 把帳戶設定中的價格套回對應的明細資料並重算金額
-    function applyPricesToRecords() {
-      for (const rec of store.records) {
-        const p = ALD.lookupAccountPrice(store.accounts, rec.type, rec.account);
-        if (p !== null) rec.unitPrice = p;
-        rec.amount = ALD.amountTWD(rec);
-      }
-    }
-
-    // 把帳戶設定中的槓桿倍數套回對應的明細資料並重算金額
-    function applyLeverageToRecords() {
-      for (const rec of store.records) {
-        const lev = ALD.lookupAccountLeverage(store.accounts, rec.type, rec.account);
-        if (lev !== null) rec.leverage = lev;
-        rec.amount = ALD.amountTWD(rec);
-      }
-    }
-
-    // 同步價格、手動修改帳戶欄位、從資產帳戶 CSV 還原後，自動把價格與槓桿倍數套回明細
-    function applyAccountsToRecords() {
-      applyPricesToRecords();
-      applyLeverageToRecords();
-    }
-
-    function onAccountCategoryChangeAndApply(acc) {
-      onAccountCategoryChange(acc);
-      applyAccountsToRecords();
-    }
-
-    // 匯出帳戶/項目設定為 CSV
+    // 匯出存放帳戶設定為 CSV
     function exportAccountsCsv() {
       try {
         ALD.exportAccountsCSV(store.accounts, store.settings);
@@ -1836,7 +1808,7 @@ const TabSettings = {
       }
     }
 
-    // 匯入帳戶/項目設定 CSV（取代現有設定）
+    // 匯入存放帳戶設定 CSV（取代現有設定）
     async function importAccountsCsv(evt) {
       const file = evt.target.files[0];
       if (!file) return;
@@ -1844,19 +1816,18 @@ const TabSettings = {
         const imported = await ALD.parseAccountsCSV(file, store.settings);
         if (
           store.accounts.length > 0 &&
-          !confirm("匯入將「取代」現有的帳戶/項目設定，確定要繼續嗎？")
+          !confirm("匯入將「取代」現有的存放帳戶設定，確定要繼續嗎？")
         ) {
           return;
         }
         const skipped = imported.__skipped || 0;
         store.accounts.splice(0, store.accounts.length, ...imported);
-        applyAccountsToRecords();
         // 明確等待 IndexedDB 保存完成後才顯示「匯入成功」，避免寫入失敗卻誤報成功；
         // watch 之後仍會 debounce 回寫同一份資料，屬冪等操作，不影響正確性。
         await ALD_DB.replaceAccounts(JSON.parse(JSON.stringify(store.accounts)));
         alert(
-          "已匯入 " + imported.length + " 筆帳戶/項目設定" +
-            (skipped > 0 ? "\n（略過 " + skipped + " 筆：類別空白或不符值域）" : "")
+          "已匯入 " + imported.length + " 筆存放帳戶設定" +
+            (skipped > 0 ? "\n（略過 " + skipped + " 筆：空白或不符值域）" : "")
         );
       } catch (e) {
         reportError("帳戶設定匯入失敗：", e);
@@ -1866,7 +1837,7 @@ const TabSettings = {
       }
     }
 
-    // 同步「投資」類別帳戶的即時價格（市值），完成後套回明細。
+    // 同步「投資」類型帳戶的即時價格（市值）；明細估值由 ALD.effPrice 即時讀取帳戶價格。
     // 依「設定 > 股價資料來源」分台股/美股 provider 查詢；provider 為「手動輸入」的帳戶會被略過，
     // 不計入成功/失敗筆數。同一批次共用 twseCache，避免台股 provider 為 TWSE 時重複下載整份清單。
     async function syncPrices() {
@@ -1894,14 +1865,13 @@ const TabSettings = {
             }
           }
         }
-        applyAccountsToRecords();
         alert(
-          "價格同步完成：成功 " + ok + " 筆，失敗 " + fail + " 筆" +
+          "報價同步完成：成功 " + ok + " 筆，失敗 " + fail + " 筆" +
             (skipped > 0 ? "，略過 " + skipped + " 筆（資料來源設為手動輸入）" : "") +
             (fail > 0 ? "（失敗可能因無法連外或該來源查無此代號，請改用手動輸入）" : "")
         );
       } catch (e) {
-        reportError("價格同步失敗：", e);
+        reportError("報價同步失敗：", e);
       } finally {
         syncing.value = false;
       }
@@ -2020,7 +1990,7 @@ const TabSettings = {
         const skipped = imported.__skipped || 0;
         alert(
           "已匯入 " + imported.length + " 筆資料" +
-            (skipped > 0 ? "\n（略過 " + skipped + " 筆：類型空白或不符值域）" : "")
+            (skipped > 0 ? "\n（略過 " + skipped + " 筆：資債類型空白或不符值域）" : "")
         );
       } catch (e) {
         reportError("CSV 匯入失敗：", e);
@@ -2086,18 +2056,16 @@ const TabSettings = {
       addCurrency,
       removeCurrency,
       onCurrencyCodeBlur,
-      applyFxToRecords,
       syncFxRates,
       addAccount,
       removeAccount,
       moveAccountUp,
       moveAccountDown,
-      onAccountCategoryChangeAndApply,
+      onAccountCategoryChange,
       rememberAccountName,
       rememberAccountCurrency,
       onAccountNameChange,
       onAccountCurrencyChange,
-      applyAccountsToRecords,
       exportAccountsCsv,
       importAccountsCsv,
       syncPrices,
@@ -2361,16 +2329,19 @@ app.config.errorHandler = (err, instance, info) => {
   } else {
     initialSettings = mergeSettings(rawSettings);
     const rawDates = Array.isArray(rawRecords) ? rawRecords.map((r) => r && r.date) : [];
+    // 欄位正規化遷移判斷需在 normalizeRec（會就地刪除舊欄位）之前執行
+    const recordsHadLegacyFields = Array.isArray(rawRecords) && rawRecords.some(ALD.hasLegacyFields);
     initialRecords = Array.isArray(rawRecords) ? rawRecords.map(ALD.normalizeRec) : [];
     // 日期擴欄一次性遷移：normalizeRec 已把純日期補成 yyyy-mm-dd hh:mi:ss，有任何一筆被補時間就整批寫回。
+    // 欄位正規化一次性遷移：unitPrice/fxRate 搬到 tradePrice/tradeFxRate，刪除 leverage/amount，同樣整批寫回。
     // 寫回失敗只顯示錯誤，不中止啟動（記憶體中的資料已是新格式，之後 store 的 watch 會再次嘗試寫回）。
-    if (initialRecords.some((r, i) => r.date !== rawDates[i])) {
+    if (recordsHadLegacyFields || initialRecords.some((r, i) => r.date !== rawDates[i])) {
       try {
         await ALD_DB.replaceRecords(initialRecords);
       } catch (e) {
         const detail = e && e.stack ? e.stack : e && e.message ? e.message : String(e);
-        console.error("日期格式遷移寫回 IndexedDB 失敗：", e);
-        if (window.__showAppError) window.__showAppError("日期格式遷移寫回 IndexedDB 失敗：\n" + detail);
+        console.error("明細資料遷移寫回 IndexedDB 失敗：", e);
+        if (window.__showAppError) window.__showAppError("明細資料遷移寫回 IndexedDB 失敗：\n" + detail);
       }
     }
     try {
@@ -2413,6 +2384,8 @@ app.config.errorHandler = (err, instance, info) => {
     accounts: initialAccounts,
     syncLogs: initialSyncLogs,
   });
+  // 明細估值改由帳戶設定/幣別設定即時解析：綁定 reactive store，讓 computed 追蹤帳戶與匯率變更
+  ALD.bindRefs(store);
 
   // ---------- 設定 watch（初始化完成、store 已有正確資料後才註冊，避免載入期間回寫空資料） ----------
   watch(
