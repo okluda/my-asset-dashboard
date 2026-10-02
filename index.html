@@ -9,7 +9,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="theme-color" content="#1c1c2e" />
   <title>fishbubble</title>
-  <link rel="stylesheet" href="css/style.css?v=2026093004" />
+  <link rel="stylesheet" href="css/style.css?v=2026100201" />
 </head>
 <body>
   <!-- 錯誤顯示橫幅：手機上沒有開發者工具可看 console，發生例外時直接顯示在畫面上。
@@ -370,7 +370,12 @@
                   </template>
                     <span v-else-if="g.isForeign" class="as-acct-sub">{{ a.origText }}</span>
                 </span>
-                <span class="as-amt">{{ fmtNum(a.amountTWD) }}</span>
+                <span v-if="g.invest" class="as-amt-col">
+                  <span class="as-amt">{{ fmtNum(a.amountTWD) }}</span>
+                  <span class="as-acct-sub">{{ fmtNum(a.exposureTWD) }}</span>
+                  <span class="as-acct-sub">{{ a.leverageText }}</span>
+                </span>
+                <span v-else class="as-amt">{{ fmtNum(a.amountTWD) }}</span>
             </div>
           </div>
         </div>
@@ -471,13 +476,16 @@
                 <span v-else class="bs-value">{{ plain(newPreview.unitPrice) }}</span>
               </div>
               <div class="bs-row">
-                <label class="bs-label" for="bs-new-lev">槓桿倍率</label>
-                <input v-if="newIsNewAccount" id="bs-new-lev" class="bs-input" type="number" inputmode="decimal" step="any" min="0" v-model="newForm.leverage" />
-                <span v-else class="bs-value">{{ plain(newPreview.leverage) }}</span>
-              </div>
-              <div class="bs-row">
                 <span class="bs-label">匯率</span>
                 <span class="bs-value">{{ plain(newPreview.fxRate) }}</span>
+              </div>
+              <div class="bs-row">
+                <label class="bs-label" for="bs-new-lev">槓桿倍率</label>
+                <span v-if="newIsNewAccount" class="bs-inline">
+                  <input id="bs-new-lev" class="bs-input" type="number" inputmode="decimal" step="any" min="0" v-model="newForm.leverage" />
+                  <span class="bs-value">x</span>
+                </span>
+                <span v-else class="bs-value">{{ plain(newPreview.leverage) }}x</span>
               </div>
               <div class="bs-row">
                 <span class="bs-label">曝險金額</span>
@@ -509,7 +517,7 @@
             <template v-if="acctKind === 'cash'">
               <div class="bs-card bs-stat">
                 <span class="bs-stat-label">目前餘額</span>
-                <span class="bs-stat-value">{{ acctCtx.currency }} {{ plain(acctBalance) }}</span>
+                <span class="bs-stat-value">${{ plain(acctBalance) }}</span>
               </div>
               <div class="bs-flow">
                 <span>目前持有 {{ plain(holding) }}</span>
@@ -578,7 +586,7 @@
                 </div>
                 <div class="bs-card bs-stat">
                   <span class="bs-stat-label">目前價格</span>
-                  <span class="bs-stat-value">{{ acctCtx.currency }} {{ plain(acctPrice) }}</span>
+                  <span class="bs-stat-value">${{ plain(acctPrice) }}</span>
                 </div>
               </div>
               <div class="bs-flow">
@@ -625,7 +633,7 @@
             <template v-else>
               <div class="bs-card bs-stat">
                 <span class="bs-stat-label">目前餘額</span>
-                <span class="bs-stat-value">{{ acctCtx.currency }} {{ plain(acctBalance) }}</span>
+                <span class="bs-stat-value">${{ plain(acctBalance) }}</span>
               </div>
 
               <div class="bs-section-title">扣款帳戶</div>
@@ -675,6 +683,13 @@
                   <span class="bs-label">計價幣別</span>
                   <span class="bs-value">{{ acctCtx.currency }}</span>
                 </div>
+                <div class="bs-row">
+                  <span class="bs-label">不計入</span>
+                  <label class="set-switch">
+                    <input type="checkbox" v-model="editForm.excluded" aria-label="不計入" />
+                    <span class="set-switch-track"></span>
+                  </label>
+                </div>
               </div>
 
               <div class="bs-section-title">帳戶資訊</div>
@@ -696,12 +711,12 @@
                   <span class="bs-value">{{ plain(editRec.unitPrice) }}</span>
                 </div>
                 <div class="bs-row">
-                  <span class="bs-label">槓桿倍率</span>
-                  <span class="bs-value">{{ plain(editRec.leverage) }}</span>
-                </div>
-                <div class="bs-row">
                   <span class="bs-label">匯率</span>
                   <span class="bs-value">{{ plain(editRec.fxRate) }}</span>
+                </div>
+                <div class="bs-row">
+                  <span class="bs-label">槓桿倍率</span>
+                  <span class="bs-value">{{ plain(editRec.leverage) }}x</span>
                 </div>
                 <div class="bs-row">
                   <span class="bs-label">曝險金額</span>
@@ -1550,9 +1565,9 @@
   <!-- 本地程式檔（store/db/services/app）：?v= 為快取破壞參數，比照上方 CDN 的 ?cb= 慣例。
        修改這 4 個檔案任何內容後，務必同步更新此版本號，避免瀏覽器/CDN 快取舊版程式碼，
        導致「畫面（index.html）看起來是新版、但實際執行邏輯是舊版」的不一致問題。 -->
-  <script src="js/store.js?v=2026093004"></script>
-  <script src="js/db.js?v=2026093004"></script>
-  <script src="js/services.js?v=2026093004"></script>
-  <script src="js/app.js?v=2026093004"></script>
+  <script src="js/store.js?v=2026100201"></script>
+  <script src="js/db.js?v=2026100201"></script>
+  <script src="js/services.js?v=2026100201"></script>
+  <script src="js/app.js?v=2026100201"></script>
 </body>
 </html>

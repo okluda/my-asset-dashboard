@@ -423,10 +423,14 @@ const TabAssets = {
           group.records.forEach((r) => {
             const name = r.account || "(未命名)";
             if (!acctMap[name]) {
-              acctMap[name] = { account: name, amountTWD: 0, amountOrig: 0, units: 0 };
+              acctMap[name] = { account: name, amountTWD: 0, amountOrig: 0, units: 0, exposureTWD: 0, leverage: 1 };
             }
             const a = acctMap[name];
-            if (!r.excluded) a.amountTWD = ALD.round2(a.amountTWD + ALD.amountTWD(r));
+            if (!r.excluded) {
+              a.amountTWD = ALD.round2(a.amountTWD + ALD.amountTWD(r));
+              a.exposureTWD = ALD.round2(a.exposureTWD + ALD.exposureTWD(r));
+            }
+            if (isFinite(Number(r.leverage))) a.leverage = Number(r.leverage);
             a.amountOrig = ALD.round2(a.amountOrig + ALD.origAmount(r));
             a.units = ALD.round2(a.units + (Number(r.units) || 0));
           });
@@ -443,6 +447,7 @@ const TabAssets = {
               ratio: denominator.value > 0 ? a.amountTWD / denominator.value : 0,
               origText: isForeign ? group.cur + " $" + num(a.amountOrig) : "",
               priceText,
+              leverageText: String(Math.round(a.leverage * 100) / 100) + "x",
             };
           });
           return {
@@ -808,7 +813,7 @@ const TabAssets = {
 
     // ---------- 帳戶彈窗：[編輯] 與 [紀錄] ----------
     // [編輯] 只可調整持有數量與備註：差值 = 輸入 − 目前持有，非 0 才新增一筆差額紀錄，不修改既有紀錄
-    const editForm = reactive({ units: "", note: "" });
+    const editForm = reactive({ units: "", note: "", excluded: false });
     const editMsg = ref("");
     const editRec = computed(() => {
       const rec = {
@@ -826,6 +831,7 @@ const TabAssets = {
       if (tab === "edit") {
         editForm.units = holding.value;
         editForm.note = "";
+        editForm.excluded = false;
       }
     }
     function saveEdit() {
@@ -852,7 +858,7 @@ const TabAssets = {
             units: diff,
             leverage: resolveLeverage(acctCtx.type, account),
             note: editForm.note.trim() || fixedNote,
-            excluded: 0,
+            excluded: editForm.excluded ? 1 : 0,
             date: ALD.nowStr(),
           })
         );
@@ -955,6 +961,7 @@ const TabAssets = {
       liabilityAccounts,
       totalLiabilities,
       showExcludedAccounts,
+      hidden,
       fmt,
       fmtNum,
       num,
