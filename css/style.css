@@ -2002,6 +2002,16 @@ button.set-row:disabled {
   font-size: calc(16px * var(--font-scale, 1));
 }
 
+/* 投資帳戶：金額下方依序顯示槓桿金額與槓桿倍率，靠右對齊 */
+.as-amt-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 .as-ratio-legend {
   gap: 3px 8px;
   margin-top: 7px;
@@ -2169,6 +2179,19 @@ button.set-row:disabled {
 .bs-row .bs-input:focus,
 .bs-row .bs-select:focus {
   outline: none;
+}
+
+/* 輸入框後綴（例如槓桿倍率的 x）：輸入框與後綴併排靠右 */
+.bs-inline {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.bs-inline .bs-input {
+  max-width: 100%;
 }
 
 .bs-primary-btn {
