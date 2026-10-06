@@ -492,6 +492,7 @@ const TabAssets = {
     });
     function closeSheet() {
       sheet.value = null;
+      calc.open = false;
     }
 
     const newForm = reactive({
@@ -672,6 +673,7 @@ const TabAssets = {
       sheetTab.value = "adjust";
       editMsg.value = "";
       logExpanded.value = new Set();
+      calc.open = false;
       sheet.value = "account";
     }
     function onXTypeChange() {
@@ -810,6 +812,158 @@ const TabAssets = {
       }
     }
 
+    // ---------- [增減]／[還款] 的計算機 ----------
+    // 算式以顯示符號（− × ÷）儲存，自行解析（不使用 eval），支援括號、負號與先乘除後加減；
+    // 結果依欄位四捨五入（數量 6 位、本金/利息 2 位）後寫回 adj[field]，負數照樣帶回交由 adjValid 擋下。
+    const CALC_LABELS = { qty: "調整數量", principal: "還本金", interest: "繳利息" };
+    const CALC_OPS = "+−×÷";
+    const calc = reactive({ open: false, field: "qty", expr: "", msg: "" });
+    const calcRound = (n) => (calc.field === "qty" ? r6(n) : ALD.round2(n));
+    function calcFormat(n) {
+      let s = String(n);
+      if (/e/i.test(s)) s = n.toFixed(6).replace(/\.?0+$/, "");
+      return s.replace("-", "−");
+    }
+    function calcParse(expr) {
+      const tokens = expr.match(/\d+\.?\d*|\.\d+|[+−×÷()]/g) || [];
+      if (tokens.join("") !== expr) throw new Error("算式不完整");
+      let i = 0;
+      const fail = () => {
+        throw new Error("算式不完整");
+      };
+      function parseExpr() {
+        let v = parseTerm();
+        while (tokens[i] === "+" || tokens[i] === "−") {
+          const op = tokens[i++];
+          const r = parseTerm();
+          v = op === "+" ? v + r : v - r;
+        }
+        return v;
+      }
+      function parseTerm() {
+        let v = parseFactor();
+        while (tokens[i] === "×" || tokens[i] === "÷") {
+          const op = tokens[i++];
+          const r = parseFactor();
+          if (op === "÷" && r === 0) throw new Error("不可除以 0");
+          v = op === "×" ? v * r : v / r;
+        }
+        return v;
+      }
+      function parseFactor() {
+        const t = tokens[i];
+        if (t === "−") {
+          i++;
+          return -parseFactor();
+        }
+        if (t === "(") {
+          i++;
+          const v = parseExpr();
+          if (tokens[i] !== ")") fail();
+          i++;
+          return v;
+        }
+        if (t === undefined || CALC_OPS.includes(t) || t === ")") fail();
+        i++;
+        return Number(t);
+      }
+      const v = parseExpr();
+      if (i !== tokens.length) fail();
+      if (!isFinite(v)) throw new Error("結果超出範圍");
+      return v;
+    }
+    function calcEval() {
+      if (!calc.expr) return { ok: false, msg: "請輸入算式" };
+      try {
+        return { ok: true, value: calcRound(calcParse(calc.expr)) };
+      } catch (e) {
+        return { ok: false, msg: e.message };
+      }
+    }
+    // 即時預覽：算式可解析且不是單一數字時才顯示結果，輸入過程中的不完整算式不提示錯誤
+    const calcPreview = computed(() => {
+      if (!calc.open || !calc.expr || /^\d+\.?\d*$|^\.\d+$/.test(calc.expr)) return "";
+      const r = calcEval();
+      return r.ok ? "= " + calcFormat(r.value) : "";
+    });
+    function openCalc(field) {
+      const v = adj[field];
+      const n = Number(v);
+      calc.field = field;
+      calc.expr = v === "" || v === null || !isFinite(n) ? "" : calcFormat(n);
+      calc.msg = "";
+      calc.open = true;
+    }
+    function closeCalc() {
+      calc.open = false;
+    }
+    function calcPress(key) {
+      const e = calc.expr;
+      const last = e.slice(-1);
+      const isOp = (c) => c !== "" && CALC_OPS.includes(c);
+      // 結尾運算子為「開頭或左括號後的負號」時，視為一元負號，不可被其他運算子取代
+      const unaryTail = last === "−" && (e.length === 1 || e.slice(-2, -1) === "(");
+      const numMatch = e.match(/(\d+\.?\d*|\.\d+)$/);
+      calc.msg = "";
+      if (/^\d$/.test(key)) {
+        if (last !== ")") calc.expr = e + key;
+      } else if (key === ".") {
+        if (last === ")" || (numMatch && numMatch[1].includes("."))) return;
+        calc.expr = e + (numMatch ? "." : "0.");
+      } else if (key === "C") {
+        calc.expr = "";
+      } else if (key === "⌫") {
+        calc.expr = e.endsWith("(−") ? e.slice(0, -2) : e.slice(0, -1);
+      } else if (key === "(") {
+        if (!numMatch && last !== "." && last !== ")") calc.expr = e + "(";
+      } else if (key === ")") {
+        const open = (e.match(/\(/g) || []).length;
+        const close = (e.match(/\)/g) || []).length;
+        if (open > close && (numMatch || last === ")")) calc.expr = e + ")";
+      } else if (key === "−") {
+        if (e === "" || last === "(") calc.expr = e + "−";
+        else if (isOp(last)) {
+          if (!unaryTail) calc.expr = e.slice(0, -1) + "−";
+        } else calc.expr = e + "−";
+      } else if (isOp(key)) {
+        if (e === "" || last === "(" || unaryTail) return;
+        calc.expr = isOp(last) ? e.slice(0, -1) + key : e + key;
+      } else if (key === "±") {
+        const wrapped = e.match(/\(−(\d+\.?\d*|\.\d+)\)$/);
+        if (wrapped) {
+          calc.expr = e.slice(0, -wrapped[0].length) + wrapped[1];
+        } else if (numMatch) {
+          const before = e.slice(0, -numMatch[1].length);
+          if (before.endsWith("(−")) calc.expr = before.slice(0, -2) + numMatch[1];
+          else if (before === "−") calc.expr = numMatch[1];
+          else calc.expr = before + "(−" + numMatch[1] + ")";
+        } else if (e.endsWith("(−")) {
+          calc.expr = e.slice(0, -2);
+        } else if (last !== ")" && last !== ".") {
+          calc.expr = e + "(−";
+        }
+      }
+    }
+    function calcEquals() {
+      const r = calcEval();
+      if (!r.ok) {
+        calc.msg = r.msg;
+        return false;
+      }
+      calc.expr = calcFormat(r.value);
+      calc.msg = "";
+      return true;
+    }
+    function calcApply() {
+      const r = calcEval();
+      if (!r.ok) {
+        calc.msg = r.msg;
+        return;
+      }
+      adj[calc.field] = r.value;
+      calc.open = false;
+    }
+
     // ---------- 帳戶彈窗：[編輯] 與 [紀錄] ----------
     // [編輯] 只可調整持有數量與備註：差值 = 輸入 − 目前持有，非 0 才新增一筆差額紀錄，不修改既有紀錄
     const editForm = reactive({ units: "", note: "", excluded: false });
@@ -828,6 +982,7 @@ const TabAssets = {
     function selectSheetTab(tab) {
       sheetTab.value = tab;
       editMsg.value = "";
+      calc.open = false;
       if (tab === "edit") {
         editForm.units = holding.value;
         editForm.note = "";
@@ -935,6 +1090,14 @@ const TabAssets = {
       openAccountSheet,
       onXTypeChange,
       saveAdjust,
+      calc,
+      CALC_LABELS,
+      calcPreview,
+      openCalc,
+      closeCalc,
+      calcPress,
+      calcEquals,
+      calcApply,
       sheet,
       closeSheet,
       openNewAccount,
