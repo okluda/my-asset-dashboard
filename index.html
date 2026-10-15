@@ -621,7 +621,12 @@
                   <label class="bs-label" for="bs-adj-price">成交價格</label>
                   <input id="bs-adj-price" class="bs-input" type="number" inputmode="decimal" step="any" min="0" :placeholder="'留空則使用目前價格 $' + plain(acctPrice)" v-model="adj.price" />
                 </div>
+                <div class="bs-row">
+                  <label class="bs-label" for="bs-adj-fee">交易手續費</label>
+                  <input id="bs-adj-fee" class="bs-input" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0" v-model="adj.fee" @input="adjFeeBadInput = $event.target.validity.badInput" :aria-invalid="!!adjFeeError" aria-describedby="bs-adj-fee-hint" />
+                </div>
               </div>
+              <div id="bs-adj-fee-hint" :class="adjFeeError ? 'bs-msg' : 'set-footnote'" :role="adjFeeError ? 'alert' : undefined">{{ adjFeeError || ('手續費以 ' + acctCtx.currency + ' 計價，買入及賣出皆從交割帳戶扣除；留空視為 0。') }}</div>
 
               <div class="bs-section-title">交割帳戶</div>
               <div class="bs-group">
@@ -1641,9 +1646,9 @@
   <!-- 本地程式檔（store/db/services/app）：?v= 為快取破壞參數，比照上方 CDN 的 ?cb= 慣例。
        修改這 4 個檔案任何內容後，務必同步更新此版本號，避免瀏覽器/CDN 快取舊版程式碼，
        導致「畫面（index.html）看起來是新版、但實際執行邏輯是舊版」的不一致問題。 -->
-  <script src="js/store.js?v=2026100601"></script>
-  <script src="js/db.js?v=2026100601"></script>
-  <script src="js/services.js?v=2026100601"></script>
-  <script src="js/app.js?v=2026100601"></script>
+  <script src="js/store.js?v=2026101501"></script>
+  <script src="js/db.js?v=2026101501"></script>
+  <script src="js/services.js?v=2026101501"></script>
+  <script src="js/app.js?v=2026101501"></script>
 </body>
 </html>
