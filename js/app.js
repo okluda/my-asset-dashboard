@@ -632,10 +632,12 @@ const TabAssets = {
       xType: "流動資金",
       xAccount: "",
       price: "",
+      fee: 0,
       settleAccount: "",
       principal: "",
       interest: "",
     });
+    const adjFeeBadInput = ref(false);
     const UNNAMED = "(未命名)";
     const r6 = (n) => Math.round((Number(n) || 0) * 1e6) / 1e6;
     const dtKey = (r) => ALD.normalizeDateTime(r.date);
@@ -667,6 +669,8 @@ const TabAssets = {
       adj.xType = "流動資金";
       adj.xAccount = "";
       adj.price = "";
+      adj.fee = 0;
+      adjFeeBadInput.value = false;
       adj.settleAccount = "";
       adj.principal = "";
       adj.interest = "";
@@ -727,6 +731,17 @@ const TabAssets = {
     const xOptions = computed(() => peerOptions(adj.xType));
     const settleOptions = computed(() => peerOptions("流動資金"));
 
+    const adjFeeError = computed(() => {
+      if (acctKind.value !== "invest") return "";
+      const fee = Number(adj.fee);
+      if (adjFeeBadInput.value || !Number.isFinite(fee) || fee < 0) return "交易手續費須為非負的有效金額";
+      const [coefficient, exponent = "0"] = String(fee).toLowerCase().split("e");
+      if ((coefficient.split(".")[1] || "").length - Number(exponent) > 2) {
+        return "交易手續費最多可輸入小數 2 位";
+      }
+      if (fee > 0 && !adj.settleAccount) return "交易手續費大於 0 時，請指定交割帳戶";
+      return "";
+    });
     const adjValid = computed(() => {
       if (acctKind.value === "repay") {
         if (adj.principal === "" || adj.interest === "") return false;
@@ -735,6 +750,7 @@ const TabAssets = {
       }
       if (!(Number(adj.qty) > 0)) return false;
       if (acctKind.value === "invest" && adj.price !== "" && !(Number(adj.price) > 0)) return false;
+      if (adjFeeError.value) return false;
       return true;
     });
     const adjBtnText = computed(() => {
@@ -783,7 +799,7 @@ const TabAssets = {
         if (adj.settleAccount) {
           const sp = resolveUnitPrice("流動資金", adj.settleAccount);
           recs.push(
-            mk("流動資金", adj.settleAccount, (-adjSign.value * adjQty.value * price) / sp, sp, label + " " + acctCtx.account)
+            mk("流動資金", adj.settleAccount, (-adjSign.value * adjQty.value * price - Number(adj.fee)) / sp, sp, label + " " + acctCtx.account)
           );
         }
       } else {
@@ -887,7 +903,10 @@ const TabAssets = {
       return r.ok ? "= " + calcFormat(r.value) : "";
     });
     function openCalc(field) {
-      const v = adj[field];
+      let v = adj[field];
+      if (field === "qty" && (v === "" || v === null)) {
+        v = acctKind.value === "invest" ? holding.value : acctBalance.value;
+      }
       const n = Number(v);
       calc.field = field;
       calc.expr = v === "" || v === null || !isFinite(n) ? "" : calcFormat(n);
@@ -1085,6 +1104,8 @@ const TabAssets = {
       repayTotal,
       xOptions,
       settleOptions,
+      adjFeeBadInput,
+      adjFeeError,
       adjValid,
       adjBtnText,
       openAccountSheet,
