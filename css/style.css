@@ -2498,3 +2498,27 @@ button.set-row:disabled {
   font-size: calc(17px * var(--font-scale, 1));
   font-weight: 700;
 }
+
+/* 設定 > 錯誤記錄子分頁：每筆可點擊展開全文 */
+button.set-row.err-log-item {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 4px;
+}
+.err-log-meta {
+  color: var(--text-sub);
+  font-size: calc(12px * var(--font-scale, 1));
+}
+.err-log-msg {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(13px * var(--font-scale, 1));
+}
+.err-log-full {
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow: visible;
+}
