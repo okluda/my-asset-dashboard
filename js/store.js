@@ -35,6 +35,7 @@ const ALD = (() => {
     rebalanceRatio: 70, // 再平衡：投資目標佔比(%)，預設 70% -> 流動:投資 = 3:7
     lastTab: "overview", // 上次所在主分頁（overview/rebalance/assets/detail/settings），重新整理後用於還原
     hideAmounts: false, // 全域隱藏金額（總覽眼睛鈕切換）：true 時所有金額顯示為 ***，比例（%）照常顯示
+    showExcludedAccounts: false, // 資產頁「顯示不計入帳戶」開關：我的資產與我的負債共用，重新整理後保留
     syncLogEnabled: false, // 是否記錄「同步價格/匯率」的詳細執行資訊（含 API 請求/回應內容），預設關閉
     themeMode: "dark", // 'dark' | 'light'
     themeColor: "OatmealTaupe", // 主題配色（見 THEME_COLORS）；'custom' 時改用 customColor

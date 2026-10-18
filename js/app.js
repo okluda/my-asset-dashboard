@@ -240,7 +240,13 @@ const TabAssets = {
     const pctWhole = (v) => `${Math.round((Number(v) || 0) * 100)}%`;
     const catName = (t) => ALD.categoryDisplayName(settings, t);
 
-    const showExcludedAccounts = ref(false);
+    // 我的資產／我的負債共用同一個開關，存於 settings 以便重新整理後保留
+    const showExcludedAccounts = computed({
+      get: () => !!settings.showExcludedAccounts,
+      set: (v) => {
+        settings.showExcludedAccounts = !!v;
+      },
+    });
     const assetRecs = computed(() =>
       store.records.filter((r) => !r.excluded && ALD.ASSET_TYPES.includes(r.type))
     );
@@ -477,6 +483,22 @@ const TabAssets = {
     const totalLiabilities = computed(() =>
       ALD.round2(liabilityAccounts.value.reduce((s, a) => s + a.amount, 0))
     );
+    // 負債帳戶清單：開啟「顯示不計入帳戶」時納入不計入的紀錄；總負債與比例條仍只看 liabilityAccounts
+    const liabilityListAccounts = computed(() => {
+      if (!showExcludedAccounts.value) return liabilityAccounts.value;
+      const map = {};
+      store.records
+        .filter((r) => r.type === "負債")
+        .forEach((r) => {
+          const name = r.account || "(未命名)";
+          map[name] = ALD.round2((map[name] || 0) + (r.excluded ? 0 : ALD.amountTWD(r)));
+        });
+      return Object.keys(map).map((account) => ({
+        account,
+        amount: map[account],
+        ratio: totalLiabilities.value > 0 ? map[account] / totalLiabilities.value : 0,
+      }));
+    });
 
     // ---------- 共用 Bottom Sheet 與 [新增帳戶] ----------
     // sheet：目前開啟的彈窗（null=無，"new"=新增帳戶）；後續階段的帳戶增減/編輯/紀錄沿用同一個外框。
@@ -569,7 +591,9 @@ const TabAssets = {
       return { ...rec, amount, exposure: ALD.round2(amount * rec.leverage) };
     });
     const newValid = computed(() => {
-      if (!newAccountName.value || !(Number(newForm.units) > 0)) return false;
+      // 持有數量可為正數、負數或 0，只要求有輸入且為有限數字
+      const units = newForm.units;
+      if (!newAccountName.value || units === "" || units == null || !isFinite(Number(units))) return false;
       if (!newIsNewAccount.value) {
         return (
           configuredNewAccount.value.category === newForm.type &&
@@ -636,6 +660,8 @@ const TabAssets = {
       settleAccount: "",
       principal: "",
       interest: "",
+      fxRate: "", // 換匯：1 左側幣別 = fxRate 右側幣別（見 fxPair）
+      fxPeerAmt: "", // 換匯：對方帳戶金額（對方幣別）
     });
     const adjFeeBadInput = ref(false);
     const UNNAMED = "(未命名)";
@@ -674,6 +700,8 @@ const TabAssets = {
       adj.settleAccount = "";
       adj.principal = "";
       adj.interest = "";
+      adj.fxRate = "";
+      adj.fxPeerAmt = "";
       sheetTab.value = "adjust";
       editMsg.value = "";
       logExpanded.value = new Set();
@@ -720,16 +748,90 @@ const TabAssets = {
       return r6(holding.value + adjSign.value * adjQty.value);
     });
 
-    // 對方帳戶可選清單（D5）：設定中該資債類型的帳戶，排除自己，也排除「已有紀錄但全部是其他幣別」的帳戶
-    function peerOptions(type) {
+    // 對方帳戶可選清單（D5）：設定中該資債類型的帳戶，排除自己，也排除「已有紀錄但全部是其他幣別」的帳戶；
+    // allowFx=true（流動資金 → 流動資金的內部轉移）時開放不同幣別，改走換匯流程。
+    function peerOptions(type, allowFx) {
       return ALD.accountsForCategory(store.accounts, type).filter((name) => {
         if (type === acctCtx.type && name === acctCtx.account) return false;
+        if (allowFx) return true;
         const recs = store.records.filter((r) => r.type === type && r.account === name);
         return recs.length === 0 || recs.some((r) => (r.currency || "TWD") === acctCtx.currency);
       });
     }
-    const xOptions = computed(() => peerOptions(adj.xType));
+    const xOptions = computed(() =>
+      peerOptions(adj.xType, acctCtx.type === "流動資金" && adj.xType === "流動資金")
+    );
     const settleOptions = computed(() => peerOptions("流動資金"));
+
+    // ---------- 換匯（流動資金之間不同幣別的內部轉移） ----------
+    // 對方幣別：設定 > 存放帳戶的幣別；查無時用該帳戶最新一筆紀錄的幣別
+    const peerCurrency = computed(() => {
+      if (!adj.xAccount) return "";
+      const cfg = ALD.lookupAccount(store.accounts, adj.xType, adj.xAccount);
+      if (cfg && cfg.currency) return cfg.currency;
+      const latest = latestOf(store.records.filter((r) => r.type === adj.xType && r.account === adj.xAccount));
+      return (latest && latest.currency) || settings.baseCurrency || "TWD";
+    });
+    const isFx = computed(
+      () =>
+        acctKind.value === "cash" &&
+        adj.kind === "internal" &&
+        acctCtx.type === "流動資金" &&
+        adj.xType === "流動資金" &&
+        !!adj.xAccount &&
+        peerCurrency.value !== acctCtx.currency
+    );
+    // 匯率表示方式：一方為本位幣時「1 外幣 = x 本位幣」；皆非本位幣時「1 轉出幣別 = x 轉入幣別」
+    const fxPair = computed(() => {
+      const self = acctCtx.currency;
+      const peer = peerCurrency.value;
+      const base = settings.baseCurrency || "TWD";
+      let left;
+      if (self === base) left = peer;
+      else if (peer === base) left = self;
+      else left = adj.dir === "out" ? self : peer;
+      return { left, right: left === self ? peer : self, selfIsLeft: left === self };
+    });
+    const fxSelfValue = computed(() => adjQty.value * acctPrice.value);
+    // 匯率保留 10 位有效數字（小額匯率如 1 JPY = 0.0067… USD 若只留 6 位小數會失真）
+    const fxRound = (n) => Number((Number(n) || 0).toPrecision(10));
+    function fxDefaultRate() {
+      const l = ALD.currencyRate(settings, fxPair.value.left) || 1;
+      const r = ALD.currencyRate(settings, fxPair.value.right) || 1;
+      return fxRound(l / r);
+    }
+    function fxRecalcAmount() {
+      const rate = Number(adj.fxRate);
+      if (!(rate > 0) || !(fxSelfValue.value > 0)) {
+        adj.fxPeerAmt = "";
+        return;
+      }
+      const amt = fxPair.value.selfIsLeft ? fxSelfValue.value * rate : fxSelfValue.value / rate;
+      adj.fxPeerAmt = ALD.round2(amt);
+    }
+    function onFxRateInput() {
+      fxRecalcAmount();
+    }
+    function onFxAmtInput() {
+      const amt = Number(adj.fxPeerAmt);
+      if (!(amt > 0) || !(fxSelfValue.value > 0)) return;
+      adj.fxRate = fxRound(fxPair.value.selfIsLeft ? amt / fxSelfValue.value : fxSelfValue.value / amt);
+    }
+    // 對方帳戶或幣別組合改變時，匯率回到「設定 > 幣別」的換算值；調整數量改變時依目前匯率重算對方金額
+    watch(
+      () => (isFx.value ? fxPair.value.left + "/" + fxPair.value.right + "/" + adj.xAccount : ""),
+      (key) => {
+        if (!key) return;
+        adj.fxRate = fxDefaultRate();
+        fxRecalcAmount();
+      }
+    );
+    watch(
+      () => [adj.qty, adj.dir],
+      () => {
+        if (isFx.value) fxRecalcAmount();
+      }
+    );
 
     const adjFeeError = computed(() => {
       if (acctKind.value !== "invest") return "";
@@ -749,6 +851,7 @@ const TabAssets = {
         return isFinite(p) && isFinite(i) && p >= 0 && i >= 0 && p + i > 0;
       }
       if (!(Number(adj.qty) > 0)) return false;
+      if (isFx.value && !(Number(adj.fxRate) > 0 && Number(adj.fxPeerAmt) > 0)) return false;
       if (acctKind.value === "invest" && adj.price !== "" && !(Number(adj.price) > 0)) return false;
       if (adjFeeError.value) return false;
       return true;
@@ -767,12 +870,12 @@ const TabAssets = {
       const selfName = acctCtx.account === UNNAMED ? "" : acctCtx.account;
       // 「不計入」僅出現在流動資金類的 [增減]，本筆與對方帳戶紀錄一併套用
       const excluded = acctKind.value === "cash" && adj.excluded ? 1 : 0;
-      const mk = (type, account, units, tradePrice, note) =>
+      const mk = (type, account, units, tradePrice, note, currency) =>
         ALD.normalizeRec({
           ...ALD.emptyRecord(type),
           account,
-          currency: cur,
-          tradeFxRate: fx,
+          currency: currency || cur,
+          tradeFxRate: currency ? ALD.currencyRate(settings, currency) || 1 : fx,
           tradePrice,
           units: r6(units),
           note,
@@ -783,14 +886,23 @@ const TabAssets = {
       const kind = acctKind.value;
       if (kind === "cash") {
         const internal = adj.kind === "internal";
-        const note = adj.note.trim() || (internal ? "轉移" : adj.dir === "in" ? "存入" : "支出");
+        let note = adj.note.trim() || (internal ? "轉移" : adj.dir === "in" ? "存入" : "支出");
+        const fxMode = isFx.value;
+        // 換匯：實際匯率附在兩筆紀錄的備註；對方紀錄使用對方幣別與「設定 > 幣別」的匯率
+        if (fxMode) note += `（1 ${fxPair.value.left} = ${fxRound(adj.fxRate)} ${fxPair.value.right}）`;
         const selfPrice = acctPrice.value;
         recs.push(mk(acctCtx.type, selfName, adjSign.value * adjQty.value, selfPrice, note));
         if (internal && adj.xAccount) {
           const peerPrice = resolveUnitPrice(adj.xType, adj.xAccount);
-          recs.push(
-            mk(adj.xType, adj.xAccount, (-adjSign.value * adjQty.value * selfPrice) / peerPrice, peerPrice, note)
-          );
+          if (fxMode) {
+            recs.push(
+              mk(adj.xType, adj.xAccount, (-adjSign.value * Number(adj.fxPeerAmt)) / peerPrice, peerPrice, note, peerCurrency.value)
+            );
+          } else {
+            recs.push(
+              mk(adj.xType, adj.xAccount, (-adjSign.value * adjQty.value * selfPrice) / peerPrice, peerPrice, note)
+            );
+          }
         }
       } else if (kind === "invest") {
         const label = adj.dir === "in" ? "買入" : "賣出";
@@ -1104,6 +1216,11 @@ const TabAssets = {
       repayTotal,
       xOptions,
       settleOptions,
+      peerCurrency,
+      isFx,
+      fxPair,
+      onFxRateInput,
+      onFxAmtInput,
       adjFeeBadInput,
       adjFeeError,
       adjValid,
@@ -1146,6 +1263,7 @@ const TabAssets = {
       toggleRow4,
       groups,
       liabilityAccounts,
+      liabilityListAccounts,
       totalLiabilities,
       showExcludedAccounts,
       hidden,
@@ -1748,6 +1866,7 @@ const SETTINGS_SUBPAGE_TITLES = {
   quoteTW: "台股",
   quoteUS: "美股",
   test: "連線測試",
+  errorLog: "錯誤記錄",
 };
 
 const TabSettings = {
@@ -1802,6 +1921,46 @@ const TabSettings = {
       ALD.normalizeCurrencies(settings);
     }
 
+    // ---------- 錯誤記錄（error log，存於 localStorage，見 index.html 的 window.__errorLog） ----------
+    const errorLogs = ref([]);
+    const errorLogExpanded = ref(new Set());
+    function refreshErrorLogs() {
+      errorLogs.value = window.__errorLog ? window.__errorLog.list().slice().reverse() : [];
+    }
+    refreshErrorLogs();
+    window.addEventListener("ald-error-logged", refreshErrorLogs);
+    onUnmounted(() => window.removeEventListener("ald-error-logged", refreshErrorLogs));
+    function toggleErrorLog(id) {
+      const s = new Set(errorLogExpanded.value);
+      if (s.has(id)) s.delete(id);
+      else s.add(id);
+      errorLogExpanded.value = s;
+    }
+    const errorLogFirstLine = (msg) => String(msg || "").split("\n")[0];
+    function exportErrorLogs() {
+      try {
+        const logs = window.__errorLog ? window.__errorLog.list() : [];
+        const blob = new Blob([JSON.stringify(logs, null, 2)], { type: "application/json;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `錯誤記錄_${ALD.todayStr()}_${ALD.timeStr()}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        reportError("匯出錯誤記錄失敗：", e);
+      }
+    }
+    function clearErrorLogs() {
+      if (errorLogs.value.length === 0) return;
+      if (!confirm("確定要清除所有錯誤記錄嗎？此動作無法復原。")) return;
+      if (window.__errorLog) window.__errorLog.clear();
+      errorLogExpanded.value = new Set();
+      refreshErrorLogs();
+    }
+
     // 記錄一筆同步執行資訊（僅在 settings.syncLogEnabled 開啟時才寫入，避免預設就累積資料；
     // 但 logKind === 'connectionTest' 時一律寫入，因為那是使用者於「連線測試中心」明確觸發的
     // 診斷動作，需要保留結果供排查，不受一般同步記錄開關影響）。
@@ -1809,6 +1968,14 @@ const TabSettings = {
     // logKind：'sync'（預設，正式同步） | 'connectionTest'（連線測試中心）。
     function recordSyncLog(syncType, target, success, errorMessage, requestUrl, responseText, logKind) {
       const kind = logKind || "sync";
+      // 正式同步的個別項目失敗一律寫入 error log（不受 Log 紀錄開關影響）
+      if (!success && kind === "sync" && window.__errorLog) {
+        window.__errorLog.add(
+          "sync",
+          "同步失敗（" + syncType + "：" + (target || "") + "）：" + String(errorMessage || "未知錯誤") +
+            (requestUrl ? "\nRequest URL：" + requestUrl : "")
+        );
+      }
       if (!settings.syncLogEnabled && kind !== "connectionTest") return;
       ALD.appendSyncLog(syncLogs, {
         id: ALD.uid(),
@@ -2228,6 +2395,12 @@ const TabSettings = {
       currencyOptions,
       syncLogs,
       syncLogMax: ALD.SYNC_LOG_MAX,
+      errorLogs,
+      errorLogExpanded,
+      toggleErrorLog,
+      errorLogFirstLine,
+      exportErrorLogs,
+      clearErrorLogs,
       settingsSubPage,
       openSubPage,
       openDetail,
@@ -2459,7 +2632,7 @@ app.config.errorHandler = (err, instance, info) => {
   console.error("Vue error:", err, info);
   if (window.__showAppError) {
     const detail = err && err.stack ? err.stack : err && err.message ? err.message : String(err);
-    window.__showAppError("Vue 元件錯誤（" + info + "）：\n" + detail);
+    window.__showAppError("Vue 元件錯誤（" + info + "）：\n" + detail, "vue");
   }
 };
 
