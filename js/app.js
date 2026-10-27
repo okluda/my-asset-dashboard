@@ -6,13 +6,13 @@
  * store.js 僅保留 schema 定義、CSV 匯入匯出與計算工具函式，不再負責任何資料持久化。
  */
 
-// 內部網路可能無法連到 unpkg.com，導致 Vue CDN 載入失敗。
-// 此時整個 App 無法運作（按鈕全部失效），先給出明確提示而非讓程式拋出難懂錯誤。
+// vendor/vue.global.prod.js 未載入（部署漏檔或首次開啟時離線）時，整個 App 無法運作（按鈕全部失效），
+// 先給出明確提示而非讓程式拋出難懂錯誤。
 if (typeof Vue === "undefined") {
   var __msg =
-    "無法載入 Vue 函式庫（CDN：unpkg.com）。\n" +
-    "常見原因：內部網路無法連外。\n" +
-    "解法：改用可連外的網路開啟，或將 vue.global.prod.js 與 papaparse.min.js 下載到本機（例如 libs/ 目錄）後，改為本地路徑引用。";
+    "無法載入 Vue 函式庫（vendor/vue.global.prod.js）。\n" +
+    "常見原因：部署時漏傳 vendor/ 目錄，或首次開啟時網路中斷、離線快取尚未建立。\n" +
+    "解法：確認 vendor/ 檔案已部署，於可連線的網路下重新整理頁面。";
   if (window.__showAppError) window.__showAppError(__msg);
   throw new Error(__msg);
 }
@@ -1937,6 +1937,62 @@ const TabSettings = {
       errorLogExpanded.value = s;
     }
     const errorLogFirstLine = (msg) => String(msg || "").split("\n")[0];
+
+    // ---------- App 安裝 / 更新（狀態來源為 js/pwa.js 提供的 window.__pwa） ----------
+    const pwa = reactive(
+      Object.assign(
+        {
+          supported: false,
+          isIOS: false,
+          isStandalone: false,
+          canInstall: false,
+          installed: false,
+          updateAvailable: false,
+          version: "",
+          persisted: null,
+          swError: "",
+        },
+        window.__pwa ? window.__pwa.state : {}
+      )
+    );
+    function onPwaChange(e) {
+      Object.assign(pwa, e.detail);
+    }
+    window.addEventListener("pwa:change", onPwaChange);
+    onUnmounted(() => window.removeEventListener("pwa:change", onPwaChange));
+
+    const pwaStatusText = computed(() => {
+      if (pwa.isStandalone) return "已安裝（App 模式）";
+      if (pwa.installed) return "已安裝";
+      return "瀏覽器模式";
+    });
+    const pwaOfflineText = computed(() => {
+      if (!pwa.supported) return "此瀏覽器不支援";
+      if (pwa.swError) return "未啟用";
+      return pwa.version ? "已啟用" : "準備中…";
+    });
+    const checkingUpdate = ref(false);
+    const updateCheckMsg = ref("");
+
+    async function installApp() {
+      if (!window.__pwa) return;
+      const outcome = await window.__pwa.promptInstall();
+      if (outcome === "unavailable") {
+        alert("目前無法直接安裝，請從瀏覽器選單選擇「安裝應用程式」或「加到主畫面」。");
+      }
+    }
+    async function checkAppUpdate() {
+      if (!window.__pwa) return;
+      checkingUpdate.value = true;
+      try {
+        updateCheckMsg.value = await window.__pwa.checkForUpdate();
+      } finally {
+        checkingUpdate.value = false;
+      }
+    }
+    function applyAppUpdate() {
+      if (window.__pwa) window.__pwa.applyUpdate();
+    }
     function exportErrorLogs() {
       try {
         const logs = window.__errorLog ? window.__errorLog.list() : [];
@@ -2399,6 +2455,14 @@ const TabSettings = {
       errorLogExpanded,
       toggleErrorLog,
       errorLogFirstLine,
+      pwa,
+      pwaStatusText,
+      pwaOfflineText,
+      checkingUpdate,
+      updateCheckMsg,
+      installApp,
+      checkAppUpdate,
+      applyAppUpdate,
       exportErrorLogs,
       clearErrorLogs,
       settingsSubPage,

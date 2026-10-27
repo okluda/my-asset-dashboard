@@ -1,24 +1,28 @@
-# 資產負債看板（Asset & Liability Dashboard）
+# WalletEgg（資產負債看板）
 
-個人資產負債總覽網頁 App，專為手機（iPhone Safari）瀏覽設計，資料完全儲存於瀏覽器本地（IndexedDB），不上傳至任何伺服器。
+個人資產負債總覽網頁 App（PWA，可安裝到主畫面並離線使用），專為手機（iPhone Safari）瀏覽設計，資料完全儲存於瀏覽器本地（IndexedDB），不上傳至任何伺服器。
 
 ## 技術架構
 
 - 純 HTML + CSS + JavaScript，**不需 npm / build 工具**
-- [Vue 3](https://vuejs.org/)（CDN 全域版本，`vue.global.prod.js`）
-- [PapaParse](https://www.papaparse.com/)（CDN，處理 CSV 匯入/匯出）
-- 資料儲存：瀏覽器 IndexedDB（資料庫名稱 `my_asset_dashboard`，見 `js/db.js`）
+- [Vue 3](https://vuejs.org/) **3.5.44**（全域版本，存放於 `vendor/vue.global.prod.js`）
+- [PapaParse](https://www.papaparse.com/) **5.7.0**（存放於 `vendor/papaparse.min.js`，處理 CSV 匯入/匯出）
+- PWA：`manifest.webmanifest`、`sw.js`（Service Worker 離線快取）、`js/pwa.js`（註冊、新版提示、安裝）、`icons/`（荷包蛋圖示）
+- 資料儲存：瀏覽器 IndexedDB（資料庫名稱 `my_asset_dashboard`，見 `js/db.js`；改名為 WalletEgg 後**刻意不更改**，避免既有資料讀不到）
 - 部署：GitHub Pages（純靜態檔案）
 
 選擇免 build 方案的原因：避免本機/公司網路環境的憑證與套件安裝限制，同時降低維護成本（無需 `npm install`、無版本相依問題）。
+第三方函式庫改為鎖定版本並放在 `vendor/`，以支援完全離線；升級時請下載新版檔案替換，並同步更新本節版本號與 `index.html` 中 vendor 的 `?v=`。
 
-> **修改 `js/*.js` 後必讀**：`index.html` 以 `<script src="js/xxx.js?v=版本號">` 引入本地程式檔，
-> 每次修改 `js/store.js`、`js/db.js`、`js/services.js`、`js/app.js` 任何內容後，
-> **務必同步更新這 4 個 `<script>` 標籤的 `?v=` 版本號**（比照 CDN 的 `?cb=` 慣例），
-> 否則瀏覽器（尤其手機 Safari）或 GitHub Pages 邊緣 CDN 可能沿用舊版快取，
-> 導致「畫面（HTML）已更新、但實際執行邏輯仍是舊版」的不一致現象（例如設定頁選項已改變，
-> 但實際查詢行為看起來像沒套用新設定）。若懷疑遇到此情形，可請使用者先強制重新整理
-> （iOS Safari：長按重新整理鈕選「重新載入無快取內容的網頁」）排除快取因素再回報問題。
+> **發版必讀（修改任何 app shell 檔案後）**：`index.html` 以 `<script src="js/xxx.js?v=版本號">` 引入本地程式檔，
+> 每次修改 `js/pwa.js`、`js/store.js`、`js/db.js`、`js/services.js`、`js/app.js`、`css/style.css` 任何內容後，
+> **務必同步更新這些 `<script>` / `<link>` 標籤的 `?v=` 版本號，並同時更新 `sw.js` 的 `APP_VERSION`**。
+> 只有 `sw.js` 內容變動，已安裝的使用者才會收到新版（畫面會出現「有新版本，點此更新」提示條）；
+> 若忘了更新 `APP_VERSION`，Service Worker 會一直提供舊版快取。另外，新增或刪除 app shell 檔案時，也要同步調整 `sw.js` 的 `SHELL_FILES` 清單。
+> `?v=` 仍是必要的：它讓 GitHub Pages 邊緣 CDN 或尚未啟用 Service Worker 的瀏覽器也不會沿用舊版快取，
+> 避免「畫面（HTML）已更新、但實際執行邏輯仍是舊版」的不一致現象（例如設定頁選項已改變，
+> 但實際查詢行為看起來像沒套用新設定）。若懷疑遇到此情形，可請使用者先到「設定 > App > 檢查更新」，
+> 或強制重新整理（iOS Safari：長按重新整理鈕選「重新載入無快取內容的網頁」），排除快取因素後再回報問題。
 
 ## 本地開發/預覽
 
@@ -119,6 +123,21 @@ python -m http.server 8765
 2. 將本目錄內容 push 到該 repo 的 `main` 分支
 3. Repo → Settings → Pages → Source 選擇 `main` branch / `root`
 4. 幾分鐘後即可透過 `https://<username>.github.io/<repo>/` 存取
+5. `manifest.webmanifest`、`sw.js` 都使用相對路徑（`./`），可直接部署在子路徑，不需修改；`sw.js` 必須放在網站根目錄（與 `index.html` 同層），Service Worker 才能涵蓋整個 App
+
+## PWA：安裝與離線
+
+- **安裝**
+  - Android / 桌機 Chrome、Edge：到「設定 > App」按「安裝 WalletEgg 到裝置」，或從瀏覽器選單選「安裝應用程式」。
+  - iPhone / iPad：以 Safari（或 iOS 16.4 以上的 Chrome / Edge）開啟 → 「分享」→「加入主畫面」。
+- **離線**：首次連網開啟後，`sw.js` 會預先快取 app shell（HTML / CSS / JS / vendor / 圖示），之後離線也能開啟並讀寫 IndexedDB 資料。
+  匯率、股價等**跨網域 API 請求不經過 Service Worker 快取**，一律即時連網，因此離線時「同步匯率 / 同步價格」會失敗，這是預期行為。
+- **更新**：偵測到新版時，畫面底部會出現「有新版本，點此更新」提示條，點擊後重新載入一次即套用新版。
+  App 回到前景時會自動檢查（間隔至少 60 秒），也可以到「設定 > App > 檢查更新」手動檢查。
+- **持久儲存**：啟動時會呼叫 `navigator.storage.persist()`，降低瀏覽器在空間不足時清除資料的機率，但這不能取代定期匯出 CSV 備份。
+- **圖示**：母版為 `icons/icon.svg`（主體在 maskable 安全區內）；PNG 由此 SVG 輸出（192 / 512 / apple-touch 180 / favicon 32），修改圖示後需重新輸出 PNG。
+- **本機測試**：Service Worker 只能在 HTTPS 或 `localhost` 下運作，請用 `python -m http.server` 預覽。開發時若想避免被快取干擾，
+  可在 Chrome DevTools > Application > Service Workers 勾選「Update on reload」。
 
 ## 資料備份與風險提醒
 
@@ -158,5 +177,7 @@ python -m http.server 8765
 ## iPhone 使用注意事項
 
 - 已加入 `viewport-fit=cover` 與 `env(safe-area-inset-*)` 處理瀏海/底部安全區域
-- 已加入 `apple-mobile-web-app-capable` meta，可「加入主畫面」以類似 App 的全螢幕方式開啟
+- 已加入 `apple-mobile-web-app-capable` meta、`apple-touch-icon` 與 `apple-mobile-web-app-title`（WalletEgg），可「加入主畫面」以全螢幕 App 方式開啟
+- **主畫面 App 與 Safari 分頁的資料互不共用**（各自獨立的 IndexedDB）：從 Safari 改用主畫面 App 前，請先在 Safari 匯出「備份CSV」與「資債類型帳戶CSV」，
+  再於 App 內還原；系統設定不在 CSV 內（見上方清單），需手動重新設定
 - Vue 3 需要 `Proxy` 支援，iOS Safari 10.3+ 皆相容，不需額外處理

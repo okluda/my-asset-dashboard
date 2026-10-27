@@ -1545,6 +1545,58 @@ button.set-row:disabled {
   margin-top: 4px;
 }
 
+/* ---------- PWA 新版本提示條（由 js/pwa.js 動態建立）：浮在底部分頁列與明細捲動鈕上方 ---------- */
+#pwa-update-bar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(138px + var(--safe-bottom));
+  transform: translateX(-50%) translateZ(0);
+  width: max-content;
+  max-width: calc(100% - 32px);
+  display: flex;
+  align-items: center;
+  background: var(--text-main);
+  color: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  z-index: 30;
+  font-family: var(--font-family);
+  font-size: calc(14px * var(--font-scale, 1));
+  animation: pwa-bar-in 0.25s ease-out;
+}
+
+#pwa-update-bar button {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+#pwa-update-bar .pwa-update-main {
+  padding: 10px 6px 10px 18px;
+  font-weight: 600;
+}
+
+#pwa-update-bar .pwa-update-close {
+  padding: 10px 16px 10px 10px;
+  font-size: calc(18px * var(--font-scale, 1));
+  line-height: 1;
+  opacity: 0.85;
+}
+
+@keyframes pwa-bar-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
 /* 子分頁標題列：左上角圓形返回鈕 + 子分頁名稱 */
 .page-header.has-back {
   display: flex;
