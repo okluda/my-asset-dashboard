@@ -1,0 +1,28 @@
+HTTP/1.1 200 OK
+Date: Tue, 27 Oct 2026 06:08:27 GMT
+Content-Type: text/javascript; charset=utf-8
+fly-request-id: 01M4T3M81Y3Q50A7T6Z9N9K0T9-sin
+alt-svc: h3=":443"; ma=86400
+CF-Ray: a50f86b8b8aea9bc-TPE
+CF-Cache-Status: HIT
+Accept-Ranges: bytes
+Access-Control-Allow-Origin: *
+Age: 731564
+Cache-Control: public, max-age=31536000
+Expires: Wed, 27 Oct 2027 06:08:27 GMT
+Last-Modified: Tue, 13 Oct 2026 07:49:07 GMT
+Server: cloudflare
+Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+Vary: accept-encoding
+Via: 1.1 fly.io, 1.1 TWLPWSG
+Access-Control-Allow-Headers: *
+Access-Control-Allow-Methods: GET, HEAD, OPTIONS
+Access-Control-Expose-Headers: *
+Cross-Origin-Resource-Policy: cross-origin
+X-Content-Type-Options: nosniff
+X-Robots-Tag: noindex
+content-digest: sha256=:4KKghmqN6Ih1QuJPPCGKrT2Qe4jzCWYGh5K6mSKW3J8=:
+X-Menlo-Trace: gAE1-5223c90b6e6c2129-2
+X-Menlo-Disposition: policy:allowed
+Connection: close
+

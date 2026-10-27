@@ -483,7 +483,7 @@ const ALD = (() => {
 
   function exportCSV(records, settings) {
     if (typeof Papa === "undefined") {
-      throw new Error("PapaParse 函式庫未載入（CDN 連線失敗），無法匯出 CSV。");
+      throw new Error("PapaParse 函式庫未載入（vendor/papaparse.min.js 載入失敗），無法匯出 CSV。");
     }
     const rows = records.map((r) => {
       const o = {};
@@ -537,7 +537,7 @@ const ALD = (() => {
   function parseCSV(file, settings, accounts) {
     return new Promise((resolve, reject) => {
       if (typeof Papa === "undefined") {
-        reject(new Error("PapaParse 函式庫未載入（CDN 連線失敗），無法匯入 CSV。"));
+        reject(new Error("PapaParse 函式庫未載入（vendor/papaparse.min.js 載入失敗），無法匯入 CSV。"));
         return;
       }
       const typeNameToKey = buildTypeNameToKey(settings);
@@ -630,7 +630,7 @@ const ALD = (() => {
 
   function exportAccountsCSV(accounts, settings) {
     if (typeof Papa === "undefined") {
-      throw new Error("PapaParse 函式庫未載入（CDN 連線失敗），無法匯出 CSV。");
+      throw new Error("PapaParse 函式庫未載入（vendor/papaparse.min.js 載入失敗），無法匯出 CSV。");
     }
     const rows = (accounts || []).map((a) => ({
       資債類型: categoryDisplayName(settings, a.category),
@@ -656,7 +656,7 @@ const ALD = (() => {
   function parseAccountsCSV(file, settings) {
     return new Promise((resolve, reject) => {
       if (typeof Papa === "undefined") {
-        reject(new Error("PapaParse 函式庫未載入（CDN 連線失敗），無法匯入 CSV。"));
+        reject(new Error("PapaParse 函式庫未載入（vendor/papaparse.min.js 載入失敗），無法匯入 CSV。"));
         return;
       }
       const typeNameToKey = buildTypeNameToKey(settings);

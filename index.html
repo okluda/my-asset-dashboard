@@ -8,8 +8,15 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="theme-color" content="#1c1c2e" />
-  <title>fishbubble</title>
-  <link rel="stylesheet" href="css/style.css?v=2026101901" />
+  <meta name="apple-mobile-web-app-title" content="WalletEgg" />
+  <meta name="application-name" content="WalletEgg" />
+  <title>WalletEgg</title>
+  <!-- PWA：manifest 與圖示（相對路徑，相容 GitHub Pages 子路徑部署） -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <link rel="stylesheet" href="css/style.css?v=2026102701" />
 </head>
 <body>
   <!-- 錯誤顯示橫幅：手機上沒有開發者工具可看 console，發生例外時直接顯示在畫面上。
@@ -204,12 +211,12 @@
         showError(detail, "error");
       });
 
-      // CDN 資源本身載入失敗（例如完全連不上 unpkg.com）——比 window.onerror 更早、更明確
+      // 本地 vendor 函式庫（vendor/*.js）載入失敗——比 window.onerror 更早、更明確
       window.__cdnLoadError = function (name) {
         showError(
-          "CDN 資源載入失敗：" + name + "\n" +
-          "常見原因：目前網路無法連到 unpkg.com（例如內部網路限制對外連線）。\n" +
-          "解法：改用可連外的網路開啟，或將 " + name + " 下載到本機後改用本地路徑引用。",
+          "函式庫載入失敗：" + name + "\n" +
+          "常見原因：部署時漏傳 vendor/ 目錄的檔案，或首次開啟時網路中斷、離線快取尚未建立。\n" +
+          "解法：確認 vendor/ 檔案已部署，於可連線的網路下重新整理頁面。",
           "cdn"
         );
       };
@@ -1408,6 +1415,41 @@
       </div>
       <div class="set-footnote">所有資料僅儲存在目前瀏覽器的 IndexedDB，清除瀏覽器資料或更換裝置/瀏覽器將會遺失，請定期使用「匯出備份CSV」備份。「從備份CSV還原」與「載入模擬資料」皆為「附加」至現有資料，重複匯入會產生重複資料；若要用備份 CSV 還原改版前資料，建議先按「清除所有資料」清空後再匯入。「從資債類型帳戶CSV還原」則是「取代」現有資債類型帳戶設定（匯入前會另外跳出確認）。iOS Safari 中「設定 > Safari > 清除瀏覽記錄與網站資料」或「清除 Cookie」也會一併清除本 App 的資料，請務必先備份再操作。</div>
       <div class="set-footnote">Web Inspector 疑難排解：若畫面出現「Script error.」等看不到細節的錯誤，可用 Mac 連接 iPhone，於 iPhone「設定 > Safari > 進階」開啟「網頁檢閱器」，再於 Mac Safari「開發」選單中開啟本頁面即可看到完整錯誤堆疊。</div>
+
+      <div class="set-section-title">App</div>
+      <div class="set-group">
+        <div class="set-row">
+          <span class="set-row-label">安裝狀態</span>
+          <span class="set-row-value">{{ pwaStatusText }}</span>
+        </div>
+        <button v-if="pwa.canInstall && !pwa.isStandalone" type="button" class="set-row set-row-action" @click="installApp">
+          <span class="set-row-label">安裝 WalletEgg 到裝置</span>
+        </button>
+        <div class="set-row">
+          <span class="set-row-label">離線使用</span>
+          <span class="set-row-value">{{ pwaOfflineText }}</span>
+        </div>
+        <button v-if="pwa.updateAvailable" type="button" class="set-row set-row-action" @click="applyAppUpdate">
+          <span class="set-row-label">立即更新到新版本</span>
+        </button>
+        <button type="button" class="set-row" @click="checkAppUpdate" :disabled="checkingUpdate || !pwa.supported">
+          <span class="set-row-label">檢查更新</span>
+          <span class="set-row-value">{{ checkingUpdate ? "檢查中…" : updateCheckMsg }}</span>
+        </button>
+        <div class="set-row">
+          <span class="set-row-label">版本</span>
+          <span class="set-row-value">{{ pwa.version || "—" }}</span>
+        </div>
+      </div>
+      <div v-if="pwa.isIOS && !pwa.isStandalone" class="set-footnote">
+        iPhone / iPad 安裝方式：以 Safari（或 iOS 16.4 以上的 Chrome / Edge）開啟本頁 → 點「分享」按鈕 → 選「加入主畫面」→「新增」。之後從主畫面圖示開啟即為全螢幕 App，可離線使用。
+      </div>
+      <div v-else-if="!pwa.isStandalone && !pwa.canInstall" class="set-footnote">
+        若上方沒有出現安裝按鈕，可從瀏覽器選單選擇「安裝應用程式」或「加到主畫面」。
+      </div>
+      <div class="set-footnote">
+        資料提醒：iOS 主畫面 App 與 Safari 分頁的資料<b>互不共用</b>。改用主畫面 App 前，請先在原本的 Safari 頁面「匯出備份CSV」與「匯出資債類型帳戶CSV」，再於 App 內還原；系統設定（外觀、幣別、報價來源等）不在 CSV 內，需手動重新設定。
+      </div>
       </template>
 
       <!-- ===== 外觀子分頁 ===== -->
@@ -1799,18 +1841,20 @@
     </div>
   </script>
 
-  <!-- Vue 3 全域版本（CDN，不需 npm/build）。crossorigin 讓跨來源腳本的錯誤細節能被 window.onerror 取得。
-       ?cb= 為快取破壞參數：避免瀏覽器沿用「加上 crossorigin 之前」快取的舊版回應（會導致錯誤細節持續被隱藏）。 -->
-  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js?cb=20260818" crossorigin="anonymous" onerror="window.__cdnLoadError && window.__cdnLoadError('Vue')"></script>
-  <!-- PapaParse：處理 CSV 匯入/匯出 -->
-  <script src="https://unpkg.com/papaparse@5/papaparse.min.js?cb=20260818" crossorigin="anonymous" onerror="window.__cdnLoadError && window.__cdnLoadError('PapaParse')"></script>
+  <!-- PWA（Service Worker 註冊、新版提示、安裝）：不依賴 Vue，放在最前面，App 掛載失敗時仍可收到新版提示 -->
+  <script src="js/pwa.js?v=2026102701"></script>
 
-  <!-- 本地程式檔（store/db/services/app）：?v= 為快取破壞參數，比照上方 CDN 的 ?cb= 慣例。
-       修改這 4 個檔案任何內容後，務必同步更新此版本號，避免瀏覽器/CDN 快取舊版程式碼，
+  <!-- Vue 3 全域版本（鎖定 3.5.44，存放於 vendor/ 以支援離線）、PapaParse 5.7.0（處理 CSV 匯入/匯出）。
+       升級版本時請替換 vendor/ 檔案並同步更新 README 與 ?v=。 -->
+  <script src="vendor/vue.global.prod.js?v=3.5.44" onerror="window.__cdnLoadError && window.__cdnLoadError('Vue')"></script>
+  <script src="vendor/papaparse.min.js?v=5.7.0" onerror="window.__cdnLoadError && window.__cdnLoadError('PapaParse')"></script>
+
+  <!-- 本地程式檔（pwa/store/db/services/app）：?v= 為快取破壞參數。
+       修改這些檔案任何內容後，務必同步更新此版本號以及 sw.js 的 APP_VERSION，避免瀏覽器/CDN/Service Worker 快取舊版程式碼，
        導致「畫面（index.html）看起來是新版、但實際執行邏輯是舊版」的不一致問題。 -->
-  <script src="js/store.js?v=2026101902"></script>
-  <script src="js/db.js?v=2026101902"></script>
-  <script src="js/services.js?v=2026101902"></script>
-  <script src="js/app.js?v=2026101902"></script>
+  <script src="js/store.js?v=2026102701"></script>
+  <script src="js/db.js?v=2026102701"></script>
+  <script src="js/services.js?v=2026102701"></script>
+  <script src="js/app.js?v=2026102701"></script>
 </body>
 </html>

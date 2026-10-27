@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- WalletEgg 圖示母版：深色底 + 荷包蛋（蛋黃做成金幣質感）；主體在中心 80% 安全區內，可直接作為 maskable 圖示 -->
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="75%">
+      <stop offset="0" stop-color="#2c2c48"/>
+      <stop offset="1" stop-color="#1c1c2e"/>
+    </radialGradient>
+    <radialGradient id="white" cx="42%" cy="38%" r="70%">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e9e6f2"/>
+    </radialGradient>
+    <radialGradient id="yolk" cx="38%" cy="34%" r="72%">
+      <stop offset="0" stop-color="#ffe680"/>
+      <stop offset="0.55" stop-color="#ffc21a"/>
+      <stop offset="1" stop-color="#f29a00"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#bg)"/>
+
+  <g transform="translate(256 256) scale(0.9) translate(-256 -256)">
+    <!-- 蛋白陰影 -->
+    <path transform="translate(6 12)" fill="#000" opacity="0.28"
+          d="M256 86C352 80 430 140 428 228C426 300 450 352 392 404C336 452 250 440 186 424C112 404 78 342 86 268C94 190 150 92 256 86Z"/>
+    <!-- 蛋白 -->
+    <path fill="url(#white)"
+          d="M256 86C352 80 430 140 428 228C426 300 450 352 392 404C336 452 250 440 186 424C112 404 78 342 86 268C94 190 150 92 256 86Z"/>
+  </g>
+
+  <!-- 蛋黃（金幣） -->
+  <circle cx="250" cy="250" r="86" fill="#d98200" opacity="0.35" transform="translate(4 8)"/>
+  <circle cx="250" cy="250" r="86" fill="url(#yolk)"/>
+  <circle cx="250" cy="250" r="66" fill="none" stroke="#e08a00" stroke-width="6" opacity="0.55"/>
+  <!-- 金幣上的 $ 符號（以路徑繪製，不依賴字型） -->
+  <path fill="none" stroke="#c97400" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"
+        d="M276 222C268 212 258 208 248 208C232 208 222 217 222 229C222 255 278 245 278 272C278 285 266 294 250 294C238 294 226 289 220 279"/>
+  <path fill="none" stroke="#c97400" stroke-width="12" stroke-linecap="round" opacity="0.8" d="M250 194V308"/>
+  <!-- 高光 -->
+  <ellipse cx="222" cy="214" rx="22" ry="13" fill="#fff" opacity="0.55" transform="rotate(-35 222 214)"/>
+</svg>
