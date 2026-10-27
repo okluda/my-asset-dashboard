@@ -2206,39 +2206,55 @@ const TabSettings = {
       }
     }
 
-    // 匯出存放帳戶設定為 CSV
-    function exportAccountsCsv() {
+    // 匯出設定備份（JSON）：存放帳戶、資產類型名稱、股價資料來源（不含 Finnhub API Key）
+    function exportConfigBackup() {
       try {
-        ALD.exportAccountsCSV(store.accounts, store.settings);
+        ALD.exportConfigBackup(store.accounts, store.settings);
       } catch (e) {
-        reportError("匯出帳戶設定失敗：", e);
+        reportError("匯出設定備份失敗：", e);
       }
     }
 
-    // 匯入存放帳戶設定 CSV（取代現有設定）
-    async function importAccountsCsv(evt) {
+    // 從設定備份還原：檔案中有的區塊才覆蓋；整份驗證通過才寫入，任一欄位不合法則不做任何修改。
+    async function importConfigBackup(evt) {
       const file = evt.target.files[0];
       if (!file) return;
       try {
-        const imported = await ALD.parseAccountsCSV(file, store.settings);
+        const backup = await ALD.parseConfigBackup(file, store.settings);
+        const parts = [];
+        if (backup.accounts) parts.push("存放帳戶 " + backup.accounts.length + " 筆");
+        if (backup.categoryNames) parts.push("資產類型名稱");
+        if (backup.stockSource) parts.push("報價來源");
+        if (parts.length === 0) {
+          alert("設定備份中沒有可還原的內容。");
+          return;
+        }
         if (
+          backup.accounts &&
           store.accounts.length > 0 &&
-          !confirm("匯入將「取代」現有的存放帳戶設定，確定要繼續嗎？")
+          !confirm("還原將「取代」現有的存放帳戶設定，並覆蓋檔案中包含的資產類型名稱與報價來源設定，確定要繼續嗎？")
         ) {
           return;
         }
-        const skipped = imported.__skipped || 0;
-        store.accounts.splice(0, store.accounts.length, ...imported);
-        // 明確等待 IndexedDB 保存完成後才顯示「匯入成功」，避免寫入失敗卻誤報成功；
-        // watch 之後仍會 debounce 回寫同一份資料，屬冪等操作，不影響正確性。
-        await ALD_DB.replaceAccounts(JSON.parse(JSON.stringify(store.accounts)));
+        // 就地修改 settings，不替換物件參考，避免元件失去響應
+        if (backup.categoryNames) Object.assign(store.settings.categoryNames, backup.categoryNames);
+        if (backup.stockSource) Object.assign(store.settings, backup.stockSource);
+        if (backup.accounts) store.accounts.splice(0, store.accounts.length, ...backup.accounts);
+        // 明確等待 IndexedDB 保存完成後才顯示成功；watch 之後的 debounce 回寫為冪等操作。
+        if (backup.categoryNames || backup.stockSource) {
+          await ALD_DB.saveSettings(JSON.parse(JSON.stringify(store.settings)));
+        }
+        if (backup.accounts) {
+          await ALD_DB.replaceAccounts(JSON.parse(JSON.stringify(store.accounts)));
+        }
+        const needKey = store.settings.stockProviderUS === "finnhub" && !store.settings.finnhubApiKey;
         alert(
-          "已匯入 " + imported.length + " 筆存放帳戶設定" +
-            (skipped > 0 ? "\n（略過 " + skipped + " 筆：空白或不符值域）" : "")
+          "已還原：" + parts.join("、") +
+            (needKey ? "\n（設定備份不含 Finnhub API Key，請至「報價來源 > 美股」重新輸入）" : "")
         );
       } catch (e) {
-        reportError("帳戶設定匯入失敗：", e);
-        alert("帳戶設定匯入失敗：" + (e && e.message ? e.message : e));
+        reportError("設定備份還原失敗：", e);
+        alert("設定備份還原失敗：" + (e && e.message ? e.message : e));
       } finally {
         evt.target.value = "";
       }
@@ -2487,8 +2503,8 @@ const TabSettings = {
       rememberAccountCurrency,
       onAccountNameChange,
       onAccountCurrencyChange,
-      exportAccountsCsv,
-      importAccountsCsv,
+      exportConfigBackup,
+      importConfigBackup,
       syncPrices,
       testingTW,
       testingUS,
