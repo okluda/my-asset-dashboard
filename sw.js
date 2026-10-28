@@ -6,7 +6,7 @@
  * 瀏覽器只有在 sw.js 內容有變動時才會安裝新版 SW，否則已安裝的使用者會一直停在舊版。
  * 新增或刪除 app shell 檔案時，也要同步調整 SHELL_FILES。
  */
-const APP_VERSION = "2026102702";
+const APP_VERSION = "2026102801";
 const CACHE_PREFIX = "walletegg-shell-";
 const CACHE_NAME = CACHE_PREFIX + APP_VERSION;
 
@@ -18,11 +18,11 @@ const SHELL_FILES = [
   "css/style.css",
   "js/store.js",
   "js/db.js",
+  "js/lock.js",
   "js/services.js",
   "js/app.js",
   "js/pwa.js",
   "vendor/vue.global.prod.js",
-  "vendor/papaparse.min.js",
   "icons/icon.svg",
   "icons/icon-192.png",
   "icons/icon-512.png",

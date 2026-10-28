@@ -2574,3 +2574,103 @@ button.set-row.err-log-item {
   word-break: break-all;
   overflow: visible;
 }
+
+/* ---------- 啟動驗證：鎖定畫面（由 js/lock.js 動態建立，覆蓋整個 App，含底部分頁列） ---------- */
+html.app-locked,
+html.app-locked body {
+  overflow: hidden;
+}
+.app-lock {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(24px + var(--safe-top)) 24px calc(24px + var(--safe-bottom));
+  background: var(--bg);
+  color: var(--text-main);
+  font-family: var(--font-family);
+}
+.app-lock-box {
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  text-align: center;
+}
+.app-lock-icon {
+  font-size: 40px;
+  line-height: 1;
+}
+.app-lock-title {
+  font-size: calc(18px * var(--font-scale, 1));
+  font-weight: 600;
+}
+.app-lock-msg {
+  min-height: 1.5em;
+  color: var(--text-sub);
+  font-size: calc(13px * var(--font-scale, 1));
+}
+.app-lock-msg-error {
+  color: var(--danger);
+}
+.app-lock-or {
+  color: var(--text-sub);
+  font-size: calc(12px * var(--font-scale, 1));
+}
+.app-lock-form {
+  display: flex;
+  gap: 8px;
+}
+.app-lock-input,
+.lock-pin-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--card-bg-2);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 16px; /* 16px 以上避免 iOS 聚焦時自動放大頁面 */
+}
+/* 只在已輸入時加大字距（遮罩圓點較易辨識），不影響 placeholder 文字 */
+.app-lock-input:not(:placeholder-shown),
+.lock-pin-input:not(:placeholder-shown) {
+  letter-spacing: 0.3em;
+}
+.app-lock-btn,
+.lock-form-btn {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  background: var(--card-bg-2);
+  color: var(--text-main);
+  font-size: calc(15px * var(--font-scale, 1));
+  cursor: pointer;
+}
+.app-lock-btn-primary,
+.lock-form-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.app-lock-btn:disabled,
+.lock-form-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.app-lock-link {
+  margin-top: 12px;
+  border: none;
+  background: transparent;
+  color: var(--danger);
+  font-size: calc(13px * var(--font-scale, 1));
+  text-decoration: underline;
+  cursor: pointer;
+}
+.lock-form-actions {
+  justify-content: flex-end;
+}

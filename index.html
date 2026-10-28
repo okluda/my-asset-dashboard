@@ -16,7 +16,7 @@
   <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
   <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
-  <link rel="stylesheet" href="css/style.css?v=2026102702" />
+  <link rel="stylesheet" href="css/style.css?v=2026102801" />
 </head>
 <body>
   <!-- 錯誤顯示橫幅：手機上沒有開發者工具可看 console，發生例外時直接顯示在畫面上。
@@ -1338,6 +1338,11 @@
           <span class="set-row-label">幣別</span>
           <span class="set-chevron">›</span>
         </button>
+        <button type="button" class="set-row" @click="openSubPage('security')">
+          <span class="set-row-label">啟動驗證</span>
+          <span class="set-row-value">{{ settings.appLockEnabled ? (settings.appLockMethod === 'biometric' ? '生物辨識' : 'PIN 碼') : '關閉' }}</span>
+          <span class="set-chevron">›</span>
+        </button>
       </div>
 
       <div class="set-section-title">資債類型帳戶設定</div>
@@ -1350,14 +1355,7 @@
           <span class="set-row-label">存放帳戶</span>
           <span class="set-chevron">›</span>
         </button>
-        <button type="button" class="set-row" @click="exportConfigBackup">
-          <span class="set-row-label">匯出設定備份</span>
-        </button>
-        <button type="button" class="set-row" @click="$refs.accFileInput.click()">
-          <span class="set-row-label">從設定備份還原</span>
-        </button>
       </div>
-      <input type="file" ref="accFileInput" accept=".json,application/json" style="display:none" @change="importConfigBackup" />
 
       <div class="set-section-title">報價來源</div>
       <div class="set-group">
@@ -1377,11 +1375,11 @@
 
       <div class="set-section-title">資料管理</div>
       <div class="set-group">
-        <button type="button" class="set-row" @click="exportCsv">
-          <span class="set-row-label">匯出備份CSV</span>
+        <button type="button" class="set-row" @click="exportBackup">
+          <span class="set-row-label">匯出完整備份</span>
         </button>
         <button type="button" class="set-row" @click="$refs.fileInput.click()">
-          <span class="set-row-label">從備份CSV還原</span>
+          <span class="set-row-label">從完整備份還原</span>
         </button>
         <button type="button" class="set-row" @click="loadSample">
           <span class="set-row-label">載入模擬資料</span>
@@ -1408,12 +1406,12 @@
           <span class="set-chevron">›</span>
         </button>
       </div>
-      <input type="file" ref="fileInput" accept=".csv" style="display:none" @change="importCsv" />
+      <input type="file" ref="fileInput" accept=".json,application/json" style="display:none" @change="importBackup" />
       <div class="set-footnote">
         Log 紀錄：記錄同步價格/匯率的詳細執行資訊（含 API 請求與回應內容）。目前筆數：{{ syncLogs.length }} / {{ syncLogMax }}（超過上限會自動捨棄最舊的記錄）。
         開關預設關閉，僅在需要排查「同步價格」「同步匯率」失敗原因時再手動開啟；開啟後才會於每次同步時寫入。
       </div>
-      <div class="set-footnote">所有資料僅儲存在目前瀏覽器的 IndexedDB，清除瀏覽器資料或更換裝置/瀏覽器將會遺失，請定期使用「匯出備份CSV」備份。「從備份CSV還原」與「載入模擬資料」皆為「附加」至現有資料，重複匯入會產生重複資料；若要用備份 CSV 還原改版前資料，建議先按「清除所有資料」清空後再匯入。「從設定備份還原」則是「取代」現有存放帳戶設定，並覆蓋備份中的資產類型名稱與報價來源設定（還原前會另外跳出確認；不含 Finnhub API Key）。建議先還原設定備份，再從備份CSV還原明細。iOS Safari 中「設定 > Safari > 清除瀏覽記錄與網站資料」或「清除 Cookie」也會一併清除本 App 的資料，請務必先備份再操作。</div>
+      <div class="set-footnote">所有資料僅儲存在目前瀏覽器的 IndexedDB，清除瀏覽器資料或更換裝置/瀏覽器將會遺失，請定期使用「匯出完整備份」備份。完整備份為單一 JSON 檔，包含明細、存放帳戶、幣別與匯率、資產類型名稱與報價來源設定（不含外觀等其他設定、Finnhub API Key 與啟動驗證設定）。「從完整備份還原」會「取代」上述所有資料（還原前會跳出確認，任一欄位不合法即整份拒絕、不做任何修改）；不支援舊版備份CSV與設定備份檔。「載入模擬資料」為「附加」至現有明細。iOS Safari 中「設定 > Safari > 清除瀏覽記錄與網站資料」或「清除 Cookie」也會一併清除本 App 的資料，請務必先備份再操作。</div>
       <div class="set-footnote">Web Inspector 疑難排解：若畫面出現「Script error.」等看不到細節的錯誤，可用 Mac 連接 iPhone，於 iPhone「設定 > Safari > 進階」開啟「網頁檢閱器」，再於 Mac Safari「開發」選單中開啟本頁面即可看到完整錯誤堆疊。</div>
 
       <div class="set-section-title">App</div>
@@ -1448,7 +1446,7 @@
         若上方沒有出現安裝按鈕，可從瀏覽器選單選擇「安裝應用程式」或「加到主畫面」。
       </div>
       <div class="set-footnote">
-        資料提醒：iOS 主畫面 App 與 Safari 分頁的資料<b>互不共用</b>。改用主畫面 App 前，請先在原本的 Safari 頁面「匯出備份CSV」與「匯出設定備份」，再於 App 內先還原設定備份、再還原備份CSV；外觀、幣別等其他系統設定與 Finnhub API Key 不在備份內，需手動重新設定。
+        資料提醒：iOS 主畫面 App 與 Safari 分頁的資料<b>互不共用</b>。改用主畫面 App 前，請先在原本的 Safari 頁面「匯出完整備份」，再於 App 內「從完整備份還原」；外觀等其他系統設定、Finnhub API Key 與啟動驗證不在備份內，需手動重新設定。
       </div>
       </template>
 
@@ -1547,7 +1545,7 @@
           <span class="set-row-label">＋新增幣別</span>
         </button>
       </div>
-      <div class="set-footnote">基準幣別 {{ settings.baseCurrency }} 匯率固定為 1，不可刪除或修改。設定頁「同步 > 同步匯率」會抓取各幣別對 {{ settings.baseCurrency }} 的即時匯率。明細輸入與 CSV 匯出入的幣別/匯率皆與此連動。</div>
+      <div class="set-footnote">基準幣別 {{ settings.baseCurrency }} 匯率固定為 1，不可刪除或修改。設定頁「同步 > 同步匯率」會抓取各幣別對 {{ settings.baseCurrency }} 的即時匯率。明細輸入與完整備份的幣別/匯率皆與此連動。</div>
       </template>
 
       <!-- ===== 資產/負債類型子分頁 ===== -->
@@ -1571,7 +1569,7 @@
           </div>
         </div>
       </div>
-      <div class="set-footnote">名稱可修改（空白會自動帶回預設），行數固定 4 個。此名稱會套用於畫面呈現與 CSV 匯出入的「類型」欄位值。</div>
+      <div class="set-footnote">名稱可修改（空白會自動帶回預設），行數固定 4 個。此名稱會套用於畫面呈現；完整備份以內部類型儲存，不受名稱影響。</div>
       </template>
 
       <!-- ===== 存放帳戶子分頁 ===== -->
@@ -1817,6 +1815,64 @@
       </template>
 
       <!-- ===== 錯誤記錄子分頁 ===== -->
+      <!-- ===== 啟動驗證子分頁（見 js/lock.js） ===== -->
+      <template v-else-if="settingsSubPage === 'security'">
+      <div class="set-group">
+        <div class="set-row">
+          <span class="set-row-label">啟動驗證</span>
+          <label class="set-switch">
+            <input type="checkbox" :checked="settings.appLockEnabled" @change="onLockToggle" aria-label="啟動驗證" />
+            <span class="set-switch-track"></span>
+          </label>
+        </div>
+        <button v-if="settings.appLockEnabled" type="button" class="set-row" @click="openLockForm('change')">
+          <span class="set-row-label">變更 PIN 碼</span>
+          <span class="set-chevron">›</span>
+        </button>
+      </div>
+
+      <template v-if="lockForm.mode">
+      <div class="set-section-title">{{ lockForm.mode === 'enable' ? '設定 PIN 碼' : lockForm.mode === 'change' ? '變更 PIN 碼' : '關閉啟動驗證' }}</div>
+      <form class="set-group" novalidate @submit.prevent="submitLockForm">
+        <div v-if="lockForm.mode !== 'enable'" class="set-row set-row-stack">
+          <span class="set-row-label">目前的 PIN 碼</span>
+          <input type="password" class="lock-pin-input" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" v-model="lockForm.currentPin" aria-label="目前的 PIN 碼" />
+        </div>
+        <template v-if="lockForm.mode !== 'disable'">
+        <div class="set-row set-row-stack">
+          <span class="set-row-label">新的 PIN 碼（4–6 位數字）</span>
+          <input type="password" class="lock-pin-input" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" v-model="lockForm.newPin" aria-label="新的 PIN 碼" />
+        </div>
+        <div class="set-row set-row-stack">
+          <span class="set-row-label">再次輸入新的 PIN 碼</span>
+          <input type="password" class="lock-pin-input" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" v-model="lockForm.confirmPin" aria-label="再次輸入新的 PIN 碼" />
+        </div>
+        </template>
+        <div class="set-row lock-form-actions">
+          <button type="button" class="lock-form-btn" @click="cancelLockForm">取消</button>
+          <button type="submit" class="lock-form-btn lock-form-btn-primary" :disabled="lockForm.busy">確認</button>
+        </div>
+      </form>
+      </template>
+
+      <template v-if="settings.appLockEnabled">
+      <div class="set-section-title">驗證方式</div>
+      <div class="set-group">
+        <button type="button" class="set-row" @click="selectLockMethodPin">
+          <span class="set-row-label">PIN 碼</span>
+          <span class="set-row-value">{{ settings.appLockMethod !== 'biometric' ? '✓' : '' }}</span>
+        </button>
+        <button type="button" class="set-row" @click="selectLockMethodBiometric" :disabled="lockBioBusy">
+          <span class="set-row-label">生物辨識（Face ID 等）</span>
+          <span class="set-row-value">{{ lockBioBusy ? '設定中…' : settings.appLockMethod === 'biometric' ? '✓' : biometricSupported ? '' : '此裝置不支援' }}</span>
+        </button>
+      </div>
+      </template>
+      <div class="set-footnote">開啟後，每次開啟 App，以及切到背景超過 5 分鐘再回到前景時，都需要驗證才能使用。PIN 碼為 4–6 位數字，連續輸錯 5 次需等待 30 秒。</div>
+      <div class="set-footnote">生物辨識透過瀏覽器的 WebAuthn（passkey）觸發裝置驗證，依裝置可能是 Face ID、Touch ID、指紋或 Windows Hello（iPhone 需開啟 iCloud 鑰匙圈）；裝置不支援或註冊失敗時會自動改用 PIN 碼，解鎖時取消或失敗也可改輸入 PIN 碼。</div>
+      <div class="set-footnote">注意：這是畫面鎖定，資料本身並未加密。忘記 PIN 碼只能在鎖定畫面「清除所有資料並重設」，請先「匯出完整備份」。驗證設定不包含在完整備份內，更換裝置、瀏覽器或網址後需重新設定；「清除所有資料」也會關閉啟動驗證。</div>
+      </template>
+
       <template v-else-if="settingsSubPage === 'errorLog'">
       <div class="set-group">
         <button type="button" class="set-row" @click="exportErrorLogs" :disabled="errorLogs.length === 0">
@@ -1842,19 +1898,19 @@
   </script>
 
   <!-- PWA（Service Worker 註冊、新版提示、安裝）：不依賴 Vue，放在最前面，App 掛載失敗時仍可收到新版提示 -->
-  <script src="js/pwa.js?v=2026102702"></script>
+  <script src="js/pwa.js?v=2026102801"></script>
 
-  <!-- Vue 3 全域版本（鎖定 3.5.44，存放於 vendor/ 以支援離線）、PapaParse 5.7.0（處理 CSV 匯入/匯出）。
+  <!-- Vue 3 全域版本（鎖定 3.5.44，存放於 vendor/ 以支援離線）。
        升級版本時請替換 vendor/ 檔案並同步更新 README 與 ?v=。 -->
   <script src="vendor/vue.global.prod.js?v=3.5.44" onerror="window.__cdnLoadError && window.__cdnLoadError('Vue')"></script>
-  <script src="vendor/papaparse.min.js?v=5.7.0" onerror="window.__cdnLoadError && window.__cdnLoadError('PapaParse')"></script>
 
-  <!-- 本地程式檔（pwa/store/db/services/app）：?v= 為快取破壞參數。
+  <!-- 本地程式檔（pwa/store/db/lock/services/app）：?v= 為快取破壞參數。
        修改這些檔案任何內容後，務必同步更新此版本號以及 sw.js 的 APP_VERSION，避免瀏覽器/CDN/Service Worker 快取舊版程式碼，
        導致「畫面（index.html）看起來是新版、但實際執行邏輯是舊版」的不一致問題。 -->
-  <script src="js/store.js?v=2026102702"></script>
-  <script src="js/db.js?v=2026102702"></script>
-  <script src="js/services.js?v=2026102702"></script>
-  <script src="js/app.js?v=2026102702"></script>
+  <script src="js/store.js?v=2026102801"></script>
+  <script src="js/db.js?v=2026102801"></script>
+  <script src="js/lock.js?v=2026102801"></script>
+  <script src="js/services.js?v=2026102801"></script>
+  <script src="js/app.js?v=2026102801"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 /*
  * store.js
- * 負責資料 schema 定義、CSV 匯入匯出，以及跨頁面共用的計算工具函式。
+ * 負責資料 schema 定義、完整備份（JSON）匯出/還原，以及跨頁面共用的計算工具函式。
  * 資料持久化已改由 js/db.js 的 ALD_DB（IndexedDB）負責，本檔案不再讀寫任何儲存媒介；
  * 資料完全存放於使用者本機瀏覽器（IndexedDB），不會上傳到任何伺服器。
  */
@@ -37,13 +37,19 @@ const ALD = (() => {
     hideAmounts: false, // 全域隱藏金額（總覽眼睛鈕切換）：true 時所有金額顯示為 ***，比例（%）照常顯示
     showExcludedAccounts: false, // 資產頁「顯示不計入帳戶」開關：我的資產與我的負債共用，重新整理後保留
     syncLogEnabled: false, // 是否記錄「同步價格/匯率」的詳細執行資訊（含 API 請求/回應內容），預設關閉
+    // 啟動驗證（見 js/lock.js）：僅為畫面鎖定，資料本身未加密；以下欄位不納入完整備份。
+    appLockEnabled: false, // 是否於開啟 App／背景超過 5 分鐘回前景時要求驗證
+    appLockMethod: "pin", // 'pin'（4–6 位數字）| 'biometric'（WebAuthn：Face ID/Touch ID/指紋等），後者失敗時改用 PIN
+    appLockPinHash: "", // PBKDF2-SHA256 雜湊（base64）
+    appLockPinSalt: "", // 隨機 salt（base64）
+    appLockCredentialId: "", // WebAuthn credential rawId（base64url），僅 appLockMethod === 'biometric' 時使用
     themeMode: "dark", // 'dark' | 'light'
     themeColor: "OatmealTaupe", // 主題配色（見 THEME_COLORS）；'custom' 時改用 customColor
     customColor: "#707070", // 自訂配色（themeColor === 'custom' 時生效）
     fontFamily: "system", // 字型（見 FONT_FAMILIES）
     fontSize: "md", // 字型大小（見 FONT_SIZES）
     // 資債類型顯示名稱：可自訂 4 個資債類型的呈現名稱，空白時以內部鍵為預設。
-    // 影響畫面呈現（總覽/明細/再平衡）與 CSV 匯出入的「資債類型」欄位值。負債名稱固定不可改。
+    // 影響畫面呈現（總覽/明細/再平衡）；完整備份以內部鍵儲存，不受此名稱影響。負債名稱固定不可改。
     categoryNames: {
       流動資金: "流動資金",
       投資: "投資",
@@ -51,7 +57,7 @@ const ALD = (() => {
       應收款: "應收款",
     },
     // 幣別設定：每個幣別對應一個匯率（換算為 baseCurrency 台幣）。
-    // baseCurrency（TWD）匯率固定為 1。明細輸入與 CSV 匯出入的幣別/匯率皆與此連動。
+    // baseCurrency（TWD）匯率固定為 1。明細輸入與完整備份的幣別/匯率皆與此連動。
     currencies: [
       { code: "TWD", rate: 1 },
       { code: "USD", rate: 32.5 },
@@ -209,7 +215,7 @@ const ALD = (() => {
     return out;
   }
 
-  // 取所有幣別代碼（供明細下拉與 CSV 驗證使用）
+  // 取所有幣別代碼（供明細下拉與備份驗證使用）
   function currencyCodes(settings) {
     return (Array.isArray(settings.currencies) ? settings.currencies : []).map((c) => c.code);
   }
@@ -233,16 +239,6 @@ const ALD = (() => {
     const names = (settings && settings.categoryNames) || {};
     const n = names[key];
     return n && String(n).trim() ? String(n).trim() : key;
-  }
-
-  // 建立「顯示名稱/內部鍵 -> 內部鍵」的反查表（供 CSV 匯入時把資債類型名稱轉回內部鍵）
-  function buildTypeNameToKey(settings) {
-    const map = {};
-    TYPES.forEach((k) => {
-      map[k] = k; // 內部鍵本身
-      map[categoryDisplayName(settings, k)] = k; // 顯示名稱
-    });
-    return map;
   }
 
   // ---------- 存放帳戶設定 ----------
@@ -459,171 +455,14 @@ const ALD = (() => {
     return (value * 100).toFixed(digits) + "%";
   }
 
-  // ---------- CSV 匯出/匯入（使用 PapaParse） ----------
-  // 價格/匯率/槓桿倍數/金額/曝險金額匯出「實際用於估值」的有效值；成交價/成交匯率為明細的歷史紀錄。
-  const CSV_COLUMNS = [
-    { key: "type", label: "資債類型" },
-    { key: "account", label: "存放帳戶" },
-    { key: "date", label: "日期" },
-    { key: "note", label: "備註" },
-    { key: "currency", label: "幣別" },
-    { key: "unitPrice", label: "價格" },
-    { key: "fxRate", label: "匯率" },
-    { key: "units", label: "單位" },
-    { key: "amount", label: "金額" },
-    { key: "leverage", label: "槓桿倍數" },
-    { key: "exposure", label: "曝險金額" },
-    { key: "excluded", label: "不計入" },
-    { key: "tradePrice", label: "成交價" },
-    { key: "tradeFxRate", label: "成交匯率" },
-  ];
-
-  // 匯入時忽略的欄位（金額、曝險金額為計算欄位；槓桿倍數以帳戶設定為準）
-  const CSV_IGNORE_ON_IMPORT = ["amount", "exposure", "leverage"];
-
-  function exportCSV(records, settings) {
-    if (typeof Papa === "undefined") {
-      throw new Error("PapaParse 函式庫未載入（vendor/papaparse.min.js 載入失敗），無法匯出 CSV。");
-    }
-    const rows = records.map((r) => {
-      const o = {};
-      CSV_COLUMNS.forEach((c) => {
-        if (c.key === "amount") o[c.label] = amountTWD(r);
-        else if (c.key === "exposure") o[c.label] = exposureTWD(r);
-        else if (c.key === "unitPrice") o[c.label] = effPrice(r);
-        else if (c.key === "fxRate") o[c.label] = effFxRate(r);
-        else if (c.key === "leverage") o[c.label] = effLeverage(r);
-        else if (c.key === "currency") o[c.label] = effCurrency(r);
-        else if (c.key === "excluded") o[c.label] = r.excluded ? 1 : 0;
-        else if (c.key === "date") o[c.label] = normalizeDateTime(r.date);
-        else if (c.key === "type") o[c.label] = categoryDisplayName(settings, r.type);
-        else o[c.label] = r[c.key];
-      });
-      return o;
-    });
-    const csv = Papa.unparse(rows, { columns: CSV_COLUMNS.map((c) => c.label) });
-    const bom = "\uFEFF"; // 確保 Excel 開啟中文不亂碼
-    const blob = new Blob([bom + csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `資產負債明細_${todayStr()}_${timeStr()}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }
-
-  // 解析數字（去除千分位逗號、空白），空值或非數字則回傳預設值
-  function numOr(val, dflt) {
-    const s = String(val == null ? "" : val).replace(/,/g, "").trim();
-    if (s === "") return dflt;
-    const n = Number(s);
-    return isNaN(n) ? dflt : n;
-  }
-
-  // 正規化日期：接受 yyyy/mm/dd 或 yyyy-mm-dd，輸出 yyyy-mm-dd；空值或無法解析則回傳 ""
-  function normalizeDate(val) {
-    const s = String(val == null ? "" : val).trim();
-    if (s === "") return "";
-    const m = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
-    if (!m) return "";
-    const y = m[1];
-    const mo = String(m[2]).padStart(2, "0");
-    const d = String(m[3]).padStart(2, "0");
-    return `${y}-${mo}-${d}`;
-  }
-
-  function parseCSV(file, settings, accounts) {
-    return new Promise((resolve, reject) => {
-      if (typeof Papa === "undefined") {
-        reject(new Error("PapaParse 函式庫未載入（vendor/papaparse.min.js 載入失敗），無法匯入 CSV。"));
-        return;
-      }
-      const typeNameToKey = buildTypeNameToKey(settings);
-      Papa.parse(file, {
-        header: true,
-        skipEmptyLines: true,
-        encoding: "UTF-8",
-        complete: (result) => {
-          try {
-            const labelToKey = {};
-            CSV_COLUMNS.forEach((c) => (labelToKey[c.label] = c.key));
-            // 相容舊版匯出的欄位名稱
-            labelToKey["單價"] = "unitPrice";
-            labelToKey["單位數"] = "units";
-            labelToKey["槓桿率"] = "leverage";
-
-            let skipped = 0;
-            const records = [];
-            result.data.forEach((row) => {
-              // 先把每個欄位標題對應到 raw 值
-              const raw = {};
-              Object.keys(row).forEach((label) => {
-                const key = labelToKey[label.trim()];
-                if (key) raw[key] = row[label];
-              });
-
-              // 資債類型：接受內部鍵或自訂顯示名稱，轉回內部鍵；不符或空則跳過整列
-              const rawType = String(raw.type == null ? "" : raw.type).trim();
-              const type = typeNameToKey[rawType];
-              if (!type) {
-                skipped++;
-                return;
-              }
-
-              const rec = emptyRecord(type);
-              rec.type = type;
-              // 存放帳戶、備註：文字，空值可匯入
-              rec.account = String(raw.account == null ? "" : raw.account).trim();
-              rec.note = String(raw.note == null ? "" : raw.note).trim();
-              // 日期：yyyy/mm/dd、yyyy-mm-dd 或含時分秒，空值可匯入（留空）；輸出統一為 yyyy-mm-dd hh:mi:ss
-              rec.date = normalizeDateTime(raw.date);
-              // 幣別：值域為「設定 > 幣別」清單，空值或不符預設 baseCurrency
-              const cur = String(raw.currency == null ? "" : raw.currency).trim().toUpperCase();
-              const codes = currencyCodes(settings);
-              rec.currency = codes.includes(cur) ? cur : settings.baseCurrency || "TWD";
-              // 成交價：「成交價」欄位優先，舊版 CSV 退回「價格」欄位，空值預設 1；
-              // 舊版 CSV 的非投資價格固定 1（維持舊版匯入行為）
-              const hasTradePrice = String(raw.tradePrice == null ? "" : raw.tradePrice).trim() !== "";
-              rec.tradePrice = hasTradePrice ? numOr(raw.tradePrice, 1) : numOr(raw.unitPrice, 1);
-              if (!hasTradePrice && type !== "投資") rec.tradePrice = 1;
-              // 成交匯率：「成交匯率」欄位優先，舊版 CSV 退回「匯率」欄位，再沒有用設定匯率或 1
-              const settingRate = currencyRate(settings, rec.currency);
-              rec.tradeFxRate = numOr(raw.tradeFxRate, numOr(raw.fxRate, settingRate != null ? settingRate : 1));
-              // 單位數：空值預設 0
-              rec.units = numOr(raw.units, 0);
-              const cfgAccount = lookupAccount(accounts, type, rec.account);
-              if (cfgAccount && rec.currency !== cfgAccount.currency) {
-                throw new Error(
-                  `CSV 第 ${records.length + skipped + 2} 列的存放帳戶「${rec.account}」` +
-                    `必須使用設定幣別 ${cfgAccount.currency}。`
-                );
-              }
-              // 槓桿倍數、金額、曝險金額（CSV_IGNORE_ON_IMPORT）不匯入：槓桿以帳戶設定為準，金額即時計算
-              // 不計入：值域 0/1，空值預設 0
-              rec.excluded = numOr(raw.excluded, 0) === 1 ? 1 : 0;
-              normalizeRec(rec);
-              rec.id = uid();
-              records.push(rec);
-            });
-            records.__skipped = skipped;
-            resolve(records);
-          } catch (e) {
-            reject(e);
-          }
-        },
-        error: (err) => reject(err),
-      });
-    });
-  }
-
-  // ---------- 設定備份（JSON）匯出/還原 ----------
-  // 內容：存放帳戶清單、資產類型顯示名稱（categoryNames）、股價資料來源設定（stockSource）。
-  // 帳戶的 category 存內部鍵，還原時不依賴目前的自訂類型名稱。
-  // Finnhub API Key 不匯出；還原檔若含此欄位也一律忽略。
-  const CONFIG_BACKUP_KIND = "ald-config-backup";
-  const CONFIG_BACKUP_VERSION = 1;
+  // ---------- 完整備份（JSON）匯出/還原 ----------
+  // 單一 JSON 檔包含：幣別清單與匯率、資產類型名稱、股價資料來源、存放帳戶、明細。
+  // 帳戶 category 與明細 type 一律存內部鍵，還原時不依賴目前的自訂類型名稱。
+  // 不包含：Finnhub API Key、啟動驗證設定（appLock*）、外觀/顯示單位等其他一般設定。
+  // 還原為「完整取代」：五個區塊皆必填，任一欄位不合法即整份拒絕；不接受舊版 CSV 與舊版設定備份。
+  const BACKUP_KIND = "walletegg-backup";
+  const BACKUP_VERSION = 1;
+  const BACKUP_SECTIONS = ["currencies", "categoryNames", "stockSource", "accounts", "records"];
   const STOCK_SOURCE_KEYS = [
     "stockProviderTW",
     "stockProviderUS",
@@ -642,8 +481,40 @@ const ALD = (() => {
     connectionModeTW: ["direct", "proxy"],
     connectionModeUS: ["direct", "proxy"],
   };
+  const RECORD_BACKUP_FIELDS = [
+    "id",
+    "type",
+    "account",
+    "date",
+    "note",
+    "currency",
+    "tradePrice",
+    "tradeFxRate",
+    "units",
+    "excluded",
+  ];
 
-  function exportConfigBackup(accounts, settings) {
+  // 解析數字（去除千分位逗號、空白），空值或非數字則回傳預設值
+  function numOr(val, dflt) {
+    const s = String(val == null ? "" : val).replace(/,/g, "").trim();
+    if (s === "") return dflt;
+    const n = Number(s);
+    return isNaN(n) ? dflt : n;
+  }
+
+  function isPlainObject(v) {
+    return v !== null && typeof v === "object" && !Array.isArray(v);
+  }
+
+  // 必須為有限數字（允許數字字串）；空值回傳 dflt，非數字則拋出錯誤
+  function strictNum(val, dflt, label) {
+    if (val == null || String(val).trim() === "") return dflt;
+    const n = Number(String(val).replace(/,/g, "").trim());
+    if (!isFinite(n)) throw new Error(`${label} 必須是數字（目前為「${val}」）。`);
+    return n;
+  }
+
+  function exportBackup(records, accounts, settings) {
     const categoryNames = {};
     ASSET_TYPES.forEach((k) => {
       categoryNames[k] = categoryDisplayName(settings, k);
@@ -653,9 +524,15 @@ const ALD = (() => {
       stockSource[k] = settings[k] == null ? "" : settings[k];
     });
     const data = {
-      kind: CONFIG_BACKUP_KIND,
-      version: CONFIG_BACKUP_VERSION,
+      kind: BACKUP_KIND,
+      version: BACKUP_VERSION,
       exportedAt: nowStr(),
+      currencies: (Array.isArray(settings.currencies) ? settings.currencies : []).map((c) => ({
+        code: c.code,
+        rate: Number(c.rate) || 0,
+      })),
+      categoryNames,
+      stockSource,
       accounts: (accounts || []).map((a, i) => ({
         category: a.category,
         account: a.account,
@@ -664,103 +541,160 @@ const ALD = (() => {
         leverage: Number(a.leverage) || 0,
         sortOrder: i + 1,
       })),
-      categoryNames,
-      stockSource,
+      records: (records || []).map((r) => {
+        const o = {};
+        RECORD_BACKUP_FIELDS.forEach((k) => {
+          o[k] = r[k];
+        });
+        o.excluded = r.excluded ? 1 : 0;
+        return o;
+      }),
     };
     const json = JSON.stringify(data, null, 2);
     const blob = new Blob([json], { type: "application/json;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `設定備份_${todayStr()}_${timeStr()}.json`;
+    a.download = `WalletEgg完整備份_${todayStr()}_${timeStr()}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }
 
-  function isPlainObject(v) {
-    return v !== null && typeof v === "object" && !Array.isArray(v);
-  }
-
-  // 解析並驗證設定備份檔；只回傳檔案中存在的區塊 { accounts?, categoryNames?, stockSource? }，不修改任何 store。
+  // 解析並驗證完整備份檔，回傳 { currencies, categoryNames, stockSource, accounts, records }，不修改任何 store。
   // 任一欄位不合法即 throw，呼叫端不得套用任何區塊（整份拒絕）。
-  async function parseConfigBackup(file, settings) {
+  async function parseBackup(file, settings) {
     const text = await file.text();
     let data;
     try {
       data = JSON.parse(text.replace(/^\uFEFF/, ""));
     } catch (e) {
-      throw new Error("不是有效的設定備份檔（JSON 格式錯誤）。");
+      throw new Error("不是有效的完整備份檔（JSON 格式錯誤）。");
     }
-    if (!isPlainObject(data) || data.kind !== CONFIG_BACKUP_KIND) {
-      throw new Error("不是有效的設定備份檔（缺少或不符的 kind）。");
+    if (isPlainObject(data) && data.kind === "ald-config-backup") {
+      throw new Error("這是舊版「設定備份」檔，新版不再支援；請使用「匯出完整備份」產生的檔案。");
     }
-    if (!Number.isInteger(data.version) || data.version < 1 || data.version > CONFIG_BACKUP_VERSION) {
-      throw new Error(`不支援的設定備份版本：${data.version}。`);
+    if (!isPlainObject(data) || data.kind !== BACKUP_KIND) {
+      throw new Error("不是有效的完整備份檔（缺少或不符的 kind）。");
     }
+    if (data.version !== BACKUP_VERSION) {
+      throw new Error(`不支援的完整備份版本：${data.version}。`);
+    }
+    BACKUP_SECTIONS.forEach((k) => {
+      if (data[k] === undefined) throw new Error(`完整備份檔缺少「${k}」區塊。`);
+    });
 
-    const result = {};
+    // 幣別：代碼不可空白/重複，須含基準幣別；基準幣別匯率固定為 1
+    const base = settings.baseCurrency || "TWD";
+    if (!Array.isArray(data.currencies)) throw new Error("currencies 必須是陣列。");
+    const currencies = [];
+    const seenCodes = new Set();
+    data.currencies.forEach((c, i) => {
+      const no = i + 1;
+      if (!isPlainObject(c)) throw new Error(`currencies 第 ${no} 筆格式錯誤。`);
+      const code = String(c.code == null ? "" : c.code).trim().toUpperCase();
+      if (!code) throw new Error(`currencies 第 ${no} 筆的幣別代碼不可空白。`);
+      if (seenCodes.has(code)) throw new Error(`currencies 的幣別代碼「${code}」重複。`);
+      seenCodes.add(code);
+      const rate = strictNum(c.rate, 0, `currencies「${code}」的匯率`);
+      if (rate < 0) throw new Error(`currencies「${code}」的匯率不可為負數。`);
+      currencies.push({ code, rate: code === base ? 1 : rate });
+    });
+    if (!seenCodes.has(base)) throw new Error(`currencies 必須包含基準幣別 ${base}。`);
+    const codes = currencies.map((c) => c.code);
 
-    if (data.categoryNames !== undefined) {
-      if (!isPlainObject(data.categoryNames)) throw new Error("categoryNames 必須是物件。");
-      const out = {};
-      Object.keys(data.categoryNames).forEach((k) => {
-        if (!ASSET_TYPES.includes(k)) throw new Error(`categoryNames 含不支援的類型「${k}」。`);
-        const v = data.categoryNames[k];
-        if (typeof v !== "string") throw new Error(`categoryNames「${k}」的名稱必須是文字。`);
-        out[k] = v.trim() ? v.trim() : k;
-      });
-      result.categoryNames = out;
-    }
+    if (!isPlainObject(data.categoryNames)) throw new Error("categoryNames 必須是物件。");
+    const categoryNames = {};
+    ASSET_TYPES.forEach((k) => {
+      categoryNames[k] = k;
+    });
+    Object.keys(data.categoryNames).forEach((k) => {
+      if (!ASSET_TYPES.includes(k)) throw new Error(`categoryNames 含不支援的類型「${k}」。`);
+      const v = data.categoryNames[k];
+      if (typeof v !== "string") throw new Error(`categoryNames「${k}」的名稱必須是文字。`);
+      categoryNames[k] = v.trim() ? v.trim() : k;
+    });
 
-    if (data.stockSource !== undefined) {
-      if (!isPlainObject(data.stockSource)) throw new Error("stockSource 必須是物件。");
-      const out = {};
-      STOCK_SOURCE_KEYS.forEach((k) => {
-        if (!(k in data.stockSource)) return;
-        const v = data.stockSource[k];
-        if (typeof v !== "string") throw new Error(`stockSource.${k} 必須是文字。`);
-        const enums = STOCK_SOURCE_ENUMS[k];
-        if (enums && !enums.includes(v)) {
-          throw new Error(`stockSource.${k} 的值「${v}」不合法，可用值：${enums.join(" / ")}。`);
-        }
-        out[k] = enums ? v : v.trim();
-      });
-      result.stockSource = out;
-    }
+    // 報價來源：缺少的鍵帶入預設值；其他鍵（包含 finnhubApiKey）一律忽略
+    if (!isPlainObject(data.stockSource)) throw new Error("stockSource 必須是物件。");
+    const stockSource = {};
+    STOCK_SOURCE_KEYS.forEach((k) => {
+      if (!(k in data.stockSource)) {
+        stockSource[k] = DEFAULT_SETTINGS[k];
+        return;
+      }
+      const v = data.stockSource[k];
+      if (typeof v !== "string") throw new Error(`stockSource.${k} 必須是文字。`);
+      const enums = STOCK_SOURCE_ENUMS[k];
+      if (enums && !enums.includes(v)) {
+        throw new Error(`stockSource.${k} 的值「${v}」不合法，可用值：${enums.join(" / ")}。`);
+      }
+      stockSource[k] = enums ? v : v.trim();
+    });
 
-    if (data.accounts !== undefined) {
-      if (!Array.isArray(data.accounts)) throw new Error("accounts 必須是陣列。");
-      const codes = currencyCodes(settings);
-      const accounts = data.accounts.map((a, i) => {
-        const no = i + 1;
-        if (!isPlainObject(a)) throw new Error(`accounts 第 ${no} 筆格式錯誤。`);
-        if (!TYPES.includes(a.category)) {
-          throw new Error(`accounts 第 ${no} 筆的資債類型「${a.category}」不合法。`);
-        }
-        const account = String(a.account == null ? "" : a.account).trim();
-        if (!account) throw new Error(`accounts 第 ${no} 筆的存放帳戶名稱不可空白。`);
-        const currency = String(a.currency == null ? "" : a.currency).trim().toUpperCase();
-        if (!codes.includes(currency)) {
-          throw new Error(`accounts 第 ${no} 筆的幣別「${currency || "未設定"}」不在幣別設定中。`);
-        }
-        return {
-          id: uid(),
-          category: a.category,
-          account,
-          currency,
-          price: numOr(a.price, 1),
-          leverage: numOr(a.leverage, a.category === "投資" ? 1 : 0),
-          sortOrder: no,
-        };
-      });
-      const validation = validateAccounts(accounts, settings, false);
-      if (!validation.valid) throw new Error(validation.message);
-      result.accounts = accounts;
-    }
+    if (!Array.isArray(data.accounts)) throw new Error("accounts 必須是陣列。");
+    const accounts = data.accounts.map((a, i) => {
+      const no = i + 1;
+      if (!isPlainObject(a)) throw new Error(`accounts 第 ${no} 筆格式錯誤。`);
+      if (!TYPES.includes(a.category)) {
+        throw new Error(`accounts 第 ${no} 筆的資債類型「${a.category}」不合法。`);
+      }
+      const account = String(a.account == null ? "" : a.account).trim();
+      if (!account) throw new Error(`accounts 第 ${no} 筆的存放帳戶名稱不可空白。`);
+      const currency = String(a.currency == null ? "" : a.currency).trim().toUpperCase();
+      if (!codes.includes(currency)) {
+        throw new Error(`accounts 第 ${no} 筆的幣別「${currency || "未設定"}」不在備份的幣別清單中。`);
+      }
+      return {
+        id: uid(),
+        category: a.category,
+        account,
+        currency,
+        price: strictNum(a.price, 1, `accounts 第 ${no} 筆的價格`),
+        leverage: strictNum(a.leverage, a.category === "投資" ? 1 : 0, `accounts 第 ${no} 筆的槓桿倍數`),
+        sortOrder: no,
+      };
+    });
+    const accountValidation = validateAccounts(accounts, { baseCurrency: base, currencies }, false);
+    if (!accountValidation.valid) throw new Error(accountValidation.message);
 
-    return result;
+    if (!Array.isArray(data.records)) throw new Error("records 必須是陣列。");
+    const seenIds = new Set();
+    const records = data.records.map((r, i) => {
+      const no = i + 1;
+      if (!isPlainObject(r)) throw new Error(`records 第 ${no} 筆格式錯誤。`);
+      if (!TYPES.includes(r.type)) {
+        throw new Error(`records 第 ${no} 筆的資債類型「${r.type}」不合法。`);
+      }
+      const rawDate = r.date == null ? "" : String(r.date).trim();
+      const date = rawDate ? normalizeDateTime(rawDate) : "";
+      if (rawDate && !date) throw new Error(`records 第 ${no} 筆的日期「${rawDate}」格式錯誤。`);
+      const currency = String(r.currency == null ? "" : r.currency).trim().toUpperCase();
+      if (!codes.includes(currency)) {
+        throw new Error(`records 第 ${no} 筆的幣別「${currency || "未設定"}」不在備份的幣別清單中。`);
+      }
+      let id = typeof r.id === "string" ? r.id.trim() : "";
+      if (!id || seenIds.has(id)) id = uid();
+      seenIds.add(id);
+      const rec = {
+        id,
+        type: r.type,
+        account: String(r.account == null ? "" : r.account).trim(),
+        date,
+        note: String(r.note == null ? "" : r.note).trim(),
+        currency,
+        tradePrice: strictNum(r.tradePrice, 1, `records 第 ${no} 筆的成交價`),
+        tradeFxRate: strictNum(r.tradeFxRate, 1, `records 第 ${no} 筆的成交匯率`),
+        units: strictNum(r.units, 0, `records 第 ${no} 筆的單位`),
+        excluded: Number(r.excluded) === 1 || r.excluded === true ? 1 : 0,
+      };
+      return normalizeRec(rec);
+    });
+    const currencyValidation = validateAccountRecordCurrencies(accounts, records);
+    if (!currencyValidation.valid) throw new Error(currencyValidation.message);
+
+    return { currencies, categoryNames, stockSource, accounts, records };
   }
 
   // ---------- 同步記錄（同步價格/匯率/連線測試的執行記錄，沿用既有 syncLogs store，不新增 store） ----------
@@ -829,7 +763,6 @@ const ALD = (() => {
   return {
     TYPES,
     ASSET_TYPES,
-    CSV_COLUMNS,
     DEFAULT_SETTINGS,
     THEME_COLORS,
     FONT_FAMILIES,
@@ -843,14 +776,13 @@ const ALD = (() => {
     validateAccounts,
     validateAccountRecordCurrencies,
     categoryDisplayName,
-    buildTypeNameToKey,
     normalizeCurrencies,
     currencyCodes,
     currencyRate,
     emptyCurrency,
     STOCK_SOURCE_KEYS,
-    exportConfigBackup,
-    parseConfigBackup,
+    exportBackup,
+    parseBackup,
     appendSyncLog,
     exportSyncLogsJSON,
     SYNC_LOG_MAX,
@@ -882,8 +814,6 @@ const ALD = (() => {
     CHART_COLORS,
     chartColor,
     formatPercent,
-    exportCSV,
-    parseCSV,
     seedRecords,
     applyTheme,
   };
