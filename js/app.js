@@ -3,7 +3,7 @@
  * Vue 3 應用進入點：定義共用 store（reactive，含 IndexedDB 自動存檔，見 js/db.js 的 ALD_DB）、
  * 4 個分頁元件（總覽/再平衡/明細/設定），以及底部分頁列。
  * 正式資料來源為 IndexedDB：App 啟動時透過 ALD_DB 讀取，並於 store 變更時 debounce 回寫；
- * store.js 僅保留 schema 定義、CSV 匯入匯出與計算工具函式，不再負責任何資料持久化。
+ * store.js 僅保留 schema 定義、完整備份（JSON）匯出/還原與計算工具函式，不再負責任何資料持久化。
  */
 
 // vendor/vue.global.prod.js 未載入（部署漏檔或首次開啟時離線）時，整個 App 無法運作（按鈕全部失效），
@@ -1867,6 +1867,7 @@ const SETTINGS_SUBPAGE_TITLES = {
   quoteUS: "美股",
   test: "連線測試",
   errorLog: "錯誤記錄",
+  security: "啟動驗證",
 };
 
 const TabSettings = {
@@ -2206,57 +2207,165 @@ const TabSettings = {
       }
     }
 
-    // 匯出設定備份（JSON）：存放帳戶、資產類型名稱、股價資料來源（不含 Finnhub API Key）
-    function exportConfigBackup() {
+    // 匯出完整備份（JSON）：幣別、資產類型名稱、報價來源、存放帳戶、明細（不含 Finnhub API Key 與啟動驗證設定）
+    function exportBackup() {
       try {
-        ALD.exportConfigBackup(store.accounts, store.settings);
+        ALD.exportBackup(store.records, store.accounts, store.settings);
       } catch (e) {
-        reportError("匯出設定備份失敗：", e);
+        reportError("匯出完整備份失敗：", e);
       }
     }
 
-    // 從設定備份還原：檔案中有的區塊才覆蓋；整份驗證通過才寫入，任一欄位不合法則不做任何修改。
-    async function importConfigBackup(evt) {
+    // 從完整備份還原：整份驗證通過才寫入，完整「取代」明細、存放帳戶、幣別、資產類型名稱與報價來源設定；
+    // 任一欄位不合法則不做任何修改。外觀等其他設定、Finnhub API Key、啟動驗證設定不受影響。
+    async function importBackup(evt) {
       const file = evt.target.files[0];
       if (!file) return;
       try {
-        const backup = await ALD.parseConfigBackup(file, store.settings);
-        const parts = [];
-        if (backup.accounts) parts.push("存放帳戶 " + backup.accounts.length + " 筆");
-        if (backup.categoryNames) parts.push("資產類型名稱");
-        if (backup.stockSource) parts.push("報價來源");
-        if (parts.length === 0) {
-          alert("設定備份中沒有可還原的內容。");
-          return;
-        }
+        const backup = await ALD.parseBackup(file, store.settings);
         if (
-          backup.accounts &&
-          store.accounts.length > 0 &&
-          !confirm("還原將「取代」現有的存放帳戶設定，並覆蓋檔案中包含的資產類型名稱與報價來源設定，確定要繼續嗎？")
+          !confirm(
+            "從完整備份還原將「取代」目前所有的明細、存放帳戶、幣別、資產類型名稱與報價來源設定，此動作無法復原。\n" +
+              "（外觀、顯示單位等其他設定、Finnhub API Key、啟動驗證設定不受影響）\n\n" +
+              "備份內容：明細 " + backup.records.length + " 筆、存放帳戶 " + backup.accounts.length +
+              " 筆、幣別 " + backup.currencies.length + " 種。\n" +
+              "建議先「匯出完整備份」保留目前資料。確定要繼續嗎？"
+          )
         ) {
           return;
         }
-        // 就地修改 settings，不替換物件參考，避免元件失去響應
-        if (backup.categoryNames) Object.assign(store.settings.categoryNames, backup.categoryNames);
-        if (backup.stockSource) Object.assign(store.settings, backup.stockSource);
-        if (backup.accounts) store.accounts.splice(0, store.accounts.length, ...backup.accounts);
+        // 就地修改，不替換 settings/records/accounts 的物件參考，避免元件失去響應
+        store.settings.currencies.splice(0, store.settings.currencies.length, ...backup.currencies);
+        Object.assign(store.settings.categoryNames, backup.categoryNames);
+        Object.assign(store.settings, backup.stockSource);
+        store.accounts.splice(0, store.accounts.length, ...backup.accounts);
+        store.records.splice(0, store.records.length, ...backup.records);
         // 明確等待 IndexedDB 保存完成後才顯示成功；watch 之後的 debounce 回寫為冪等操作。
-        if (backup.categoryNames || backup.stockSource) {
-          await ALD_DB.saveSettings(JSON.parse(JSON.stringify(store.settings)));
-        }
-        if (backup.accounts) {
-          await ALD_DB.replaceAccounts(JSON.parse(JSON.stringify(store.accounts)));
-        }
+        await ALD_DB.saveSettings(JSON.parse(JSON.stringify(store.settings)));
+        await ALD_DB.replaceAccounts(JSON.parse(JSON.stringify(store.accounts)));
+        await ALD_DB.replaceRecords(JSON.parse(JSON.stringify(store.records)));
         const needKey = store.settings.stockProviderUS === "finnhub" && !store.settings.finnhubApiKey;
         alert(
-          "已還原：" + parts.join("、") +
-            (needKey ? "\n（設定備份不含 Finnhub API Key，請至「報價來源 > 美股」重新輸入）" : "")
+          "已還原：明細 " + backup.records.length + " 筆、存放帳戶 " + backup.accounts.length +
+            " 筆、幣別 " + backup.currencies.length + " 種、資產類型名稱、報價來源" +
+            (needKey ? "\n（完整備份不含 Finnhub API Key，請至「報價來源 > 美股」重新輸入）" : "")
         );
       } catch (e) {
-        reportError("設定備份還原失敗：", e);
-        alert("設定備份還原失敗：" + (e && e.message ? e.message : e));
+        reportError("完整備份還原失敗：", e);
+        alert("完整備份還原失敗：" + (e && e.message ? e.message : e));
       } finally {
         evt.target.value = "";
+      }
+    }
+
+    // ---------- 啟動驗證（見 js/lock.js；僅為畫面鎖定，資料未加密） ----------
+    const biometricSupported = ref(false);
+    if (typeof AppLock !== "undefined") {
+      AppLock.isBiometricAvailable().then((v) => {
+        biometricSupported.value = v;
+      });
+    }
+    const lockBioBusy = ref(false);
+    // mode：'enable'（啟用並設定 PIN）| 'change'（變更 PIN）| 'disable'（關閉驗證）
+    const lockForm = reactive({ mode: "", currentPin: "", newPin: "", confirmPin: "", busy: false });
+
+    function openLockForm(mode) {
+      Object.assign(lockForm, { mode, currentPin: "", newPin: "", confirmPin: "" });
+    }
+    function cancelLockForm() {
+      Object.assign(lockForm, { mode: "", currentPin: "", newPin: "", confirmPin: "" });
+    }
+    // 驗證設定立即寫入 IndexedDB，不等 debounce，避免設定後馬上關閉 App 而未生效
+    function saveSettingsNow() {
+      return ALD_DB.saveSettings(JSON.parse(JSON.stringify(store.settings)));
+    }
+
+    // 開關只用來開啟對應表單；實際狀態待 PIN 設定／驗證完成後才變更
+    function onLockToggle(evt) {
+      const want = evt.target.checked;
+      evt.target.checked = !!settings.appLockEnabled;
+      openLockForm(want ? "enable" : "disable");
+    }
+
+    async function submitLockForm() {
+      if (lockForm.busy) return;
+      lockForm.busy = true;
+      try {
+        const mode = lockForm.mode;
+        if (mode === "change" || mode === "disable") {
+          if (!(await AppLock.verifyPin(settings, lockForm.currentPin))) {
+            alert("目前的 PIN 碼不正確。");
+            return;
+          }
+        }
+        if (mode === "disable") {
+          Object.assign(settings, {
+            appLockEnabled: false,
+            appLockMethod: "pin",
+            appLockPinHash: "",
+            appLockPinSalt: "",
+            appLockCredentialId: "",
+          });
+          await saveSettingsNow();
+          cancelLockForm();
+          alert("已關閉啟動驗證。");
+          return;
+        }
+        if (!AppLock.isValidPin(lockForm.newPin)) {
+          alert("PIN 碼必須是 4–6 位數字。");
+          return;
+        }
+        if (lockForm.newPin !== lockForm.confirmPin) {
+          alert("兩次輸入的 PIN 碼不一致。");
+          return;
+        }
+        const fields = await AppLock.createPinFields(lockForm.newPin);
+        Object.assign(settings, fields);
+        if (mode === "enable") {
+          Object.assign(settings, { appLockEnabled: true, appLockMethod: "pin", appLockCredentialId: "" });
+        }
+        await saveSettingsNow();
+        cancelLockForm();
+        alert(
+          mode === "enable"
+            ? "已啟用啟動驗證。開啟 App 或切到背景超過 5 分鐘後回來時，需輸入 PIN 碼。"
+            : "已變更 PIN 碼。"
+        );
+      } catch (e) {
+        reportError("啟動驗證設定失敗：", e);
+        alert("啟動驗證設定失敗：" + (e && e.message ? e.message : e));
+      } finally {
+        lockForm.busy = false;
+      }
+    }
+
+    function selectLockMethodPin() {
+      if (!settings.appLockEnabled || settings.appLockMethod === "pin") return;
+      Object.assign(settings, { appLockMethod: "pin", appLockCredentialId: "" });
+      saveSettingsNow().catch((e) => reportError("啟動驗證設定寫入失敗：", e));
+    }
+
+    // 選擇生物辨識：裝置不支援或註冊失敗時自動改用 PIN。
+    // registerBiometric 須在點按事件中直接呼叫（之前不可 await），否則 iOS 可能判定沒有使用者手勢。
+    async function selectLockMethodBiometric() {
+      if (!settings.appLockEnabled || lockBioBusy.value) return;
+      if (!biometricSupported.value) {
+        Object.assign(settings, { appLockMethod: "pin", appLockCredentialId: "" });
+        alert("此裝置或瀏覽器不支援生物辨識（或尚未設定 Face ID／指紋），已自動改用 PIN 碼。");
+        return;
+      }
+      lockBioBusy.value = true;
+      try {
+        const credentialId = await AppLock.registerBiometric();
+        Object.assign(settings, { appLockMethod: "biometric", appLockCredentialId: credentialId });
+        await saveSettingsNow();
+        alert("已啟用生物辨識解鎖；無法使用時仍可輸入 PIN 碼解鎖。");
+      } catch (e) {
+        Object.assign(settings, { appLockMethod: "pin", appLockCredentialId: "" });
+        saveSettingsNow().catch((err) => reportError("啟動驗證設定寫入失敗：", err));
+        alert("生物辨識設定未完成，已改用 PIN 碼。\n" + (e && e.message ? e.message : e));
+      } finally {
+        lockBioBusy.value = false;
       }
     }
 
@@ -2389,38 +2498,8 @@ const TabSettings = {
       }
     }
 
-    function exportCsv() {
-      try {
-        ALD.exportCSV(store.records, store.settings);
-      } catch (e) {
-        reportError("匯出 CSV 失敗：", e);
-      }
-    }
-
     function openDetail() {
       window.dispatchEvent(new Event("ald-open-detail"));
-    }
-
-    async function importCsv(evt) {
-      const file = evt.target.files[0];
-      if (!file) return;
-      try {
-        const imported = await ALD.parseCSV(file, store.settings, store.accounts);
-        store.records.push(...imported);
-        // 明確等待 IndexedDB 保存完成後才顯示「匯入成功」，避免寫入失敗卻誤報成功；
-        // watch 之後仍會 debounce 回寫同一份資料，屬冪等操作，不影響正確性。
-        await ALD_DB.replaceRecords(JSON.parse(JSON.stringify(store.records)));
-        const skipped = imported.__skipped || 0;
-        alert(
-          "已匯入 " + imported.length + " 筆資料" +
-            (skipped > 0 ? "\n（略過 " + skipped + " 筆：資債類型空白或不符值域）" : "")
-        );
-      } catch (e) {
-        reportError("CSV 匯入失敗：", e);
-        alert("CSV 匯入失敗：" + (e && e.message ? e.message : e));
-      } finally {
-        evt.target.value = "";
-      }
     }
 
     function loadSample() {
@@ -2444,7 +2523,7 @@ const TabSettings = {
     // 替換物件參考）。除了讓 watch 之後自動 debounce 回寫，這裡也立即明確寫回 IndexedDB，
     // 避免使用者在防抖時間內就重新整理，導致清除結果尚未真正持久化。
     async function resetData() {
-      if (!confirm("確定要清除所有本地資料嗎？此動作無法復原，建議先匯出 CSV 備份。")) return;
+      if (!confirm("確定要清除所有本地資料嗎？此動作無法復原，建議先匯出完整備份。（啟動驗證設定也會一併關閉）")) return;
       try {
         store.records.splice(0, store.records.length);
         store.accounts.splice(0, store.accounts.length);
@@ -2503,8 +2582,17 @@ const TabSettings = {
       rememberAccountCurrency,
       onAccountNameChange,
       onAccountCurrencyChange,
-      exportConfigBackup,
-      importConfigBackup,
+      exportBackup,
+      importBackup,
+      biometricSupported,
+      lockBioBusy,
+      lockForm,
+      openLockForm,
+      cancelLockForm,
+      onLockToggle,
+      submitLockForm,
+      selectLockMethodPin,
+      selectLockMethodBiometric,
       syncPrices,
       testingTW,
       testingUS,
@@ -2523,8 +2611,6 @@ const TabSettings = {
       runTestEndpoint,
       exportSyncLogs,
       clearSyncLogs,
-      exportCsv,
-      importCsv,
       loadSample,
       resetData,
       themeColors: ALD.THEME_COLORS,
@@ -2811,7 +2897,7 @@ app.config.errorHandler = (err, instance, info) => {
   }
 
   // 帳戶顯示/儲存順序一律依 sortOrder ASC；IndexedDB getAll() 不保證回傳順序，
-  // 在建立 store.accounts 前先排序，確保 Safari / IndexedDB / CSV 匯入都得到一致順序。
+  // 在建立 store.accounts 前先排序，確保 Safari / IndexedDB / 備份還原都得到一致順序。
   initialAccounts.sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0));
 
   // ---------- 建立 reactive store ----------
@@ -2847,6 +2933,30 @@ app.config.errorHandler = (err, instance, info) => {
   );
   // 外觀主題（配色/字型/字型大小）：載入時立即套用，設定變更時即時反映（純畫面效果，非資料寫入）
   watch(() => store.settings, (val) => ALD.applyTheme(val), { deep: true, immediate: true });
+
+  // ---------- 啟動驗證（見 js/lock.js）：通過後才掛載，鎖定期間 DOM 中不會出現任何資料 ----------
+  // 驗證模組未載入但已啟用驗證時一律中止（fail-closed），避免因漏檔而略過驗證。
+  if (typeof AppLock === "undefined") {
+    if (store.settings.appLockEnabled) {
+      showInitError("無法載入啟動驗證模組（js/lock.js），App 無法啟動。\n請於可連線的網路下重新整理頁面。");
+      return;
+    }
+  } else {
+    const lockOptions = {
+      // 忘記 PIN：清除本機所有資料後重新載入（進入首次使用流程，驗證設定隨之清除）
+      onReset: async () => {
+        try {
+          await ALD_DB.clearAllData();
+        } catch (e) {
+          alert("清除資料失敗：" + (e && e.message ? e.message : e));
+          return;
+        }
+        window.location.reload();
+      },
+    };
+    if (AppLock.isEnabled(store.settings)) await AppLock.show(store.settings, lockOptions);
+    AppLock.startAutoRelock(() => store.settings, lockOptions);
+  }
 
   // ---------- 最後才 mount() ----------
   app.mount("#app");
