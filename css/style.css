@@ -1995,7 +1995,7 @@ button.set-row:disabled {
 
 .as-acct {
   display: grid;
-  grid-template-columns: 3.5em minmax(0, 1fr) auto;
+  grid-template-columns: 4.5em minmax(0, 1fr) auto;
   column-gap: 10px;
   align-items: center;
   min-height: 72px;
@@ -2011,8 +2011,8 @@ button.set-row:disabled {
 }
 
 .as-acct-ratio {
-  width: 3.25em;
-  height: 3.25em;
+  width: 4.25em;
+  height: 4.25em;
   border-radius: 50%;
   background:
     radial-gradient(circle, var(--card-bg) 57%, transparent 59%),
@@ -2346,7 +2346,7 @@ button.set-row:disabled {
 /* ---------- 帳戶彈窗（[增減]/[還款]） ---------- */
 .as-acct-tap {
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: 12px;
   -webkit-tap-highlight-color: transparent;
 }
 
