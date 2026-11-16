@@ -35,7 +35,7 @@ const ALD = (() => {
     rebalanceRatio: 70, // 再平衡：投資目標佔比(%)，預設 70% -> 流動:投資 = 3:7
     lastTab: "overview", // 上次所在主分頁（overview/rebalance/assets/detail/settings），重新整理後用於還原
     hideAmounts: false, // 全域隱藏金額（總覽眼睛鈕切換）：true 時所有金額顯示為 ***，比例（%）照常顯示
-    showExcludedAccounts: false, // 資產頁「顯示不計入帳戶」開關：我的資產與我的負債共用，重新整理後保留
+    showExcludedAccounts: false, // 「包含不計入資料」開關：開啟時全站計算與顯示都把不計入紀錄視同計入；資產/負債頁與設定頁共用，重新整理後保留
     syncLogEnabled: false, // 是否記錄「同步價格/匯率」的詳細執行資訊（含 API 請求/回應內容），預設關閉
     // 啟動驗證（見 js/lock.js）：僅為畫面鎖定，資料本身未加密；以下欄位不納入完整備份。
     appLockEnabled: false, // 是否於開啟 App／背景超過 5 分鐘回前景時要求驗證
@@ -428,6 +428,11 @@ const ALD = (() => {
     return !!rec && (rec.excluded === 1 || rec.excluded === true);
   }
 
+  // 是否計入金額計算：未勾不計入一律計入；開啟「包含不計入資料」時，不計入紀錄也視同計入。
+  function countsInTotal(rec, settings) {
+    return !!rec && (!isExcluded(rec) || !!(settings && settings.showExcludedAccounts));
+  }
+
   // 全站金額統一顯示為 $ 加分位數字，不受顯示單位設定影響。
   function formatAmount(value, settings) {
     const v = Number(value) || 0;
@@ -807,6 +812,7 @@ const ALD = (() => {
     amountTWD,
     exposureTWD,
     isExcluded,
+    countsInTotal,
     normalizeRec,
     formatAmount,
     formatAmountNum,
