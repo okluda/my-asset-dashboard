@@ -100,6 +100,8 @@ html, body {
   margin: 0;
   padding: 0;
   height: 100%;
+  /* 文件本身不捲動，改由 .page-content 內部捲動（避免 iOS 26 於狀態列下方疊加邊緣模糊） */
+  overflow: hidden;
   background: var(--bg);
   color: var(--text-main);
   font-family: var(--font-family);
@@ -111,30 +113,30 @@ html, body {
 #app {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
-  min-height: 100dvh;
+  height: 100vh;
+  height: 100dvh;
 }
 
 .page-header {
+  flex: 0 0 auto;
   padding: calc(14px + var(--safe-top)) 16px 10px;
   font-size: calc(20px * var(--font-scale, 1));
   font-weight: 700;
-  position: sticky;
-  top: 0;
   background: var(--bg);
   z-index: 5;
 }
 
 .page-content {
   flex: 1;
-  /* 注意：不加 overflow-y:auto。#app 為 min-height（非固定 height）的 flex 欄，
-     內容過高時是「整個文件（document）」在捲動，而非此容器本身。若此處加上
-     overflow-y:auto，會讓本容器成為子層 sticky 元素（.subtab-bar）的定位容器，
-     但它本身其實不會真的內部捲動，導致 sticky top 的偏移量與 .page-header
-     （相對 viewport）重複疊加，造成分類列被往下推開一段空白。維持與
-     .page-header 一致、以 viewport/document 為捲動容器，避免雙重捲動與此類
-     sticky 偏移錯位問題。 */
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  /* 文件不再捲動，本容器為唯一垂直捲動容器（子層 .subtab-bar 的 sticky 以它為基準，top 為 0） */
   padding: 4px 16px calc(96px + var(--safe-bottom));
+}
+
+body.sheet-open .page-content {
+  overflow-y: hidden;
 }
 
 /* ---------- 卡片通用 ---------- */
@@ -736,15 +738,14 @@ table.detail-table input, table.detail-table select {
 }
 
 /* ---------- 明細：子分頁列 ----------
-   sticky 固定在標題列（.page-header）正下方：top 由 JS（ResizeObserver 量測標題列
-   實際高度）寫入 --page-header-height CSS 變數，不寫死像素值；fallback 52px 僅在
-   JS 尚未量測完成前的極短暫過渡使用。整頁只有單一（document 層級）垂直捲動，
-   此處只讓按鈕列本身可水平捲動（overflow-x），並鎖死 overflow-y 避免產生第二層
-   垂直捲軸。左右以負外距延伸到版面邊緣、再用 padding 內縮，讓背景完全覆蓋
-   .page-content 左右留白，捲動時才不會在留白處看到底下卡片內容穿幫。 */
+   sticky 固定在捲動容器（.page-content）頂端：文件本身不捲動，.page-content 已位於標題列
+   （.page-header）下方，因此 top 為 0，不需再扣標題列高度。此處只讓按鈕列本身可水平
+   捲動（overflow-x），並鎖死 overflow-y 避免產生第二層垂直捲軸。左右以負外距延伸到版面
+   邊緣、再用 padding 內縮，讓背景完全覆蓋 .page-content 左右留白，捲動時才不會在留白處
+   看到底下卡片內容穿幫。 */
 .subtab-bar {
   position: sticky;
-  top: var(--page-header-height, 52px);
+  top: 0;
   z-index: 4;
   background: var(--bg);
   display: flex;
@@ -1995,7 +1996,7 @@ button.set-row:disabled {
 
 .as-acct {
   display: grid;
-  grid-template-columns: 4.5em minmax(0, 1fr) auto;
+  grid-template-columns: 3.5em minmax(0, 1fr) auto;
   column-gap: 10px;
   align-items: center;
   min-height: 72px;
@@ -2011,8 +2012,8 @@ button.set-row:disabled {
 }
 
 .as-acct-ratio {
-  width: 4.25em;
-  height: 4.25em;
+  width: 3.25em;
+  height: 3.25em;
   border-radius: 50%;
   background:
     radial-gradient(circle, var(--card-bg) 57%, transparent 59%),
@@ -2346,7 +2347,7 @@ button.set-row:disabled {
 /* ---------- 帳戶彈窗（[增減]/[還款]） ---------- */
 .as-acct-tap {
   cursor: pointer;
-  border-radius: 12px;
+  /* border-radius: 8px; */
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -2373,6 +2374,21 @@ button.set-row:disabled {
   margin-top: 2px;
   font-size: calc(12px * var(--font-scale, 1));
   color: var(--text-sub);
+}
+
+/* 「包含不計入資料」開啟時的提示標籤（總覽、再平衡、明細摘要、帳戶彈窗共用） */
+.incl-excluded-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: calc(11px * var(--font-scale, 1));
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--text-sub);
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 .bs-stat {

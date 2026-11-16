@@ -19,6 +19,16 @@ if (typeof Vue === "undefined") {
 
 const { createApp, reactive, computed, watch, ref, onMounted, onUnmounted, nextTick } = Vue;
 
+// 為避免 iOS 26 在文件（root）捲動時於狀態列下方疊加邊緣模糊，文件本身固定不捲動，
+// 改由目前分頁的 .page-content 負責垂直捲動；所有捲動操作統一透過此容器。
+function getPageScroller() {
+  return document.querySelector(".page-content");
+}
+function scrollPageToTop() {
+  const el = getPageScroller();
+  if (el) el.scrollTop = 0;
+}
+
 // ---------- IndexedDB 初始化輔助（階段二：App 正式資料來源改為 IndexedDB） ----------
 
 // 舊版股價來源設定 → 新版 Provider/Connection 解耦架構 的遷移規則：
@@ -165,14 +175,14 @@ const TabOverview = {
     const totalAssets = computed(() =>
       ALD.round2(
         store.records
-          .filter((r) => !r.excluded && ALD.ASSET_TYPES.includes(r.type))
+          .filter((r) => ALD.countsInTotal(r, store.settings) && ALD.ASSET_TYPES.includes(r.type))
           .reduce((sum, r) => sum + ALD.amountTWD(r), 0)
       )
     );
     const totalLiabilities = computed(() =>
       ALD.round2(
         store.records
-          .filter((r) => !r.excluded && r.type === "負債")
+          .filter((r) => ALD.countsInTotal(r, store.settings) && r.type === "負債")
           .reduce((sum, r) => sum + ALD.amountTWD(r), 0)
       )
     );
@@ -185,7 +195,7 @@ const TabOverview = {
       return ALD.ASSET_TYPES.map((type) => {
         const amount = ALD.round2(
           store.records
-            .filter((r) => !r.excluded && r.type === type)
+            .filter((r) => ALD.countsInTotal(r, store.settings) && r.type === type)
             .reduce((sum, r) => sum + ALD.amountTWD(r), 0)
         );
         const ratio = totalAssets.value > 0 ? amount / totalAssets.value : 0;
@@ -194,6 +204,7 @@ const TabOverview = {
     });
 
     const hidden = computed(() => !!store.settings.hideAmounts);
+    const includeExcluded = computed(() => !!store.settings.showExcludedAccounts);
     function toggleHidden() {
       store.settings.hideAmounts = !store.settings.hideAmounts;
     }
@@ -204,6 +215,7 @@ const TabOverview = {
       liabilityRatio,
       breakdown,
       hidden,
+      includeExcluded,
       toggleHidden,
       fmt: (v) => (hidden.value ? "***" : ALD.formatAmount(v, store.settings)),
       fmtNum: (v) => (hidden.value ? "***" : ALD.formatAmountNum(v, store.settings)),
@@ -240,23 +252,18 @@ const TabAssets = {
     const pctWhole = (v) => `${Math.round((Number(v) || 0) * 100)}%`;
     const catName = (t) => ALD.categoryDisplayName(settings, t);
 
-    // 我的資產／我的負債共用同一個開關，存於 settings 以便重新整理後保留
+    // 我的資產／我的負債與設定頁共用同一個「包含不計入資料」開關，存於 settings 以便重新整理後保留
     const showExcludedAccounts = computed({
       get: () => !!settings.showExcludedAccounts,
       set: (v) => {
         settings.showExcludedAccounts = !!v;
       },
     });
+    // 已依「包含不計入資料」開關過濾：關閉時排除不計入紀錄，開啟時全部納入
     const assetRecs = computed(() =>
-      store.records.filter((r) => !r.excluded && ALD.ASSET_TYPES.includes(r.type))
+      store.records.filter((r) => ALD.countsInTotal(r, settings) && ALD.ASSET_TYPES.includes(r.type))
     );
-    const accountAssetRecs = computed(() =>
-      store.records.filter(
-        (r) =>
-          ALD.ASSET_TYPES.includes(r.type) &&
-          (showExcludedAccounts.value || !r.excluded)
-      )
-    );
+    const accountAssetRecs = assetRecs;
     const totalAssets = computed(() =>
       ALD.round2(assetRecs.value.reduce((s, r) => s + ALD.amountTWD(r), 0))
     );
@@ -354,7 +361,7 @@ const TabAssets = {
         const { kind, cur } = segmentKeyOf(r);
         const seg = ensure(kind, cur);
         seg.records.push(r);
-        if (!r.excluded) seg.amount = ALD.round2(seg.amount + ALD.amountTWD(r));
+        seg.amount = ALD.round2(seg.amount + ALD.amountTWD(r));
       });
       return Object.values(map).sort((a, b) => a.order - b.order || (a.key < b.key ? -1 : 1));
     });
@@ -432,10 +439,8 @@ const TabAssets = {
               acctMap[name] = { account: name, amountTWD: 0, amountOrig: 0, units: 0, exposureTWD: 0, leverage: ALD.effLeverage(r) };
             }
             const a = acctMap[name];
-            if (!r.excluded) {
-              a.amountTWD = ALD.round2(a.amountTWD + ALD.amountTWD(r));
-              a.exposureTWD = ALD.round2(a.exposureTWD + ALD.exposureTWD(r));
-            }
+            a.amountTWD = ALD.round2(a.amountTWD + ALD.amountTWD(r));
+            a.exposureTWD = ALD.round2(a.exposureTWD + ALD.exposureTWD(r));
             a.amountOrig = ALD.round2(a.amountOrig + ALD.origAmount(r));
             a.units = ALD.round2(a.units + (Number(r.units) || 0));
           });
@@ -467,7 +472,7 @@ const TabAssets = {
     const liabilityAccounts = computed(() => {
       const map = {};
       store.records
-        .filter((r) => !r.excluded && r.type === "負債")
+        .filter((r) => ALD.countsInTotal(r, settings) && r.type === "負債")
         .forEach((r) => {
           const name = r.account || "(未命名)";
           map[name] = ALD.round2((map[name] || 0) + ALD.amountTWD(r));
@@ -483,22 +488,8 @@ const TabAssets = {
     const totalLiabilities = computed(() =>
       ALD.round2(liabilityAccounts.value.reduce((s, a) => s + a.amount, 0))
     );
-    // 負債帳戶清單：開啟「顯示不計入帳戶」時納入不計入的紀錄；總負債與比例條仍只看 liabilityAccounts
-    const liabilityListAccounts = computed(() => {
-      if (!showExcludedAccounts.value) return liabilityAccounts.value;
-      const map = {};
-      store.records
-        .filter((r) => r.type === "負債")
-        .forEach((r) => {
-          const name = r.account || "(未命名)";
-          map[name] = ALD.round2((map[name] || 0) + (r.excluded ? 0 : ALD.amountTWD(r)));
-        });
-      return Object.keys(map).map((account) => ({
-        account,
-        amount: map[account],
-        ratio: totalLiabilities.value > 0 ? map[account] / totalLiabilities.value : 0,
-      }));
-    });
+    // 負債帳戶清單：與 liabilityAccounts 一致（是否含不計入紀錄已由開關決定）
+    const liabilityListAccounts = computed(() => liabilityAccounts.value);
 
     // ---------- 共用 Bottom Sheet 與 [新增帳戶] ----------
     // sheet：目前開啟的彈窗（null=無，"new"=新增帳戶）；後續階段的帳戶增減/編輯/紀錄沿用同一個外框。
@@ -508,9 +499,12 @@ const TabAssets = {
     // 彈窗為編輯情境，一律顯示實際數字，不套用隱藏金額；開啟時鎖住背景捲動，關閉/卸載時還原。
     watch(sheet, (v) => {
       document.body.style.overflow = v ? "hidden" : "";
+      // 文件已固定不捲動，背景實際捲動的是 .page-content，需另以 class 一併鎖住
+      document.body.classList.toggle("sheet-open", !!v);
     });
     onUnmounted(() => {
       document.body.style.overflow = "";
+      document.body.classList.remove("sheet-open");
     });
     function closeSheet() {
       sheet.value = null;
@@ -715,7 +709,7 @@ const TabAssets = {
     const acctKind = computed(() =>
       acctCtx.type === "投資" ? "invest" : acctCtx.type === "負債" ? "repay" : "cash"
     );
-    // 全部紀錄（含不計入）：供「最後編輯」；持有數量只計入 excluded=0 的紀錄（D2）
+    // 全部紀錄（含不計入）：供「最後編輯」；持有數量依「包含不計入資料」開關決定是否納入 excluded=1 的紀錄（D2）
     const acctRecs = computed(() =>
       store.records.filter(
         (r) =>
@@ -725,7 +719,7 @@ const TabAssets = {
       )
     );
     const holding = computed(() =>
-      r6(acctRecs.value.filter((r) => !ALD.isExcluded(r)).reduce((s, r) => s + (Number(r.units) || 0), 0))
+      r6(acctRecs.value.filter((r) => ALD.countsInTotal(r, settings)).reduce((s, r) => s + (Number(r.units) || 0), 0))
     );
     const acctPrice = computed(() => resolveUnitPrice(acctCtx.type, acctCtx.account === UNNAMED ? "" : acctCtx.account));
     const acctBalance = computed(() => ALD.round2(holding.value * acctPrice.value));
@@ -743,8 +737,8 @@ const TabAssets = {
       if (acctKind.value === "repay") {
         return r6(holding.value - (Number(adj.principal) || 0) / (acctPrice.value || 1));
       }
-      // 流動資金類勾選「不計入」時，這筆紀錄不計入持有數量
-      if (acctKind.value === "cash" && adj.excluded) return holding.value;
+      // 流動資金類勾選「不計入」且未開啟「包含不計入資料」時，這筆紀錄不計入持有數量
+      if (acctKind.value === "cash" && adj.excluded && !settings.showExcludedAccounts) return holding.value;
       return r6(holding.value + adjSign.value * adjQty.value);
     });
 
@@ -927,7 +921,9 @@ const TabAssets = {
 
     function saveAdjust() {
       if (sheetSaving || !adjValid.value) return;
-      const reduces = (acctKind.value === "repay" || adj.dir === "out") && !(acctKind.value === "cash" && adj.excluded);
+      const reduces =
+        (acctKind.value === "repay" || adj.dir === "out") &&
+        !(acctKind.value === "cash" && adj.excluded && !settings.showExcludedAccounts);
       if (reduces && adjAfter.value < 0) {
         if (!window.confirm("調整後數量為 " + plain(adjAfter.value) + "，小於 0，仍要儲存嗎？")) return;
       }
@@ -1290,14 +1286,14 @@ const TabRebalance = {
     const liquidTWD = computed(() =>
       ALD.round2(
         store.records
-          .filter((r) => !r.excluded && r.type === "流動資金")
+          .filter((r) => ALD.countsInTotal(r, settings) && r.type === "流動資金")
           .reduce((sum, r) => sum + ALD.amountTWD(r), 0)
       )
     );
     const investTWD = computed(() =>
       ALD.round2(
         store.records
-          .filter((r) => !r.excluded && r.type === "投資")
+          .filter((r) => ALD.countsInTotal(r, settings) && r.type === "投資")
           .reduce((sum, r) => sum + ALD.amountTWD(r), 0)
       )
     );
@@ -1308,17 +1304,17 @@ const TabRebalance = {
     const exposureTotal = computed(() =>
       ALD.round2(
         store.records
-          .filter((r) => !r.excluded && (r.type === "流動資金" || r.type === "投資"))
+          .filter((r) => ALD.countsInTotal(r, settings) && (r.type === "流動資金" || r.type === "投資"))
           .reduce((sum, r) => sum + ALD.exposureTWD(r), 0)
       )
     );
     const exposureRatio = computed(() => (pool.value > 0 ? exposureTotal.value / pool.value : 0));
 
-    // 1 倍槓桿投資合計（台幣換算），供槓桿再平衡建議使用；排除「不計入」資料。
+    // 1 倍槓桿投資合計（台幣換算），供槓桿再平衡建議使用；「不計入」資料是否納入依「包含不計入資料」開關。
     const invest1xTWD = computed(() =>
       ALD.round2(
         store.records
-          .filter((r) => !r.excluded && r.type === "投資" && ALD.effLeverage(r) === 1)
+          .filter((r) => ALD.countsInTotal(r, settings) && r.type === "投資" && ALD.effLeverage(r) === 1)
           .reduce((sum, r) => sum + ALD.amountTWD(r), 0)
       )
     );
@@ -1644,7 +1640,7 @@ const TabDetail = {
 
     // 依幣別 -> 存放帳戶 兩層分組彙總。金額一律用「金額(台幣)」加總。
     const summary = computed(() => {
-      const recs = typeRecords.value.filter((r) => !ALD.isExcluded(r));
+      const recs = typeRecords.value.filter((r) => ALD.countsInTotal(r, settings));
       const invest = activeType.value === "投資";
       const groupsMap = {};
       let exposureTotal = 0;
@@ -1882,7 +1878,7 @@ const TabSettings = {
 
     function openSubPage(key) {
       settingsSubPage.value = key;
-      window.scrollTo(0, 0);
+      scrollPageToTop();
     }
     const assetCategoryKeys = ALD.ASSET_TYPES;
     const types = ALD.TYPES;
@@ -2682,7 +2678,7 @@ const App = {
     }
     function openDetailFromSettings() {
       setActiveTab("detail");
-      window.scrollTo(0, 0);
+      nextTick(scrollPageToTop);
     }
     onMounted(() => window.addEventListener("ald-open-detail", openDetailFromSettings));
     onUnmounted(() => window.removeEventListener("ald-open-detail", openDetailFromSettings));
@@ -2691,7 +2687,7 @@ const App = {
     );
     function closeSubPage() {
       settingsSubPage.value = null;
-      window.scrollTo(0, 0);
+      nextTick(scrollPageToTop);
     }
     // 「資產」分頁的按鈕文字隨我的資產／我的負債切換
     function tabLabel(tab) {
@@ -2708,11 +2704,12 @@ const App = {
 
     // 明細浮動捲動鈕：預設捲到最底部；若已接近底部則改捲到最頂端。
     function onScrollFab() {
-      const doc = document.documentElement;
-      const scrollTop = window.pageYOffset || doc.scrollTop || 0;
-      const maxScroll = doc.scrollHeight - window.innerHeight;
+      const el = getPageScroller();
+      if (!el) return;
+      const scrollTop = el.scrollTop || 0;
+      const maxScroll = el.scrollHeight - el.clientHeight;
       const atBottom = maxScroll - scrollTop < 8; // 已在（或非常接近）底部
-      window.scrollTo({ top: atBottom ? 0 : maxScroll, behavior: "smooth" });
+      el.scrollTo({ top: atBottom ? 0 : maxScroll, behavior: "smooth" });
     }
 
     // 是否顯示浮動捲動鈕：僅當頁面內容高度「超過」裝置可視高度時才需要捲動，
@@ -2720,8 +2717,8 @@ const App = {
     const fabVisible = ref(false);
     const OVERFLOW_THRESHOLD = 24; // 容許誤差（px），避免臨界值時按鈕閃爍
     function checkOverflow() {
-      const doc = document.documentElement;
-      fabVisible.value = doc.scrollHeight - window.innerHeight > OVERFLOW_THRESHOLD;
+      const el = getPageScroller();
+      fabVisible.value = !!el && el.scrollHeight - el.clientHeight > OVERFLOW_THRESHOLD;
     }
     let resizeTimer = null;
     function onResize() {
