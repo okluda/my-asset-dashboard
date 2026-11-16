@@ -19,16 +19,6 @@ if (typeof Vue === "undefined") {
 
 const { createApp, reactive, computed, watch, ref, onMounted, onUnmounted, nextTick } = Vue;
 
-// 為避免 iOS 26 在文件（root）捲動時於狀態列下方疊加邊緣模糊，文件本身固定不捲動，
-// 改由目前分頁的 .page-content 負責垂直捲動；所有捲動操作統一透過此容器。
-function getPageScroller() {
-  return document.querySelector(".page-content");
-}
-function scrollPageToTop() {
-  const el = getPageScroller();
-  if (el) el.scrollTop = 0;
-}
-
 // ---------- IndexedDB 初始化輔助（階段二：App 正式資料來源改為 IndexedDB） ----------
 
 // 舊版股價來源設定 → 新版 Provider/Connection 解耦架構 的遷移規則：
@@ -499,12 +489,9 @@ const TabAssets = {
     // 彈窗為編輯情境，一律顯示實際數字，不套用隱藏金額；開啟時鎖住背景捲動，關閉/卸載時還原。
     watch(sheet, (v) => {
       document.body.style.overflow = v ? "hidden" : "";
-      // 文件已固定不捲動，背景實際捲動的是 .page-content，需另以 class 一併鎖住
-      document.body.classList.toggle("sheet-open", !!v);
     });
     onUnmounted(() => {
       document.body.style.overflow = "";
-      document.body.classList.remove("sheet-open");
     });
     function closeSheet() {
       sheet.value = null;
@@ -1878,7 +1865,7 @@ const TabSettings = {
 
     function openSubPage(key) {
       settingsSubPage.value = key;
-      scrollPageToTop();
+      window.scrollTo(0, 0);
     }
     const assetCategoryKeys = ALD.ASSET_TYPES;
     const types = ALD.TYPES;
@@ -2678,7 +2665,7 @@ const App = {
     }
     function openDetailFromSettings() {
       setActiveTab("detail");
-      nextTick(scrollPageToTop);
+      window.scrollTo(0, 0);
     }
     onMounted(() => window.addEventListener("ald-open-detail", openDetailFromSettings));
     onUnmounted(() => window.removeEventListener("ald-open-detail", openDetailFromSettings));
@@ -2687,7 +2674,7 @@ const App = {
     );
     function closeSubPage() {
       settingsSubPage.value = null;
-      nextTick(scrollPageToTop);
+      window.scrollTo(0, 0);
     }
     // 「資產」分頁的按鈕文字隨我的資產／我的負債切換
     function tabLabel(tab) {
@@ -2704,12 +2691,11 @@ const App = {
 
     // 明細浮動捲動鈕：預設捲到最底部；若已接近底部則改捲到最頂端。
     function onScrollFab() {
-      const el = getPageScroller();
-      if (!el) return;
-      const scrollTop = el.scrollTop || 0;
-      const maxScroll = el.scrollHeight - el.clientHeight;
+      const doc = document.documentElement;
+      const scrollTop = window.pageYOffset || doc.scrollTop || 0;
+      const maxScroll = doc.scrollHeight - window.innerHeight;
       const atBottom = maxScroll - scrollTop < 8; // 已在（或非常接近）底部
-      el.scrollTo({ top: atBottom ? 0 : maxScroll, behavior: "smooth" });
+      window.scrollTo({ top: atBottom ? 0 : maxScroll, behavior: "smooth" });
     }
 
     // 是否顯示浮動捲動鈕：僅當頁面內容高度「超過」裝置可視高度時才需要捲動，
@@ -2717,8 +2703,8 @@ const App = {
     const fabVisible = ref(false);
     const OVERFLOW_THRESHOLD = 24; // 容許誤差（px），避免臨界值時按鈕閃爍
     function checkOverflow() {
-      const el = getPageScroller();
-      fabVisible.value = !!el && el.scrollHeight - el.clientHeight > OVERFLOW_THRESHOLD;
+      const doc = document.documentElement;
+      fabVisible.value = doc.scrollHeight - window.innerHeight > OVERFLOW_THRESHOLD;
     }
     let resizeTimer = null;
     function onResize() {
