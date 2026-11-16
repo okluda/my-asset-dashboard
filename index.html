@@ -5,9 +5,14 @@
   <!-- viewport-fit=cover 讓內容延伸至瀏海/圓角區域，搭配 safe-area-inset 使用 -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <!-- 狀態列樣式刻意使用 default，請勿改回 black-translucent：
+       black-translucent 會讓頁面畫到狀態列底下，iOS 26 主畫面 App 會在該區域疊加 Liquid Glass
+       模糊（大標題上半部被模糊），且 WebKit 會以扣掉狀態列的高度計算視窗，造成底部空白。
+       iOS 只在「加入主畫面」時讀取此設定，修改後需刪除主畫面圖示再重新加入才會生效。 -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="theme-color" content="#1c1c2e" />
+  <!-- 狀態列顏色依 theme-color 著色，需與頁面背景（--bg）一致；切換深/淺色時由 store.js applyTheme 改寫 -->
+  <meta name="theme-color" content="#252526" />
   <meta name="apple-mobile-web-app-title" content="WalletEgg" />
   <meta name="application-name" content="WalletEgg" />
   <title>WalletEgg</title>
@@ -16,7 +21,7 @@
   <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
   <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
-  <link rel="stylesheet" href="css/style.css?v=2026111602" />
+  <link rel="stylesheet" href="css/style.css?v=2026111603" />
 </head>
 <body>
   <!-- 錯誤顯示橫幅：手機上沒有開發者工具可看 console，發生例外時直接顯示在畫面上。
@@ -1906,7 +1911,7 @@
   </script>
 
   <!-- PWA（Service Worker 註冊、新版提示、安裝）：不依賴 Vue，放在最前面，App 掛載失敗時仍可收到新版提示 -->
-  <script src="js/pwa.js?v=2026111602"></script>
+  <script src="js/pwa.js?v=2026111603"></script>
 
   <!-- Vue 3 全域版本（鎖定 3.5.44，存放於 vendor/ 以支援離線）。
        升級版本時請替換 vendor/ 檔案並同步更新 README 與 ?v=。 -->
@@ -1915,10 +1920,10 @@
   <!-- 本地程式檔（pwa/store/db/lock/services/app）：?v= 為快取破壞參數。
        修改這些檔案任何內容後，務必同步更新此版本號以及 sw.js 的 APP_VERSION，避免瀏覽器/CDN/Service Worker 快取舊版程式碼，
        導致「畫面（index.html）看起來是新版、但實際執行邏輯是舊版」的不一致問題。 -->
-  <script src="js/store.js?v=2026111602"></script>
-  <script src="js/db.js?v=2026111602"></script>
-  <script src="js/lock.js?v=2026111602"></script>
-  <script src="js/services.js?v=2026111602"></script>
-  <script src="js/app.js?v=2026111602"></script>
+  <script src="js/store.js?v=2026111603"></script>
+  <script src="js/db.js?v=2026111603"></script>
+  <script src="js/lock.js?v=2026111603"></script>
+  <script src="js/services.js?v=2026111603"></script>
+  <script src="js/app.js?v=2026111603"></script>
 </body>
 </html>

@@ -763,6 +763,11 @@ const ALD = (() => {
     // 若只切換 body 的 class，<html> 本身的 --bg 仍是預設深色，iOS Safari 的
     // 橡皮筋回彈捲動（overscroll bounce）會露出 <html> 背景，導致「捲動後背景變深色」的錯覺。
     root.classList.toggle("theme-light", settings.themeMode === "light");
+    // 狀態列（theme-color）需與頁面背景 --bg 一致，否則主畫面 App 頂端會出現色差
+    const themeMeta = document.querySelector('meta[name="theme-color"]');
+    if (themeMeta) {
+      themeMeta.setAttribute("content", settings.themeMode === "light" ? "#f4f5fa" : "#252526");
+    }
   }
 
   return {
