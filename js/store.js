@@ -73,6 +73,8 @@ const ALD = (() => {
   };
 
   // 字型選項：切換 --font-family
+  // iOS 網頁無法使用隨選下載字型（Songti TC、Yuanti TC）與 Windows 字型（PMingLiU、微軟正黑體），
+  // 也不能以名稱指定 SF Mono，因此以 ui-* 系統字型（WebKit 支援）與 iOS 內建字型為優先，其餘保留給其他平台備援。
   const FONT_FAMILIES = {
     system: {
       label: "系統預設",
@@ -80,15 +82,15 @@ const ALD = (() => {
     },
     serif: {
       label: "明體（襯線）",
-      value: '"Songti TC", "PMingLiU", Georgia, serif',
+      value: 'ui-serif, "Hiragino Mincho ProN", "Songti TC", "PMingLiU", Georgia, serif',
     },
     rounded: {
-      label: "圓體",
-      value: '"PingFang TC", "Hiragino Sans", "Microsoft JhengHei", sans-serif',
+      label: "圓體（英數）",
+      value: 'ui-rounded, "PingFang TC", "Hiragino Sans", "Microsoft JhengHei", sans-serif',
     },
     mono: {
       label: "等寬",
-      value: '"SF Mono", Menlo, Consolas, monospace',
+      value: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
     },
   };
 
