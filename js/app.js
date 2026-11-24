@@ -487,11 +487,32 @@ const TabAssets = {
     const plain = (v) => (Number(v) || 0).toLocaleString("zh-TW", { maximumFractionDigits: 2 });
 
     // 彈窗為編輯情境，一律顯示實際數字，不套用隱藏金額；開啟時鎖住背景捲動，關閉/卸載時還原。
-    watch(sheet, (v) => {
+    // 整頁開啟時推入一筆 history，讓瀏覽器上一頁／返回手勢可關閉整頁；
+    // 由箭頭或存檔關閉時，若該筆 history 仍在，則 history.back() 移除，避免殘留。
+    const isSheetState = () => !!(history.state && history.state.aldSheet);
+    watch(sheet, (v, old) => {
       document.body.style.overflow = v ? "hidden" : "";
+      if (v && !old) {
+        history.pushState({ aldSheet: true }, "");
+      } else if (!v && old && isSheetState()) {
+        history.back();
+      }
     });
+    function onSheetPopState() {
+      if (!sheet.value || isSheetState()) return;
+      if (calc.open) {
+        // 計算機開著時，上一頁只關閉計算機，整頁保留並補回 history
+        calc.open = false;
+        history.pushState({ aldSheet: true }, "");
+        return;
+      }
+      closeSheet();
+    }
+    window.addEventListener("popstate", onSheetPopState);
     onUnmounted(() => {
       document.body.style.overflow = "";
+      window.removeEventListener("popstate", onSheetPopState);
+      if (sheet.value && isSheetState()) history.back();
     });
     function closeSheet() {
       sheet.value = null;
